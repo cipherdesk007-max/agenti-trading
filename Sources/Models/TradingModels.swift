@@ -207,6 +207,18 @@ struct DatasetStats: Sendable {
     let completed: Int
 }
 
+/// Metriche di performance sui trade chiusi, calcolate dai TradeRecord.
+/// Profit factor = profitti lordi / perdite lorde (nil se non ci sono
+/// perdite: il fattore è infinito). Max drawdown = peggior discesa
+/// picco → valle della curva del P&L cumulato.
+struct PerformanceStats: Sendable {
+    let completedTrades: Int
+    let winRate: Double?
+    let profitFactor: Double?
+    let expectancy: Double?
+    let maxDrawdown: Double?
+}
+
 enum QuantSwarmError: LocalizedError {
     case credentialsMissing
     case invalidCredentialInput
