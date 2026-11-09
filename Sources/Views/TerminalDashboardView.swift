@@ -400,6 +400,9 @@ struct TerminalDashboardView: View {
             settingRow("ATR", "\(SystemLimits.atrPeriod) barre da 1 min")
             settingRow("CICLO DECISIONI", "\(SystemLimits.decisionIntervalSeconds) s")
             settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
+            settingRow("FLAT BY CLOSE", "chiusura totale a T-10 min")
+            settingRow("STOP GIORNALIERO", "-2% equity = pausa fino a domani")
+            settingRow("MAX POSIZIONI", "\(SystemLimits.maxConcurrentPositions) simultanee")
             settingRow("FILTRO REGIME", "ATR oltre 2σ = pausa")
         }
         .panelStyle(terminalGreen)

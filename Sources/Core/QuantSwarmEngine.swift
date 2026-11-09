@@ -51,6 +51,9 @@ final class QuantSwarmEngine: ObservableObject {
     private var regimeLogged: Set<String> = []
     private var atrHistory: [String: [Double]] = [:]
     private var lastHoldPrice: [String: (price: Double, at: Date)] = [:]
+    private var flatByCloseTriggered = false
+    private var maxPositionsLogged = false
+    private var dailyStopDay: String?
     private var lastClockRefresh: Date?
     private var lastBalanceRefresh: Date?
 
@@ -205,6 +208,8 @@ final class QuantSwarmEngine: ObservableObject {
         regimeLogged = []
         atrHistory = [:]
         lastHoldPrice = [:]
+        flatByCloseTriggered = false
+        maxPositionsLogged = false
         NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
         statusMessage = "Sessione \(credentials.paperTrading ? "paper" : "live") attiva"
@@ -303,10 +308,55 @@ final class QuantSwarmEngine: ObservableObject {
         }
     }
 
+    private var dailyStopActive: Bool {
+        guard let day = dailyStopDay else { return false }
+        return day == Self.dayStamp()
+    }
+
+    private static func dayStamp() -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.string(from: Date())
+    }
+
     private func analysisLoop(kimi: KimiService, credentials: StoredCredentials) async {
         while isRunning && !Task.isCancelled {
             await refreshTradeRecords()
             await refreshPortfolioThrottled()
+            // Flat by close: a T-10 minuti chiude tutto a mercato; una strategia
+            // intraday non resta esposta overnight con le gambe del bracket scadute.
+            if let clock = marketClock, clock.isOpen, let close = clock.nextCloseDate {
+                let toClose = close.timeIntervalSinceNow
+                if toClose > 0, toClose <= SystemLimits.flatByCloseSeconds,
+                   !positions.isEmpty, !flatByCloseTriggered {
+                    flatByCloseTriggered = true
+                    log(
+                        "T-\(Int(toClose / 60)) min alla chiusura: chiusura totale "
+                            + "a mercato (flat by close).",
+                        agent: .risk
+                    )
+                    do {
+                        try await riskAgent.emergencyFlatten(credentials: credentials.alpaca)
+                        log("Flat by close eseguito.", agent: .risk)
+                        NotificationManager.shared.notify(
+                            "FLAT BY CLOSE",
+                            body: "Posizioni chiuse a mercato prima della chiusura."
+                        )
+                    } catch {
+                        flatByCloseTriggered = false
+                        log("Flat by close fallito: \(error.localizedDescription)", agent: .risk)
+                    }
+                }
+            }
+            if dailyStopActive {
+                do {
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                } catch {
+                    return
+                }
+                continue
+            }
             for symbol in configuredSymbols {
                 guard isRunning && !Task.isCancelled else { break }
                 guard let snapshot = snapshots[symbol], let atr = snapshot.atr14 else {
@@ -330,11 +380,25 @@ final class QuantSwarmEngine: ObservableObject {
                     continue
                 }
                 staleLogEmitted.remove(symbol)
+                // Tetto di portafoglio: oltre N posizioni aperte niente nuovi segnali,
+                // il rischio per-simbolo altrimenti si somma oltre il previsto.
+                if positions.count >= SystemLimits.maxConcurrentPositions {
+                    if !maxPositionsLogged {
+                        maxPositionsLogged = true
+                        log(
+                            "Tetto di \(SystemLimits.maxConcurrentPositions) posizioni aperte "
+                                + "raggiunto; nuovi segnali sospesi.",
+                            agent: .risk
+                        )
+                    }
+                    continue
+                }
+                maxPositionsLogged = false
                 // Guard di chiusura: i bracket hanno time-in-force "day" e le gambe
                 // scadono a fine sessione; niente nuove posizioni negli ultimi 15 minuti.
                 if let clock = marketClock, clock.isOpen, let close = clock.nextCloseDate {
                     let toClose = close.timeIntervalSinceNow
-                    if toClose > 0, toClose <= 900 {
+                    if toClose > 0, toClose <= SystemLimits.closeGuardSeconds {
                         if !closeGuardLogged.contains(symbol) {
                             closeGuardLogged.insert(symbol)
                             log(
@@ -563,12 +627,34 @@ final class QuantSwarmEngine: ObservableObject {
         )
     }
 
+    /// Circuit breaker giornaliero: P&L oltre -2% di equity = nuovi segnali
+    /// sospesi fino al giorno successivo. Le posizioni aperte restano
+    /// protette dalle gambe del bracket.
+    private func checkDailyLoss(_ snapshot: AccountSnapshot) {
+        guard let lastEquity = snapshot.lastEquityValue, lastEquity > 0 else { return }
+        let dayPnL = snapshot.equityValue - lastEquity
+        let limit = SystemLimits.maxDailyLossFraction * lastEquity
+        guard dayPnL <= -limit, !dailyStopActive else { return }
+        dailyStopDay = Self.dayStamp()
+        let percent = Int(SystemLimits.maxDailyLossFraction * 100)
+        log(
+            "STOP GIORNALIERO: P&L \(format(dayPnL)) USD oltre il -\(percent)% di equity; "
+                + "nuovi segnali sospesi fino a domani.",
+            agent: .risk
+        )
+        NotificationManager.shared.notify(
+            "STOP GIORNALIERO -\(percent)%",
+            body: "P&L \(format(dayPnL)) USD; nuovi segnali sospesi fino a domani."
+        )
+    }
+
     func refreshPortfolio() async {
         guard let credentials else { return }
         let service = AlpacaService(credentials: credentials.alpaca)
         do {
             let snapshot = try await service.account()
             account = snapshot
+            checkDailyLoss(snapshot)
             if baselineEquity == nil { baselineEquity = snapshot.equityValue }
             let edge = snapshot.equityValue - (baselineEquity ?? snapshot.equityValue)
             edgeHistory.append(EdgePoint(timestamp: Date(), value: edge))
@@ -611,6 +697,7 @@ final class QuantSwarmEngine: ObservableObject {
         do {
             let snapshot = try await service.account()
             account = snapshot
+            checkDailyLoss(snapshot)
             if baselineEquity == nil { baselineEquity = snapshot.equityValue }
             let edge = snapshot.equityValue - (baselineEquity ?? snapshot.equityValue)
             edgeHistory.append(EdgePoint(timestamp: Date(), value: edge))

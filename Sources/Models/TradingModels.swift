@@ -11,6 +11,10 @@ enum SystemLimits {
     static let fractionalKellyDivisor = 4.0
     static let maximumLatencyMilliseconds = 400.0
     static let maximumPriceDeviation = 0.0005
+    static let closeGuardSeconds: TimeInterval = 900
+    static let flatByCloseSeconds: TimeInterval = 600
+    static let maxDailyLossFraction = 0.02
+    static let maxConcurrentPositions = 3
 }
 
 enum TradeAction: String, Codable, Sendable {
