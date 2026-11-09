@@ -31,6 +31,8 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var marketClock: AlpacaClock?
     @Published private(set) var kimiBalance: KimiBalance?
     @Published private(set) var calibration: CalibrationStats?
+    @Published private(set) var sessionStartedAt: Date?
+    @Published private(set) var sessionReportURL: URL?
 
     private let keychain: KeychainManager
     private let background: BackgroundPersistenceManager
@@ -68,6 +70,9 @@ final class QuantSwarmEngine: ObservableObject {
         background.setRefreshHandler { [weak self] in
             await self?.performBackgroundRefresh()
         }
+        // Report .txt di un'eventuale sessione precedente (es. generato alla
+        // chiusura dell'app): riappare in dashboard per export/eliminazione.
+        sessionReportURL = SessionReportBuilder.existingReportURL()
     }
 
     func restoreCredentials() async {
@@ -160,7 +165,7 @@ final class QuantSwarmEngine: ObservableObject {
     }
 
     func logout() async {
-        await stop()
+        await stop(reason: "LOGOUT")
         try? await keychain.delete()
         credentials = nil
         kimiService = nil
@@ -173,6 +178,7 @@ final class QuantSwarmEngine: ObservableObject {
         decisions = []
         marketClock = nil
         kimiBalance = nil
+        sessionStartedAt = nil
         statusMessage = "Credenziali richieste"
     }
 
@@ -212,8 +218,10 @@ final class QuantSwarmEngine: ObservableObject {
         maxPositionsLogged = false
         NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
+        sessionStartedAt = Date()
         statusMessage = "Sessione \(credentials.paperTrading ? "paper" : "live") attiva"
         background.start()
+        log("════════ SESSIONE AVVIATA · ORE \(Date().formatted(date: .omitted, time: .standard)) ════════")
         log("Motore avviato su \(parsedSymbols.joined(separator: ", ")); ATR richiesto prima dei segnali.")
         if let clock = try? await AlpacaService(credentials: credentials.alpaca).clock() {
             marketClock = clock
@@ -245,7 +253,7 @@ final class QuantSwarmEngine: ObservableObject {
         }
     }
 
-    func stop() async {
+    func stop(reason: String = "STOP manuale") async {
         guard isRunning || analysisTask != nil || marketTask != nil else { return }
         isRunning = false
         analysisTask?.cancel()
@@ -256,13 +264,42 @@ final class QuantSwarmEngine: ObservableObject {
         background.stop()
         statusMessage = "Motore fermo; posizioni invariate"
         log("Motore fermato. Usa HARD KILL SWITCH per liquidare le posizioni.")
+        log("════════ SESSIONE CHIUSA · ORE \(Date().formatted(date: .omitted, time: .standard)) · \(reason) ════════")
+        exportSessionReport(reason: reason)
+    }
+
+    /// Genera/aggiorna il report .txt della sessione. Chiamato a STOP, HARD KILL
+    /// e su chiusura dell'app (snapshot): durante il trading nessuna scrittura
+    /// su disco, i log restano solo in RAM.
+    func exportSessionReport(reason: String) {
+        guard let startedAt = sessionStartedAt else { return }
+        sessionReportURL = SessionReportBuilder.write(
+            startedAt: startedAt,
+            stoppedAt: Date(),
+            reason: reason,
+            symbols: configuredSymbols,
+            paperTrading: paperTrading,
+            logs: logs,
+            decisions: decisions,
+            account: account,
+            positions: positions
+        )
+    }
+
+    /// Cancella il report dal dispositivo dopo l'invio: zero spazio occupato.
+    func deleteSessionReport() {
+        if let url = sessionReportURL {
+            SessionReportBuilder.delete(url)
+        }
+        sessionReportURL = nil
+        log("Report di sessione eliminato dal dispositivo.")
     }
 
     func hardKill() async {
         guard !isKillInProgress else { return }
         isKillInProgress = true
         defer { isKillInProgress = false }
-        await stop()
+        await stop(reason: "HARD KILL")
         statusMessage = "Liquidazione di emergenza in corso"
         log("HARD KILL: cancellazione ordini e liquidazione avviate.")
         guard let credentials else {
@@ -286,6 +323,8 @@ final class QuantSwarmEngine: ObservableObject {
                 body: error.localizedDescription
             )
         }
+        // Rigenera il report includendo l'esito della liquidazione.
+        exportSessionReport(reason: "HARD KILL")
     }
 
     private func apply(stored: StoredCredentials) {

@@ -2,6 +2,7 @@ import SwiftUI
 
 struct TerminalDashboardView: View {
     @EnvironmentObject private var engine: QuantSwarmEngine
+    @Environment(\.scenePhase) private var scenePhase
     @State private var symbols = "SPY"
     @State private var news = ""
     @State private var showKillConfirmation = false
@@ -24,6 +25,7 @@ struct TerminalDashboardView: View {
                         calibrationPanel
                         edgePanel
                         controlPanel
+                        reportPanel
                         ordersPanel
                         settingsPanel
                         linksPanel
@@ -70,6 +72,17 @@ struct TerminalDashboardView: View {
             } message: {
                 Text("Ferma il motore, cancella tutti gli ordini e richiede ad Alpaca la chiusura a mercato di tutte le posizioni del conto configurato.")
             }
+            .onChange(of: scenePhase) { _, phase in
+                // Chiusura/app in background: report istantaneo su disco,
+                // così resta esportabile anche se iOS termina il processo.
+                if phase == .background {
+                    engine.exportSessionReport(
+                        reason: engine.isRunning
+                            ? "App chiusa con motore ancora attivo (snapshot)"
+                            : "App chiusa"
+                    )
+                }
+            }
         }
     }
 
@@ -93,6 +106,11 @@ struct TerminalDashboardView: View {
                 Text(engine.statusMessage)
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
+                if engine.isRunning, let startedAt = engine.sessionStartedAt {
+                    Text("SESSIONE AVVIATA ALLE \(startedAt.formatted(date: .omitted, time: .standard))")
+                        .font(.system(.caption2, design: .monospaced, weight: .bold))
+                        .foregroundStyle(terminalGreen)
+                }
                 if let clock = engine.marketClock {
                     Text(
                         clock.isOpen
@@ -169,6 +187,42 @@ struct TerminalDashboardView: View {
             }
         }
         .panelStyle(terminalGreen)
+    }
+
+    /// Pannello report di sessione: appare solo quando esiste un file .txt
+    /// pronto (STOP, HARD KILL o chiusura app). ESPORTA apre il menu di
+    /// condivisione iOS; ELIMINA cancella il file dopo l'invio.
+    private var reportPanel: some View {
+        Group {
+            if let url = engine.sessionReportURL {
+                VStack(alignment: .leading, spacing: 10) {
+                    panelHeader("REPORT SESSIONE · TXT", color: terminalGreen)
+                    Text(url.lastPathComponent)
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.gray)
+                    HStack(spacing: 12) {
+                        ShareLink(item: url) {
+                            Text("ESPORTA / INVIA")
+                                .font(.system(.body, design: .monospaced, weight: .bold))
+                                .frame(maxWidth: .infinity)
+                                .padding()
+                                .background(terminalGreen.opacity(0.18))
+                                .foregroundStyle(terminalGreen)
+                                .overlay(Rectangle().stroke(terminalGreen, lineWidth: 1))
+                        }
+                        Button("ELIMINA") {
+                            engine.deleteSessionReport()
+                        }
+                        .buttonStyle(TerminalButtonStyle(color: .red))
+                    }
+                    Text("Inviami il file dove preferisci, poi tocca ELIMINA: resta sempre un solo report, niente spazio sprecato.")
+                        .font(.system(.caption2, design: .monospaced))
+                        .foregroundStyle(.gray)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .panelStyle(terminalGreen)
+            }
+        }
     }
 
     private var portfolioPanel: some View {
