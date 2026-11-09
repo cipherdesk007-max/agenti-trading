@@ -1,0 +1,38 @@
+# Xcode and XcodeGen
+QuantSwarmAlphaZero.xcodeproj/
+Generated/
+DerivedData/
+build/
+Build/
+Package/
+*.xcuserstate
+xcuserdata/
+*.xcworkspace/xcuserdata/
+*.xcodeproj/xcuserdata/
+
+# Swift Package Manager
+.swiftpm/
+.build/
+Package.resolved
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Credentials and local configuration
+.env
+.env.*
+*.pem
+*.p12
+*.mobileprovision
+*.key
+secrets/
+Credentials.swift
+
+# Archives and temporary files
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.tmp
+*.log
