@@ -661,30 +661,30 @@ final class QuantSwarmEngine: ObservableObject {
             if edgeHistory.count > 500 { edgeHistory.removeFirst(edgeHistory.count - 500) }
             if !isRunning { statusMessage = "Equity \(snapshot.equityValue) USD" }
         } catch {
-            log("Portafoglio: \(error.localizedDescription)")
+            logUnlessCancelled("Portafoglio", error)
         }
         do {
             positions = try await service.positions()
         } catch {
-            log("Posizioni: \(error.localizedDescription)")
+            logUnlessCancelled("Posizioni", error)
         }
         do {
             recentOrders = try await service.recentOrders()
         } catch {
-            log("Ordini: \(error.localizedDescription)")
+            logUnlessCancelled("Ordini", error)
         }
         do {
             marketClock = try await service.clock()
             lastClockRefresh = Date()
         } catch {
-            log("Orologio mercato: \(error.localizedDescription)")
+            logUnlessCancelled("Orologio mercato", error)
         }
         if let kimiService {
             do {
                 kimiBalance = try await kimiService.balance()
                 lastBalanceRefresh = Date()
             } catch {
-                log("Crediti Kimi: \(error.localizedDescription)")
+                logUnlessCancelled("Crediti Kimi", error)
             }
         }
         computeCalibration()
@@ -703,17 +703,17 @@ final class QuantSwarmEngine: ObservableObject {
             edgeHistory.append(EdgePoint(timestamp: Date(), value: edge))
             if edgeHistory.count > 500 { edgeHistory.removeFirst(edgeHistory.count - 500) }
         } catch {
-            log("Portafoglio: \(error.localizedDescription)")
+            logUnlessCancelled("Portafoglio", error)
         }
         do {
             positions = try await service.positions()
         } catch {
-            log("Posizioni: \(error.localizedDescription)")
+            logUnlessCancelled("Posizioni", error)
         }
         do {
             recentOrders = try await service.recentOrders()
         } catch {
-            log("Ordini: \(error.localizedDescription)")
+            logUnlessCancelled("Ordini", error)
         }
         let now = Date()
         if lastClockRefresh.map({ now.timeIntervalSince($0) > 300 }) ?? true {
@@ -721,7 +721,7 @@ final class QuantSwarmEngine: ObservableObject {
                 marketClock = try await service.clock()
                 lastClockRefresh = now
             } catch {
-                log("Orologio mercato: \(error.localizedDescription)")
+                logUnlessCancelled("Orologio mercato", error)
             }
         }
         if let kimiService, lastBalanceRefresh.map({ now.timeIntervalSince($0) > 600 }) ?? true {
@@ -729,7 +729,7 @@ final class QuantSwarmEngine: ObservableObject {
                 kimiBalance = try await kimiService.balance()
                 lastBalanceRefresh = now
             } catch {
-                log("Crediti Kimi: \(error.localizedDescription)")
+                logUnlessCancelled("Crediti Kimi", error)
             }
         }
     }
@@ -741,6 +741,13 @@ final class QuantSwarmEngine: ObservableObject {
     private func log(_ message: String, agent: AgentKind = .system) {
         logs.append(AgentLogEntry(timestamp: Date(), agent: agent, message: message))
         if logs.count > 300 { logs.removeFirst(logs.count - 300) }
+    }
+
+    /// Ignora le cancellazioni: su STOP o chiusura task sono esiti attesi, non errori.
+    private func logUnlessCancelled(_ label: String, _ error: Error) {
+        if error is CancellationError { return }
+        if let urlError = error as? URLError, urlError.code == .cancelled { return }
+        log("\(label): \(error.localizedDescription)")
     }
 
     private func format(_ value: Double, fractionDigits: Int = 2) -> String {
