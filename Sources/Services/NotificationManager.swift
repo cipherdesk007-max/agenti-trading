@@ -2,8 +2,8 @@ import Foundation
 import UserNotifications
 
 /// Notifiche locali per gli eventi chiave del motore: ordine inviato,
-/// esito di un trade, HARD KILL. Nessun server push: tutto generato
-/// sul dispositivo, così l'utente può lasciare l'app in background.
+/// esito di un trade, HARD KILL, promemoria di background. Nessun server
+/// push: tutto generato sul dispositivo.
 @MainActor
 final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
     static let shared = NotificationManager()
@@ -33,6 +33,36 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
             trigger: nil
         )
         center.add(request) { _ in }
+    }
+
+    /// Notifica programmata: iOS la consegna anche se l'app è sospesa.
+    /// Usata per avvisare che il motore potrebbe essere in pausa in background.
+    func schedule(
+        identifier: String,
+        title: String,
+        body: String,
+        after seconds: TimeInterval
+    ) {
+        let content = UNMutableNotificationContent()
+        content.title = title
+        content.body = body
+        content.sound = .default
+        let trigger = UNTimeIntervalNotificationTrigger(
+            timeInterval: max(1, seconds),
+            repeats: false
+        )
+        let request = UNNotificationRequest(
+            identifier: identifier,
+            content: content,
+            trigger: trigger
+        )
+        // Sostituisce un eventuale promemoria pendente con lo stesso id.
+        center.add(request) { _ in }
+    }
+
+    func cancelPending(identifier: String) {
+        center.removePendingNotificationRequests(withIdentifiers: [identifier])
+        center.removeDeliveredNotifications(withIdentifiers: [identifier])
     }
 
     /// Mostra banner e suono anche quando l'app è in foreground.

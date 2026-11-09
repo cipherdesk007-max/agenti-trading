@@ -19,6 +19,33 @@ enum SystemLimits {
     static let maxConcurrentPositions = 3
 }
 
+/// Impostazioni operative modificabili dall'app (tab SISTEMA), persistite in
+/// UserDefaults come JSON: nessuna ricompilazione per cambiare strategia.
+/// Il motore legge questi valori a ogni ciclo, quindi le modifiche sono attive
+/// dal ciclo di decisioni successivo.
+struct StrategyConfig: Codable, Sendable {
+    /// Rischio massimo per singolo trade, in % di equity (0,25 – 2).
+    var riskPerTradePercent: Double = 1.0
+    /// Tetto di posizioni aperte simultanee (1 – 5).
+    var maxOpenPositions: Int = 3
+    /// Divisore del Kelly pieno: /4 = quarto di Kelly (2 – 8).
+    var kellyDivisor: Double = 4.0
+    /// Circuit breaker giornaliero, perdita in % di equity (0,5 – 5).
+    var dailyStopPercent: Double = 2.0
+    /// Pausa tra due cicli di decisione completi (30 – 120 s).
+    var decisionIntervalSeconds: Int = 60
+    /// Intervallo del Kimi Analyst, in minuti (2 – 15).
+    var analysisIntervalMinutes: Double = 5.0
+    /// Modello Kimi usato per decisioni e analisi (lista caricabile via API).
+    var kimiModel: String = SystemLimits.kimiModel
+    /// Tiene lo schermo acceso: il motore resta in foreground e non viene
+    /// sospeso da iOS. È l'unico modo affidabile di operare in continuo.
+    var keepScreenAwake: Bool = false
+    /// Se l'app viene chiusa col motore attivo, al riavvio la sessione
+    /// riparte da sola sugli stessi simboli.
+    var autoResumeOnLaunch: Bool = true
+}
+
 enum TradeAction: String, Codable, Sendable {
     case buy
     case sell

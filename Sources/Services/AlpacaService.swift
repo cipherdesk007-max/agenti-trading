@@ -36,6 +36,12 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
         if let date = fractional.date(from: submittedAt) { return date }
         return ISO8601DateFormatter().date(from: submittedAt)
     }
+
+    /// True se l'ordine può ancora essere annullato manualmente.
+    var isOpen: Bool {
+        ["new", "partially_filled", "accepted", "pending_new", "pending_replace",
+         "pending_cancel", "held", "done_for_day"].contains(status)
+    }
 }
 
 struct AlpacaPosition: Decodable, Sendable, Identifiable {
@@ -210,6 +216,22 @@ actor AlpacaService {
         ]
         let data = try await send(path: "/v2/orders", method: "POST", body: body)
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
+    }
+
+    /// Chiude a mercato una singola posizione (controllo manuale dal broker panel).
+    func closePosition(symbol: String) async throws {
+        guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
+        }
+        _ = try await send(path: "/v2/positions/\(escaped)", method: "DELETE")
+    }
+
+    /// Annulla un singolo ordine aperto (controllo manuale dal broker panel).
+    func cancelOrder(id: String) async throws {
+        guard let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw QuantSwarmError.invalidServerResponse("Order ID non codificabile")
+        }
+        _ = try await send(path: "/v2/orders/\(escaped)", method: "DELETE")
     }
 
     func cancelAllAndFlatten() async throws {
