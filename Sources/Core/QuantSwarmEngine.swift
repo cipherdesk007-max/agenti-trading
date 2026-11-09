@@ -45,6 +45,9 @@ final class QuantSwarmEngine: ObservableObject {
     private var configuredNews = ""
     private var baselineEquity: Double?
     private var waitingLogEmitted: Set<String> = []
+    private var staleLogEmitted: Set<String> = []
+    private var lastClockRefresh: Date?
+    private var lastBalanceRefresh: Date?
 
     init(
         keychain: KeychainManager,
@@ -192,6 +195,7 @@ final class QuantSwarmEngine: ObservableObject {
         configuredNews = news.trimmingCharacters(in: .whitespacesAndNewlines)
         snapshots = [:]
         waitingLogEmitted = []
+        staleLogEmitted = []
         isRunning = true
         statusMessage = "Sessione \(credentials.paperTrading ? "paper" : "live") attiva"
         background.start()
@@ -284,7 +288,7 @@ final class QuantSwarmEngine: ObservableObject {
     private func analysisLoop(kimi: KimiService) async {
         while isRunning && !Task.isCancelled {
             await refreshTradeRecords()
-            await refreshPortfolio()
+            await refreshPortfolioThrottled()
             for symbol in configuredSymbols {
                 guard isRunning && !Task.isCancelled else { break }
                 guard let snapshot = snapshots[symbol], let atr = snapshot.atr14 else {
@@ -295,6 +299,19 @@ final class QuantSwarmEngine: ObservableObject {
                     continue
                 }
                 waitingLogEmitted.remove(symbol)
+                let dataAge = Date().timeIntervalSince(snapshot.receivedAt)
+                guard dataAge <= 120 else {
+                    if !staleLogEmitted.contains(symbol) {
+                        staleLogEmitted.insert(symbol)
+                        log(
+                            "\(symbol): dati fermi da \(Int(dataAge)) s; analisi Kimi in pausa "
+                                + "(mercato chiuso o stream fermo), crediti risparmiati.",
+                            agent: .scout
+                        )
+                    }
+                    continue
+                }
+                staleLogEmitted.remove(symbol)
                 log(
                     "\(symbol): prezzo \(format(snapshot.lastPrice)), ATR \(format(atr)) "
                         + "→ dati inviati a Kimi.",
@@ -358,10 +375,11 @@ final class QuantSwarmEngine: ObservableObject {
         let service = AlpacaService(credentials: credentials.alpaca)
         do {
             var descriptor = FetchDescriptor<TradeRecord>(
+                predicate: #Predicate<TradeRecord> { !$0.outcomeRecorded },
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
             )
             descriptor.fetchLimit = 100
-            let records = try modelContext.fetch(descriptor).filter { !$0.outcomeRecorded }
+            let records = try modelContext.fetch(descriptor)
             for record in records {
                 do {
                     let order = try await service.order(id: record.orderID)
@@ -449,12 +467,57 @@ final class QuantSwarmEngine: ObservableObject {
         }
         do {
             marketClock = try await service.clock()
+            lastClockRefresh = Date()
         } catch {
             log("Orologio mercato: \(error.localizedDescription)")
         }
         if let kimiService {
             do {
                 kimiBalance = try await kimiService.balance()
+                lastBalanceRefresh = Date()
+            } catch {
+                log("Crediti Kimi: \(error.localizedDescription)")
+            }
+        }
+    }
+
+    /// Variante con throttling per il ciclo automatico: orologio ogni 5 min, crediti ogni 10 min.
+    private func refreshPortfolioThrottled() async {
+        guard let credentials else { return }
+        let service = AlpacaService(credentials: credentials.alpaca)
+        do {
+            let snapshot = try await service.account()
+            account = snapshot
+            if baselineEquity == nil { baselineEquity = snapshot.equityValue }
+            let edge = snapshot.equityValue - (baselineEquity ?? snapshot.equityValue)
+            edgeHistory.append(EdgePoint(timestamp: Date(), value: edge))
+            if edgeHistory.count > 500 { edgeHistory.removeFirst(edgeHistory.count - 500) }
+        } catch {
+            log("Portafoglio: \(error.localizedDescription)")
+        }
+        do {
+            positions = try await service.positions()
+        } catch {
+            log("Posizioni: \(error.localizedDescription)")
+        }
+        do {
+            recentOrders = try await service.recentOrders()
+        } catch {
+            log("Ordini: \(error.localizedDescription)")
+        }
+        let now = Date()
+        if lastClockRefresh.map({ now.timeIntervalSince($0) > 300 }) ?? true {
+            do {
+                marketClock = try await service.clock()
+                lastClockRefresh = now
+            } catch {
+                log("Orologio mercato: \(error.localizedDescription)")
+            }
+        }
+        if let kimiService, lastBalanceRefresh.map({ now.timeIntervalSince($0) > 600 }) ?? true {
+            do {
+                kimiBalance = try await kimiService.balance()
+                lastBalanceRefresh = now
             } catch {
                 log("Crediti Kimi: \(error.localizedDescription)")
             }
