@@ -1,6 +1,5 @@
 import BackgroundTasks
 import CoreLocation
-import UIKit
 
 @MainActor
 final class BackgroundPersistenceManager: NSObject, CLLocationManagerDelegate {
@@ -46,7 +45,6 @@ final class BackgroundPersistenceManager: NSObject, CLLocationManagerDelegate {
         running = true
         scheduleNextRefresh()
         applyLocationAuthorization()
-        UIApplication.shared.registerForRemoteNotifications()
     }
 
     func stop() {

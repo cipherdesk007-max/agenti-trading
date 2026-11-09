@@ -18,15 +18,15 @@ struct TerminalDashboardView: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         statusPanel
-                        portfolioPanel
-                        kimiPanel
-                        positionsPanel
-                        decisionsPanel
-                        calibrationPanel
-                        edgePanel
                         controlPanel
                         reportPanel
+                        positionsPanel
+                        portfolioPanel
+                        decisionsPanel
                         ordersPanel
+                        edgePanel
+                        kimiPanel
+                        calibrationPanel
                         settingsPanel
                         linksPanel
                         logPanel
@@ -107,9 +107,14 @@ struct TerminalDashboardView: View {
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
                 if engine.isRunning, let startedAt = engine.sessionStartedAt {
-                    Text("SESSIONE AVVIATA ALLE \(startedAt.formatted(date: .omitted, time: .standard))")
+                    TimelineView(.periodic(from: .now, by: 1)) { context in
+                        Text(
+                            "AVVIATA \(startedAt.formatted(date: .omitted, time: .standard)) "
+                                + "· ATTIVA DA \(elapsed(from: startedAt, to: context.date))"
+                        )
                         .font(.system(.caption2, design: .monospaced, weight: .bold))
                         .foregroundStyle(terminalGreen)
+                    }
                 }
                 if let clock = engine.marketClock {
                     Text(
@@ -129,6 +134,14 @@ struct TerminalDashboardView: View {
     private func formatDate(_ date: Date?) -> String {
         guard let date else { return "n/d" }
         return date.formatted(date: .abbreviated, time: .shortened)
+    }
+
+    private func elapsed(from start: Date, to end: Date) -> String {
+        let seconds = max(0, Int(end.timeIntervalSince(start)))
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        let rest = seconds % 60
+        return String(format: "%02d:%02d:%02d", hours, minutes, rest)
     }
 
     private var edgePanel: some View {
@@ -586,11 +599,13 @@ struct TerminalDashboardView: View {
 
     private func money(_ value: Double?) -> String {
         guard let value else { return "—" }
-        return String(
-            format: "%.2f",
-            locale: Locale(identifier: "en_US_POSIX"),
-            value
-        )
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.numberStyle = .decimal
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value))
+            ?? String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
     private func signedMoney(_ value: Double) -> String {
