@@ -19,7 +19,8 @@ enum SessionReportBuilder {
         logs: [AgentLogEntry],
         decisions: [DecisionEntry],
         account: AccountSnapshot?,
-        positions: [AlpacaPosition]
+        positions: [AlpacaPosition],
+        performance: PerformanceStats?
     ) -> URL? {
         guard let directory = FileManager.default.urls(
             for: .documentDirectory,
@@ -36,7 +37,8 @@ enum SessionReportBuilder {
             logs: logs,
             decisions: decisions,
             account: account,
-            positions: positions
+            positions: positions,
+            performance: performance
         )
         do {
             // Un solo report alla volta: elimina i precedenti prima di scrivere.
@@ -90,7 +92,8 @@ enum SessionReportBuilder {
         logs: [AgentLogEntry],
         decisions: [DecisionEntry],
         account: AccountSnapshot?,
-        positions: [AlpacaPosition]
+        positions: [AlpacaPosition],
+        performance: PerformanceStats?
     ) -> String {
         let rule = String(repeating: "=", count: 46)
         let thin = String(repeating: "-", count: 46)
@@ -116,6 +119,26 @@ enum SessionReportBuilder {
             }
         } else {
             lines.append("Dati conto non disponibili.")
+        }
+        lines.append("")
+
+        lines.append("METRICHE PERFORMANCE (trade chiusi)")
+        lines.append(thin)
+        if let performance {
+            lines.append("Trade chiusi:    \(performance.completedTrades)")
+            if let winRate = performance.winRate {
+                lines.append("Win rate:        \(fmt(winRate * 100))%")
+            }
+            let factor = performance.profitFactor.map { fmt($0) } ?? "infinito (nessuna perdita)"
+            lines.append("Profit factor:   \(factor)")
+            if let expectancy = performance.expectancy {
+                lines.append("Expectancy:      \(signed(expectancy)) USD/trade")
+            }
+            if let maxDrawdown = performance.maxDrawdown {
+                lines.append("Max drawdown:    \(fmt(maxDrawdown)) USD")
+            }
+        } else {
+            lines.append("Nessun trade chiuso con esito registrato.")
         }
         lines.append("")
 
