@@ -6,7 +6,12 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+
+# Un push nuovo annulla i run vecchi ancora in coda: niente accumuli.
+concurrency:
+  group: ios-ipa
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -18,7 +23,6 @@ jobs:
 
       - name: Install XcodeGen
         run: |
-          brew update
           brew install xcodegen
           xcodegen --version
 
@@ -49,11 +53,24 @@ jobs:
           cd Package
           zip -qry QuantSwarm-Alpha-Zero.ipa Payload
           unzip -t QuantSwarm-Alpha-Zero.ipa
+          mv QuantSwarm-Alpha-Zero.ipa "$GITHUB_WORKSPACE/"
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v7
         with:
           name: QuantSwarm-Alpha-Zero-unsigned
-          path: Package/QuantSwarm-Alpha-Zero.ipa
+          path: QuantSwarm-Alpha-Zero.ipa
           if-no-files-found: error
           retention-days: 14
+
+      # Come FMLAB: l'IPA esce direttamente nella release "ultima",
+      # URL stabile per LiveContainer (Installa dall'URL) e aggiornamento sopra la vecchia.
+      - name: Pubblica release "ultima"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete ultima --yes --cleanup-tag 2>/dev/null || true
+          gh release create ultima QuantSwarm-Alpha-Zero.ipa \
+            --target "$GITHUB_SHA" --latest \
+            --title "QuantSwarm Alpha Zero (ultima)" \
+            --notes "IPA non firmato. LiveContainer → + → Installa dall'URL: https://github.com/cipherdesk007-max/agenti-trading/releases/download/ultima/QuantSwarm-Alpha-Zero.ipa — se la repo resta privata: scarica questo file e usa Installa da IPA. Commit: $GITHUB_SHA"
