@@ -15,12 +15,19 @@ struct TerminalDashboardView: View {
                 ScrollView {
                     VStack(spacing: 16) {
                         statusPanel
+                        portfolioPanel
+                        positionsPanel
+                        decisionsPanel
                         edgePanel
                         controlPanel
+                        ordersPanel
                         logPanel
                         killButton
                     }
                     .padding()
+                }
+                .refreshable {
+                    await engine.refreshPortfolio()
                 }
             }
             .navigationTitle("QUANTSWARM")
@@ -126,24 +133,206 @@ struct TerminalDashboardView: View {
         .panelStyle(terminalGreen)
     }
 
+    private var portfolioPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("PORTAFOGLIO · USD")
+                    .font(.system(.caption, design: .monospaced, weight: .bold))
+                    .foregroundStyle(terminalGreen)
+                Spacer()
+                Button("AGGIORNA") {
+                    Task { await engine.refreshPortfolio() }
+                }
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .foregroundStyle(terminalGreen)
+                .disabled(engine.isKillInProgress)
+            }
+            if let account = engine.account {
+                portfolioRow("EQUITY", money(account.equityValue), color: .white)
+                portfolioRow("CASH", money(account.cashValue), color: .white)
+                portfolioRow("BUYING POWER", money(account.buyingPowerValue), color: .white)
+                if let dayPnL = account.dayPnL {
+                    portfolioRow(
+                        "P&L OGGI",
+                        signedMoney(dayPnL),
+                        color: dayPnL >= 0 ? terminalGreen : .red
+                    )
+                }
+            } else {
+                Text("Nessun dato: tocca AGGIORNA per leggere il conto.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+            }
+        }
+        .panelStyle(terminalGreen)
+        .task {
+            await engine.refreshPortfolio()
+        }
+    }
+
+    private func portfolioRow(_ label: String, _ value: String, color: Color) -> some View {
+        HStack {
+            Text(label)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+            Spacer()
+            Text(value)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(color)
+        }
+    }
+
+    private var positionsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("POSIZIONI APERTE")
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(terminalGreen)
+            if engine.positions.isEmpty {
+                Text("Nessuna posizione aperta.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+            } else {
+                ForEach(engine.positions) { position in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(position.symbol)
+                                .font(.system(.caption, design: .monospaced, weight: .bold))
+                                .foregroundStyle(.white)
+                            Text((position.side ?? "long").uppercased())
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(position.side == "short" ? .red : terminalGreen)
+                            Spacer()
+                            Text("qty \(trimmed(position.quantity))")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.gray)
+                        }
+                        HStack {
+                            Text(
+                                "entry \(money(position.averageEntryPriceValue)) → ora \(money(position.currentPriceValue))"
+                            )
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.gray)
+                            Spacer()
+                            Text(signedMoney(position.unrealizedPLValue))
+                                .font(.system(.caption, design: .monospaced, weight: .bold))
+                                .foregroundStyle(position.unrealizedPLValue >= 0 ? terminalGreen : .red)
+                        }
+                    }
+                    .padding(8)
+                    .background(Color(white: 0.04))
+                    .overlay(Rectangle().stroke(terminalGreen.opacity(0.2), lineWidth: 1))
+                }
+            }
+        }
+        .panelStyle(terminalGreen)
+    }
+
+    private var decisionsPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("KIMI BRAIN · ULTIME DECISIONI")
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(brainColor)
+            if engine.decisions.isEmpty {
+                Text("Nessuna decisione ancora: servono 14 barre e motore avviato.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+            } else {
+                ForEach(engine.decisions.suffix(5).reversed()) { entry in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(entry.timestamp.formatted(date: .omitted, time: .standard))
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.gray)
+                            Text(entry.decision.symbol)
+                                .font(.system(.caption, design: .monospaced, weight: .bold))
+                                .foregroundStyle(.white)
+                            Text(entry.decision.action.rawValue.uppercased())
+                                .font(.system(.caption, design: .monospaced, weight: .bold))
+                                .foregroundStyle(actionColor(entry.decision.action))
+                            Spacer()
+                            Text("\(Int(entry.decision.confidence * 100))%")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(brainColor)
+                        }
+                        Text(entry.decision.rationale)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.8))
+                            .fixedSize(horizontal: false, vertical: true)
+                        if entry.decision.action != .hold {
+                            Text(
+                                "entry \(money(entry.decision.entryPrice)) · stop \(money(entry.decision.stopLoss)) · target \(money(entry.decision.takeProfit))"
+                            )
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.gray)
+                        }
+                    }
+                    .padding(8)
+                    .background(Color(white: 0.04))
+                    .overlay(Rectangle().stroke(brainColor.opacity(0.25), lineWidth: 1))
+                }
+            }
+        }
+        .panelStyle(brainColor)
+    }
+
+    private var ordersPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("ORDINI RECENTI")
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(terminalGreen)
+            if engine.recentOrders.isEmpty {
+                Text("Nessun ordine inviato in questa sessione di conto.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+            } else {
+                ForEach(engine.recentOrders.prefix(8)) { order in
+                    HStack(spacing: 6) {
+                        Text(order.submittedDate?.formatted(date: .omitted, time: .standard) ?? "--:--")
+                            .foregroundStyle(.gray)
+                        Text(order.side.uppercased())
+                            .foregroundStyle(order.side == "buy" ? terminalGreen : .red)
+                        Text("\(order.symbol) x\(trimmed(order.filledQuantity ?? order.quantity ?? "0"))")
+                            .foregroundStyle(.white)
+                        Spacer()
+                        if let price = order.filledAveragePriceValue {
+                            Text("@ \(money(price))")
+                                .foregroundStyle(.gray)
+                        }
+                        Text(order.status.uppercased())
+                            .foregroundStyle(statusColor(order.status))
+                    }
+                    .font(.system(.caption2, design: .monospaced))
+                }
+            }
+        }
+        .panelStyle(terminalGreen)
+    }
+
     private var logPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("ATOMIC AGENT LOG")
+            Text("AGENT SWARM FEED")
                 .font(.system(.caption, design: .monospaced, weight: .bold))
                 .foregroundStyle(terminalGreen)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(engine.logs) { entry in
-                            Text("\(entry.timestamp.formatted(date: .omitted, time: .standard))  \(entry.message)")
-                                .font(.system(.caption2, design: .monospaced))
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                                .id(entry.id)
+                            HStack(alignment: .top, spacing: 6) {
+                                Text(entry.timestamp.formatted(date: .omitted, time: .standard))
+                                    .foregroundStyle(.gray)
+                                Text(entry.agent.rawValue)
+                                    .foregroundStyle(agentColor(entry.agent))
+                                    .frame(width: 44, alignment: .leading)
+                                Text(entry.message)
+                                    .foregroundStyle(.white)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                            .font(.system(.caption2, design: .monospaced))
+                            .id(entry.id)
                         }
                     }
                 }
-                .frame(height: 220)
+                .frame(height: 260)
                 .onChange(of: engine.logs.count) { _, _ in
                     if let id = engine.logs.last?.id {
                         withAnimation { proxy.scrollTo(id, anchor: .bottom) }
@@ -152,6 +341,56 @@ struct TerminalDashboardView: View {
             }
         }
         .panelStyle(terminalGreen)
+    }
+
+    private var brainColor: Color {
+        Color(red: 0.35, green: 0.85, blue: 1.0)
+    }
+
+    private func agentColor(_ agent: AgentKind) -> Color {
+        switch agent {
+        case .scout: return terminalGreen
+        case .brain: return brainColor
+        case .risk: return .orange
+        case .system: return .gray
+        }
+    }
+
+    private func actionColor(_ action: TradeAction) -> Color {
+        switch action {
+        case .buy: return terminalGreen
+        case .sell: return .red
+        case .hold: return .gray
+        }
+    }
+
+    private func statusColor(_ status: String) -> Color {
+        switch status {
+        case "filled": return terminalGreen
+        case "canceled", "expired", "rejected": return .gray
+        default: return .orange
+        }
+    }
+
+    private func money(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(
+            format: "%.2f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            value
+        )
+    }
+
+    private func signedMoney(_ value: Double) -> String {
+        let sign = value >= 0 ? "+" : "-"
+        return sign + money(abs(value))
+    }
+
+    private func trimmed(_ raw: String) -> String {
+        guard let value = Double(raw) else { return raw }
+        return value == value.rounded()
+            ? String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), value)
+            : String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
     private var killButton: some View {
