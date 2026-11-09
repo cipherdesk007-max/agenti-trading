@@ -5,6 +5,7 @@ struct TerminalDashboardView: View {
     @State private var symbols = "SPY"
     @State private var news = ""
     @State private var showKillConfirmation = false
+    @State private var pulse = false
 
     private let terminalGreen = Color(red: 0.1, green: 1.0, blue: 0.55)
 
@@ -23,6 +24,7 @@ struct TerminalDashboardView: View {
                         controlPanel
                         ordersPanel
                         settingsPanel
+                        linksPanel
                         logPanel
                         killButton
                     }
@@ -32,11 +34,15 @@ struct TerminalDashboardView: View {
                     await engine.refreshPortfolio()
                 }
             }
-            .navigationTitle("QUANTSWARM")
             .navigationBarTitleDisplayMode(.inline)
             .toolbarBackground(.black, for: .navigationBar)
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Text("QUANTSWARM · ALPHA ZERO")
+                        .font(.system(.headline, design: .monospaced, weight: .black))
+                        .foregroundStyle(terminalGreen)
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("LOGOUT") {
                         Task { await engine.logout() }
@@ -62,6 +68,14 @@ struct TerminalDashboardView: View {
             Circle()
                 .fill(engine.isRunning ? terminalGreen : .gray)
                 .frame(width: 10, height: 10)
+                .opacity(engine.isRunning ? (pulse ? 1.0 : 0.35) : 1.0)
+                .animation(
+                    engine.isRunning
+                        ? .easeInOut(duration: 0.9).repeatForever(autoreverses: true)
+                        : .default,
+                    value: pulse
+                )
+                .onAppear { pulse = true }
             VStack(alignment: .leading, spacing: 4) {
                 Text(engine.paperTrading ? "PAPER ENVIRONMENT" : "LIVE CAPITAL")
                     .font(.system(.caption, design: .monospaced, weight: .bold))
@@ -91,9 +105,7 @@ struct TerminalDashboardView: View {
 
     private var edgePanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("EDGE · EQUITY DELTA USD")
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(terminalGreen)
+            panelHeader("EDGE · EQUITY DELTA USD", color: terminalGreen)
             EdgeChart(points: engine.edgeHistory, color: terminalGreen)
                 .frame(height: 180)
         }
@@ -152,9 +164,7 @@ struct TerminalDashboardView: View {
     private var portfolioPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("PORTAFOGLIO · USD")
-                    .font(.system(.caption, design: .monospaced, weight: .bold))
-                    .foregroundStyle(terminalGreen)
+                panelHeader("PORTAFOGLIO · USD", color: terminalGreen)
                 Spacer()
                 Button("AGGIORNA") {
                     Task { await engine.refreshPortfolio() }
@@ -200,9 +210,7 @@ struct TerminalDashboardView: View {
 
     private var kimiPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("KIMI ACCOUNT · CREDITI USD")
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(brainColor)
+            panelHeader("KIMI ACCOUNT · CREDITI USD", color: brainColor)
             if let balance = engine.kimiBalance {
                 portfolioRow("DISPONIBILE", money(balance.availableBalance), color: .white)
                 portfolioRow("VOUCHER", money(balance.voucherBalance), color: .white)
@@ -222,9 +230,7 @@ struct TerminalDashboardView: View {
 
     private var positionsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("POSIZIONI APERTE")
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(terminalGreen)
+            panelHeader("POSIZIONI APERTE", color: terminalGreen)
             if engine.positions.isEmpty {
                 Text("Nessuna posizione aperta.")
                     .font(.system(.caption2, design: .monospaced))
@@ -267,9 +273,7 @@ struct TerminalDashboardView: View {
 
     private var decisionsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("KIMI BRAIN · ULTIME DECISIONI")
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(brainColor)
+            panelHeader("KIMI BRAIN · ULTIME DECISIONI", color: brainColor)
             if engine.decisions.isEmpty {
                 Text("Nessuna decisione ancora: servono \(SystemLimits.atrPeriod) barre e motore avviato.")
                     .font(.system(.caption2, design: .monospaced))
@@ -315,9 +319,7 @@ struct TerminalDashboardView: View {
 
     private var ordersPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("ORDINI RECENTI")
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(terminalGreen)
+            panelHeader("ORDINI RECENTI", color: terminalGreen)
             if engine.recentOrders.isEmpty {
                 Text("Nessun ordine inviato in questa sessione di conto.")
                     .font(.system(.caption2, design: .monospaced))
@@ -348,9 +350,7 @@ struct TerminalDashboardView: View {
 
     private var settingsPanel: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("CONFIG SISTEMA")
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(terminalGreen)
+            panelHeader("CONFIG SISTEMA", color: terminalGreen)
             settingRow("MODELLO KIMI", SystemLimits.kimiModel)
             settingRow("API KIMI", SystemLimits.kimiAPIHost)
             settingRow(
@@ -360,7 +360,7 @@ struct TerminalDashboardView: View {
             settingRow("STREAM DATI", SystemLimits.marketStreamHost)
             settingRow("RISCHIO MAX / TRADE", "1% equity")
             settingRow("KELLY", "frazionato /4")
-            settingRow("LATENZA MAX ORDINI", "150 ms")
+            settingRow("LATENZA MAX ORDINI", "\(Int(SystemLimits.maximumLatencyMilliseconds)) ms")
             settingRow("DEVIAZIONE MAX PREZZO", "0,05%")
             settingRow("ATR", "\(SystemLimits.atrPeriod) barre da 1 min")
             settingRow("CICLO DECISIONI", "\(SystemLimits.decisionIntervalSeconds) s")
@@ -380,11 +380,48 @@ struct TerminalDashboardView: View {
         .font(.system(.caption2, design: .monospaced))
     }
 
+    private var linksPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            panelHeader("LINK RAPIDI", color: terminalGreen)
+            Link(destination: URL(string: "https://app.alpaca.markets")!) {
+                linkRow("ALPACA DASHBOARD · ordini e posizioni", color: terminalGreen)
+            }
+            Link(destination: URL(string: "https://platform.kimi.ai")!) {
+                linkRow("KIMI CONSOLE · crediti e API key", color: brainColor)
+            }
+        }
+        .panelStyle(terminalGreen)
+    }
+
+    private func linkRow(_ title: String, color: Color) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .foregroundStyle(color)
+            Spacer()
+            Text("↗ SAFARI")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+        }
+        .padding(10)
+        .background(Color(white: 0.04))
+        .overlay(Rectangle().stroke(color.opacity(0.35), lineWidth: 1))
+    }
+
+    private func panelHeader(_ title: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Rectangle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(title)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(color)
+        }
+    }
+
     private var logPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("AGENT SWARM FEED")
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(terminalGreen)
+            panelHeader("AGENT SWARM FEED", color: terminalGreen)
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
