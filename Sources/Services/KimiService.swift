@@ -37,14 +37,24 @@ private struct BalanceResponse: Decodable {
     let data: KimiBalance?
 }
 
+private struct ModelsListResponse: Decodable {
+    struct ModelEntry: Decodable {
+        let id: String
+    }
+    let data: [ModelEntry]
+}
+
 actor KimiService {
     private let apiKey: String
-    private let model = SystemLimits.kimiModel
+    /// Modello usato per decisioni e analisi; configurabile dalle impostazioni
+    /// dell'app (tab SISTEMA) senza ricompilare.
+    private var model: String
     private let endpoint = URL(string: "https://api.moonshot.ai/v1/chat/completions")!
     private let session: URLSession
 
-    init(apiKey: String) {
+    init(apiKey: String, model: String = SystemLimits.kimiModel) {
         self.apiKey = apiKey
+        self.model = model
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 90
         configuration.timeoutIntervalForResource = 120
@@ -53,13 +63,32 @@ actor KimiService {
         session = URLSession(configuration: configuration)
     }
 
+    func setModel(_ newModel: String) {
+        let trimmed = newModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        model = trimmed
+    }
+
     func validateCredentials() async throws {
+        _ = try await listModels()
+    }
+
+    /// Elenco reale dei modelli disponibili sulla API key configurata:
+    /// serve al picker del tab SISTEMA, così la scelta del modello si fa
+    /// dall'app senza aprire la console web Moonshot.
+    func listModels() async throws -> [String] {
         let url = URL(string: "https://api.moonshot.ai/v1/models")!
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
-        _ = try await sendWithRetry(request)
+        let data = try await sendWithRetry(request)
+        let response = try JSONDecoder().decode(ModelsListResponse.self, from: data)
+        let ids = response.data.map(\.id).sorted()
+        guard !ids.isEmpty else {
+            throw QuantSwarmError.invalidServerResponse("Lista modelli Kimi vuota")
+        }
+        return ids
     }
 
     func balance() async throws -> KimiBalance {

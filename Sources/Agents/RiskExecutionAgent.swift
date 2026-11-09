@@ -1,8 +1,6 @@
 import Foundation
 
 actor RiskExecutionAgent {
-    private let maximumRiskFraction = SystemLimits.maximumRiskFraction
-    private let fractionalKellyDivisor = SystemLimits.fractionalKellyDivisor
     private let maximumLatencyMilliseconds = SystemLimits.maximumLatencyMilliseconds
     private let maximumPriceDeviation = SystemLimits.maximumPriceDeviation
     private var logHandler: (@Sendable (String) -> Void)?
@@ -23,10 +21,15 @@ actor RiskExecutionAgent {
         )
     }
 
+    /// Esegue un segnale non-HOLD con tutti i controlli di rischio.
+    /// `riskFraction` e `kellyDivisor` arrivano dalle impostazioni dell'app
+    /// (StrategyConfig): il sizing si aggiorna senza ricompilare.
     func execute(
         decision: KimiDecision,
         snapshot: MarketSnapshot,
-        credentials: AlpacaCredentials
+        credentials: AlpacaCredentials,
+        riskFraction: Double = SystemLimits.maximumRiskFraction,
+        kellyDivisor: Double = SystemLimits.fractionalKellyDivisor
     ) async throws -> ExecutionReceipt? {
         guard decision.action != .hold else { return nil }
         guard decision.isExecutable else {
@@ -40,6 +43,8 @@ actor RiskExecutionAgent {
                 "Feed oltre \(format(maximumLatencyMilliseconds, fractionDigits: 0)) ms"
             )
         }
+        let riskBudgetFraction = min(max(riskFraction, 0.000_1), 0.05)
+        let kellyCut = max(kellyDivisor, 1)
 
         let deviation = abs(snapshot.lastPrice - decision.entryPrice) / decision.entryPrice
         guard deviation <= maximumPriceDeviation else {
@@ -86,12 +91,12 @@ actor RiskExecutionAgent {
         let probability = decision.winProbability
         let payoff = decision.payoffRatio
         let fullKelly = max(0, probability - ((1 - probability) / payoff))
-        let fractionalKelly = fullKelly / fractionalKellyDivisor
+        let fractionalKelly = fullKelly / kellyCut
         guard fractionalKelly > 0 else {
             throw QuantSwarmError.riskRejected("Kelly frazionato non positivo")
         }
 
-        let riskBudget = account.equityValue * maximumRiskFraction
+        let riskBudget = account.equityValue * riskBudgetFraction
         let riskQuantity = riskBudget / riskPerShare
         let kellyQuantity = (account.equityValue * fractionalKelly) / limitPrice
         let availableCapital = decision.action == .buy
@@ -103,12 +108,14 @@ actor RiskExecutionAgent {
             throw QuantSwarmError.riskRejected("Quantità inferiore a un'azione intera")
         }
         guard quantity * riskPerShare <= riskBudget + 0.000_001 else {
-            throw QuantSwarmError.riskRejected("Rischio calcolato oltre l'1%")
+            throw QuantSwarmError.riskRejected(
+                "Rischio calcolato oltre il \(format(riskBudgetFraction * 100))%"
+            )
         }
         emit(
-            "Kelly \(format(fullKelly * 100))% → /4 = \(format(fractionalKelly * 100))%; "
+            "Kelly \(format(fullKelly * 100))% → /\(format(kellyCut, fractionDigits: 0)) = \(format(fractionalKelly * 100))%; "
                 + "rischio/azione \(format(riskPerShare)); qty \(format(quantity, fractionDigits: 0)) "
-                + "entro l'1% di equity. Invio bracket."
+                + "entro il \(format(riskBudgetFraction * 100))% di equity. Invio bracket."
         )
 
         let order = try await service.submitBracket(
