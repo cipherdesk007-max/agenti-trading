@@ -119,10 +119,8 @@ actor AlpacaService {
         query: [URLQueryItem] = [],
         body: [String: Any]? = nil
     ) async throws -> Data {
-        guard var components = URLComponents(
-            url: credentials.tradingBaseURL.appendingPathComponent(path),
-            resolvingAgainstBaseURL: false
-        ) else {
+        let absoluteURL = credentials.tradingBaseURL.absoluteString + path
+        guard var components = URLComponents(string: absoluteURL) else {
             throw QuantSwarmError.invalidServerResponse("URL Alpaca non valido")
         }
         if !query.isEmpty { components.queryItems = query }
