@@ -5,6 +5,7 @@ struct TerminalDashboardView: View {
     @State private var symbols = "SPY"
     @State private var news = ""
     @State private var showKillConfirmation = false
+    @State private var showLogoutConfirmation = false
     @State private var pulse = false
 
     private let terminalGreen = Color(red: 0.1, green: 1.0, blue: 0.55)
@@ -46,12 +47,20 @@ struct TerminalDashboardView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("LOGOUT") {
-                        Task { await engine.logout() }
+                        showLogoutConfirmation = true
                     }
                     .font(.system(.caption, design: .monospaced))
                     .foregroundStyle(terminalGreen)
                     .disabled(engine.isKillInProgress)
                 }
+            }
+            .alert("LOGOUT", isPresented: $showLogoutConfirmation) {
+                Button("ANNULLA", role: .cancel) {}
+                Button("DISCONNETTI", role: .destructive) {
+                    Task { await engine.logout() }
+                }
+            } message: {
+                Text("Ferma il motore, elimina le credenziali dal Keychain e richiede un nuovo inserimento con Face ID. Le posizioni aperte restano invariate sul broker.")
             }
             .alert("HARD KILL SWITCH", isPresented: $showKillConfirmation) {
                 Button("ANNULLA", role: .cancel) {}
@@ -229,6 +238,82 @@ struct TerminalDashboardView: View {
         .panelStyle(brainColor)
     }
 
+    private var settingsPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            panelHeader("CONFIG SISTEMA", color: terminalGreen)
+            settingRow("MODELLO KIMI", SystemLimits.kimiModel)
+            settingRow("API KIMI", SystemLimits.kimiAPIHost)
+            settingRow(
+                "BROKER",
+                engine.paperTrading ? "paper-api.alpaca.markets" : "api.alpaca.markets"
+            )
+            settingRow("STREAM DATI", SystemLimits.marketStreamHost)
+            settingRow("RISCHIO MAX / TRADE", "1% equity")
+            settingRow("KELLY", "frazionato /4")
+            settingRow("LATENZA MAX ORDINI", "\(Int(SystemLimits.maximumLatencyMilliseconds)) ms")
+            settingRow("DEVIAZIONE MAX PREZZO", "0,05%")
+            settingRow("ATR", "\(SystemLimits.atrPeriod) barre da 1 min")
+            settingRow("CICLO DECISIONI", "\(SystemLimits.decisionIntervalSeconds) s")
+            settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
+            settingRow("FLAT BY CLOSE", "chiusura totale a T-10 min")
+            settingRow("STOP GIORNALIERO", "-2% equity = pausa fino a domani")
+            settingRow("MAX POSIZIONI", "\(SystemLimits.maxConcurrentPositions) simultanee")
+            settingRow("FILTRO REGIME", "ATR oltre 2σ = pausa")
+        }
+        .panelStyle(terminalGreen)
+    }
+
+    private func settingRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .foregroundStyle(.gray)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.system(.caption2, design: .monospaced))
+    }
+
+    private var linksPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            panelHeader("LINK RAPIDI", color: terminalGreen)
+            Link(destination: URL(string: "https://app.alpaca.markets")!) {
+                linkRow("ALPACA DASHBOARD · ordini e posizioni", color: terminalGreen)
+            }
+            Link(destination: URL(string: "https://platform.kimi.ai")!) {
+                linkRow("KIMI CONSOLE · crediti e API key", color: brainColor)
+            }
+        }
+        .panelStyle(terminalGreen)
+    }
+
+    private func linkRow(_ title: String, color: Color) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .foregroundStyle(color)
+            Spacer()
+            Text("↗ SAFARI")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+        }
+        .padding(10)
+        .background(Color(white: 0.04))
+        .overlay(Rectangle().stroke(color.opacity(0.35), lineWidth: 1))
+    }
+
+    private func panelHeader(_ title: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Rectangle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(title)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(color)
+        }
+    }
+
     private var positionsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("POSIZIONI APERTE", color: terminalGreen)
@@ -276,7 +361,7 @@ struct TerminalDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("KIMI BRAIN · ULTIME DECISIONI", color: brainColor)
             if engine.decisions.isEmpty {
-                Text("Nessuna decisione ancora: servono \(SystemLimits.atrPeriod) barre e motore avviato.")
+                Text("Nessuna decisione ancora: servono 14 barre e motore avviato.")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
             } else {
@@ -381,82 +466,6 @@ struct TerminalDashboardView: View {
             }
         }
         .panelStyle(terminalGreen)
-    }
-
-    private var settingsPanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            panelHeader("CONFIG SISTEMA", color: terminalGreen)
-            settingRow("MODELLO KIMI", SystemLimits.kimiModel)
-            settingRow("API KIMI", SystemLimits.kimiAPIHost)
-            settingRow(
-                "BROKER",
-                engine.paperTrading ? "paper-api.alpaca.markets" : "api.alpaca.markets"
-            )
-            settingRow("STREAM DATI", SystemLimits.marketStreamHost)
-            settingRow("RISCHIO MAX / TRADE", "1% equity")
-            settingRow("KELLY", "frazionato /4")
-            settingRow("LATENZA MAX ORDINI", "\(Int(SystemLimits.maximumLatencyMilliseconds)) ms")
-            settingRow("DEVIAZIONE MAX PREZZO", "0,05%")
-            settingRow("ATR", "\(SystemLimits.atrPeriod) barre da 1 min")
-            settingRow("CICLO DECISIONI", "\(SystemLimits.decisionIntervalSeconds) s")
-            settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
-            settingRow("FLAT BY CLOSE", "chiusura totale a T-10 min")
-            settingRow("STOP GIORNALIERO", "-2% equity = pausa fino a domani")
-            settingRow("MAX POSIZIONI", "\(SystemLimits.maxConcurrentPositions) simultanee")
-            settingRow("FILTRO REGIME", "ATR oltre 2σ = pausa")
-        }
-        .panelStyle(terminalGreen)
-    }
-
-    private func settingRow(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .top) {
-            Text(label)
-                .foregroundStyle(.gray)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.trailing)
-        }
-        .font(.system(.caption2, design: .monospaced))
-    }
-
-    private var linksPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            panelHeader("LINK RAPIDI", color: terminalGreen)
-            Link(destination: URL(string: "https://app.alpaca.markets")!) {
-                linkRow("ALPACA DASHBOARD · ordini e posizioni", color: terminalGreen)
-            }
-            Link(destination: URL(string: "https://platform.kimi.ai")!) {
-                linkRow("KIMI CONSOLE · crediti e API key", color: brainColor)
-            }
-        }
-        .panelStyle(terminalGreen)
-    }
-
-    private func linkRow(_ title: String, color: Color) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(color)
-            Spacer()
-            Text("↗ SAFARI")
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.gray)
-        }
-        .padding(10)
-        .background(Color(white: 0.04))
-        .overlay(Rectangle().stroke(color.opacity(0.35), lineWidth: 1))
-    }
-
-    private func panelHeader(_ title: String, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Rectangle()
-                .fill(color)
-                .frame(width: 8, height: 8)
-            Text(title)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(color)
-        }
     }
 
     private var logPanel: some View {

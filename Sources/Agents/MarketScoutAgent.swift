@@ -100,8 +100,16 @@ actor MarketScoutAgent {
             } catch {
                 guard running else { break }
                 continuation?.yield(.disconnected(error.localizedDescription))
-                let seconds = min(60, pow(2.0, Double(retryAttempt))) + Double.random(in: 0...0.5)
+                var seconds = min(60, pow(2.0, Double(retryAttempt))) + Double.random(in: 0...0.5)
                 retryAttempt = min(retryAttempt + 1, 6)
+                // 406 connection limit: il piano IEX permette una sola connessione
+                // e il server impiega ~30 s a rilasciare lo slot della precedente.
+                if case QuantSwarmError.httpStatus(let code, _) = error, code == 406 {
+                    seconds = max(seconds, 30)
+                    continuation?.yield(.log(
+                        "Slot connessione Alpaca occupato: attesa del rilascio da parte del server."
+                    ))
+                }
                 continuation?.yield(.log("Riconnessione tra \(String(format: "%.1f", seconds)) s."))
                 do {
                     try await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
@@ -153,11 +161,15 @@ actor MarketScoutAgent {
         while running && !Task.isCancelled {
             let messages = try await receiveMessages(from: task)
             for message in messages {
-                if let error = message.errorDescription {
-                    continuation?.yield(.log("Alpaca stream: \(error)"))
-                    continue
+                // Un frame di errore Alpaca (es. 406 connection limit) precede la
+                // chiusura del socket: lo propaghiamo per attivare il backoff dedicato.
+                if message.type == "error" {
+                    throw QuantSwarmError.httpStatus(
+                        message.code ?? 500,
+                        message.message ?? "errore stream"
+                    )
                 }
-                try process(message)
+                process(message)
             }
         }
     }
@@ -178,12 +190,24 @@ actor MarketScoutAgent {
         case .string(let text):
             data = Data(text.utf8)
         @unknown default:
-            throw QuantSwarmError.invalidServerResponse("Frame WebSocket sconosciuto")
+            continuation?.yield(.log("Frame WebSocket non riconosciuto; ignorato."))
+            return []
         }
-        return try JSONDecoder().decode([StreamMessage].self, from: data)
+        // Decodifica tollerante: un solo frame malformato non deve mai far cadere
+        // lo stream (il piano IEX permette una sola connessione e la riconnessione
+        // immediata scatena il 406 connection limit sullo slot ancora occupato).
+        if let messages = try? JSONDecoder().decode([StreamMessage].self, from: data) {
+            return messages
+        }
+        if let single = try? JSONDecoder().decode(StreamMessage.self, from: data) {
+            return [single]
+        }
+        let preview = String(decoding: data.prefix(120), as: UTF8.self)
+        continuation?.yield(.log("Frame stream ignorato (non decodificabile): \(preview)"))
+        return []
     }
 
-    private func process(_ message: StreamMessage) throws {
+    private func process(_ message: StreamMessage) {
         guard let symbol = message.symbol else { return }
         let receivedAt = Date()
         let sourceTimestamp = message.timestamp.flatMap(parseTimestamp) ?? receivedAt
@@ -289,10 +313,5 @@ private struct StreamMessage: Decodable {
         case low = "l"
         case close = "c"
         case timestamp = "t"
-    }
-
-    var errorDescription: String? {
-        guard type == "error" else { return nil }
-        return "\(code ?? 0): \(message ?? "errore sconosciuto")"
     }
 }
