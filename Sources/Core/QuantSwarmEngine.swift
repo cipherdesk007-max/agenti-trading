@@ -1,9 +1,17 @@
 import Foundation
 import SwiftData
 
+enum AgentKind: String, Sendable {
+    case scout = "SCOUT"
+    case brain = "KIMI"
+    case risk = "RISK"
+    case system = "SYS"
+}
+
 struct AgentLogEntry: Identifiable, Sendable {
     let id = UUID()
     let timestamp: Date
+    let agent: AgentKind
     let message: String
 }
 
@@ -16,6 +24,10 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var statusMessage = "Credenziali richieste"
     @Published private(set) var logs: [AgentLogEntry] = []
     @Published private(set) var edgeHistory: [EdgePoint] = []
+    @Published private(set) var account: AccountSnapshot?
+    @Published private(set) var positions: [AlpacaPosition] = []
+    @Published private(set) var recentOrders: [AlpacaOrder] = []
+    @Published private(set) var decisions: [DecisionEntry] = []
 
     private let keychain: KeychainManager
     private let background: BackgroundPersistenceManager
@@ -176,6 +188,11 @@ final class QuantSwarmEngine: ObservableObject {
         statusMessage = "Sessione \(credentials.paperTrading ? "paper" : "live") attiva"
         background.start()
         log("Motore avviato su \(parsedSymbols.joined(separator: ", ")); ATR richiesto prima dei segnali.")
+        await riskAgent.setLogHandler { [weak self] message in
+            Task { @MainActor [weak self] in
+                self?.log(message, agent: .risk)
+            }
+        }
 
         let stream = await marketScout.start(
             credentials: credentials.alpaca,
@@ -219,7 +236,7 @@ final class QuantSwarmEngine: ObservableObject {
             try await riskAgent.emergencyFlatten(credentials: credentials.alpaca)
             statusMessage = "HARD KILL completato"
             log("Alpaca ha accettato cancellazione globale e chiusura delle posizioni.")
-            await updateEquity()
+            await refreshPortfolio()
         } catch {
             statusMessage = "HARD KILL: verifica immediata sul broker"
             log("HARD KILL errore: \(error.localizedDescription)")
@@ -239,48 +256,59 @@ final class QuantSwarmEngine: ObservableObject {
         case .snapshot(let snapshot):
             snapshots[snapshot.symbol] = snapshot
         case .log(let message):
-            log(message)
+            log(message, agent: .scout)
         case .disconnected(let message):
             statusMessage = "Stream disconnesso"
-            log(message)
+            log(message, agent: .scout)
         }
     }
 
     private func analysisLoop(kimi: KimiService) async {
         while isRunning && !Task.isCancelled {
             await refreshTradeRecords()
-            await updateEquity()
+            await refreshPortfolio()
             for symbol in configuredSymbols {
                 guard isRunning && !Task.isCancelled else { break }
-                guard let snapshot = snapshots[symbol], snapshot.atr14 != nil else {
+                guard let snapshot = snapshots[symbol], let atr = snapshot.atr14 else {
                     if !waitingLogEmitted.contains(symbol) {
                         waitingLogEmitted.insert(symbol)
-                        log("\(symbol): attesa di 14 barre per ATR e prezzi correnti.")
+                        log("\(symbol): attesa di 14 barre per ATR e prezzi correnti.", agent: .scout)
                     }
                     continue
                 }
                 waitingLogEmitted.remove(symbol)
+                log(
+                    "\(symbol): prezzo \(format(snapshot.lastPrice)), ATR \(format(atr)) "
+                        + "→ dati inviati a Kimi.",
+                    agent: .scout
+                )
                 do {
                     let decision = try await kimi.decide(
                         snapshot: snapshot,
                         news: configuredNews,
                         performance: performanceMatrix()
                     )
-                    log("\(symbol): Kimi \(decision.action.rawValue.uppercased()), confidenza \(decision.confidence).")
+                    decisions.append(DecisionEntry(timestamp: Date(), decision: decision))
+                    if decisions.count > 50 { decisions.removeFirst(decisions.count - 50) }
+                    log(
+                        "\(symbol): \(decision.action.rawValue.uppercased()) "
+                            + "confidenza \(Int(decision.confidence * 100))% — \(decision.rationale)",
+                        agent: .brain
+                    )
                     if let receipt = try await riskAgent.execute(
                         decision: decision,
                         snapshot: snapshot,
                         credentials: credentials!.alpaca
                     ) {
-                        try persist(receipt: receipt, atr: snapshot.atr14 ?? 0)
-                        log("Bracket inviato: \(orderDescription(receipt)).")
+                        try persist(receipt: receipt, atr: atr)
+                        log("Bracket inviato: \(orderDescription(receipt)).", agent: .risk)
                     }
                 } catch is CancellationError {
                     return
                 } catch QuantSwarmError.riskRejected(let reason) {
-                    log("\(symbol): ordine annullato — \(reason).")
+                    log("\(symbol): ordine annullato — \(reason).", agent: .risk)
                 } catch {
-                    log("\(symbol): \(error.localizedDescription)")
+                    log("\(symbol): \(error.localizedDescription)", agent: .brain)
                 }
             }
             do {
@@ -294,7 +322,7 @@ final class QuantSwarmEngine: ObservableObject {
     private func performBackgroundRefresh() async {
         guard credentials != nil else { return }
         await refreshTradeRecords()
-        await updateEquity()
+        await refreshPortfolio()
         log("Refresh BGTask completato nei limiti concessi da iOS.")
     }
 
@@ -377,17 +405,29 @@ final class QuantSwarmEngine: ObservableObject {
         )
     }
 
-    private func updateEquity() async {
+    func refreshPortfolio() async {
         guard let credentials else { return }
+        let service = AlpacaService(credentials: credentials.alpaca)
         do {
-            let account = try await AlpacaService(credentials: credentials.alpaca).account()
-            if baselineEquity == nil { baselineEquity = account.equityValue }
-            let edge = account.equityValue - (baselineEquity ?? account.equityValue)
+            let snapshot = try await service.account()
+            account = snapshot
+            if baselineEquity == nil { baselineEquity = snapshot.equityValue }
+            let edge = snapshot.equityValue - (baselineEquity ?? snapshot.equityValue)
             edgeHistory.append(EdgePoint(timestamp: Date(), value: edge))
             if edgeHistory.count > 500 { edgeHistory.removeFirst(edgeHistory.count - 500) }
-            if !isRunning { statusMessage = "Equity \(account.equityValue) USD" }
+            if !isRunning { statusMessage = "Equity \(snapshot.equityValue) USD" }
         } catch {
-            log("Equity: \(error.localizedDescription)")
+            log("Portafoglio: \(error.localizedDescription)")
+        }
+        do {
+            positions = try await service.positions()
+        } catch {
+            log("Posizioni: \(error.localizedDescription)")
+        }
+        do {
+            recentOrders = try await service.recentOrders()
+        } catch {
+            log("Ordini: \(error.localizedDescription)")
         }
     }
 
@@ -395,8 +435,16 @@ final class QuantSwarmEngine: ObservableObject {
         "\(receipt.decision.symbol) \(receipt.decision.action.rawValue) qty \(receipt.quantity), latenza \(receipt.measuredLatencyMilliseconds) ms"
     }
 
-    private func log(_ message: String) {
-        logs.append(AgentLogEntry(timestamp: Date(), message: message))
+    private func log(_ message: String, agent: AgentKind = .system) {
+        logs.append(AgentLogEntry(timestamp: Date(), agent: agent, message: message))
         if logs.count > 300 { logs.removeFirst(logs.count - 300) }
+    }
+
+    private func format(_ value: Double, fractionDigits: Int = 2) -> String {
+        String(
+            format: "%.\(fractionDigits)f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            value
+        )
     }
 }

@@ -5,6 +5,23 @@ actor RiskExecutionAgent {
     private let fractionalKellyDivisor = 4.0
     private let maximumLatencyMilliseconds = 150.0
     private let maximumPriceDeviation = 0.0005
+    private var logHandler: (@Sendable (String) -> Void)?
+
+    func setLogHandler(_ handler: (@Sendable (String) -> Void)?) {
+        logHandler = handler
+    }
+
+    private func emit(_ message: String) {
+        logHandler?(message)
+    }
+
+    private func format(_ value: Double, fractionDigits: Int = 2) -> String {
+        String(
+            format: "%.\(fractionDigits)f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            value
+        )
+    }
 
     func execute(
         decision: KimiDecision,
@@ -51,6 +68,7 @@ actor RiskExecutionAgent {
         guard account.equityValue > 0 else {
             throw QuantSwarmError.riskRejected("Patrimonio non positivo")
         }
+        emit("Controlli OK: latenza REST \(format(latency, fractionDigits: 0)) ms, equity \(format(account.equityValue)) USD.")
 
         let limitPrice = decision.action == .buy
             ? decision.entryPrice * (1 + maximumPriceDeviation)
@@ -82,6 +100,11 @@ actor RiskExecutionAgent {
         guard quantity * riskPerShare <= riskBudget + 0.000_001 else {
             throw QuantSwarmError.riskRejected("Rischio calcolato oltre l'1%")
         }
+        emit(
+            "Kelly \(format(fullKelly * 100))% → /4 = \(format(fractionalKelly * 100))%; "
+                + "rischio/azione \(format(riskPerShare)); qty \(format(quantity, fractionDigits: 0)) "
+                + "entro l'1% di equity. Invio bracket."
+        )
 
         let order = try await service.submitBracket(
             decision: decision,
