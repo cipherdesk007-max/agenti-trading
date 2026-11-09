@@ -165,6 +165,21 @@ struct PerformanceMatrix: Sendable {
     let recentOutcomes: [Double]
 }
 
+struct CalibrationBucket: Identifiable, Sendable {
+    let id: String
+    let label: String
+    let trades: Int
+    let winRate: Double
+}
+
+/// Misura se la win_probability dichiarata da Kimi corrisponde alla realtà.
+/// Brier score: 0 = previsione perfetta, 0.25 = equivalente a lanciare una moneta.
+struct CalibrationStats: Sendable {
+    let samples: Int
+    let brierScore: Double
+    let buckets: [CalibrationBucket]
+}
+
 enum QuantSwarmError: LocalizedError {
     case credentialsMissing
     case invalidCredentialInput
@@ -211,6 +226,7 @@ final class TradeRecord {
     var takeProfit: Double
     var expectedATR: Double
     var confidence: Double
+    var winProbability: Double?
     var rationale: String
     var netPnL: Double?
     var stopErrorVariance: Double?
@@ -229,6 +245,7 @@ final class TradeRecord {
         takeProfit = receipt.decision.takeProfit
         expectedATR = atr
         confidence = receipt.decision.confidence
+        winProbability = receipt.decision.winProbability
         rationale = receipt.decision.rationale
         netPnL = nil
         stopErrorVariance = nil

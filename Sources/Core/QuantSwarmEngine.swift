@@ -30,6 +30,7 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var decisions: [DecisionEntry] = []
     @Published private(set) var marketClock: AlpacaClock?
     @Published private(set) var kimiBalance: KimiBalance?
+    @Published private(set) var calibration: CalibrationStats?
 
     private let keychain: KeychainManager
     private let background: BackgroundPersistenceManager
@@ -46,6 +47,10 @@ final class QuantSwarmEngine: ObservableObject {
     private var baselineEquity: Double?
     private var waitingLogEmitted: Set<String> = []
     private var staleLogEmitted: Set<String> = []
+    private var closeGuardLogged: Set<String> = []
+    private var regimeLogged: Set<String> = []
+    private var atrHistory: [String: [Double]] = [:]
+    private var lastHoldPrice: [String: (price: Double, at: Date)] = [:]
     private var lastClockRefresh: Date?
     private var lastBalanceRefresh: Date?
 
@@ -196,6 +201,11 @@ final class QuantSwarmEngine: ObservableObject {
         snapshots = [:]
         waitingLogEmitted = []
         staleLogEmitted = []
+        closeGuardLogged = []
+        regimeLogged = []
+        atrHistory = [:]
+        lastHoldPrice = [:]
+        NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
         statusMessage = "Sessione \(credentials.paperTrading ? "paper" : "live") attiva"
         background.start()
@@ -258,10 +268,18 @@ final class QuantSwarmEngine: ObservableObject {
             try await riskAgent.emergencyFlatten(credentials: credentials.alpaca)
             statusMessage = "HARD KILL completato"
             log("Alpaca ha accettato cancellazione globale e chiusura delle posizioni.")
+            NotificationManager.shared.notify(
+                "HARD KILL COMPLETATO",
+                body: "Cancellazione ordini e chiusura posizioni accettate da Alpaca."
+            )
             await refreshPortfolio()
         } catch {
             statusMessage = "HARD KILL: verifica immediata sul broker"
             log("HARD KILL errore: \(error.localizedDescription)")
+            NotificationManager.shared.notify(
+                "HARD KILL: VERIFICA IL BROKER",
+                body: error.localizedDescription
+            )
         }
     }
 
@@ -312,6 +330,47 @@ final class QuantSwarmEngine: ObservableObject {
                     continue
                 }
                 staleLogEmitted.remove(symbol)
+                // Guard di chiusura: i bracket hanno time-in-force "day" e le gambe
+                // scadono a fine sessione; niente nuove posizioni negli ultimi 15 minuti.
+                if let clock = marketClock, clock.isOpen, let close = clock.nextCloseDate {
+                    let toClose = close.timeIntervalSinceNow
+                    if toClose > 0, toClose <= 900 {
+                        if !closeGuardLogged.contains(symbol) {
+                            closeGuardLogged.insert(symbol)
+                            log(
+                                "\(symbol): \(Int(toClose / 60)) min alla chiusura; "
+                                    + "nuove posizioni sospese fino a domani.",
+                                agent: .risk
+                            )
+                        }
+                        continue
+                    }
+                }
+                closeGuardLogged.remove(symbol)
+                // Filtro regime: ATR oltre 2 sigma dalla propria media = volatilita'
+                // anomala; in quel contesto slippage e livelli di Kimi valgono meno.
+                var history = atrHistory[symbol] ?? []
+                if history.count >= 20 {
+                    let mean = history.reduce(0, +) / Double(history.count)
+                    let variance = history.reduce(0) { $0 + ($1 - mean) * ($1 - mean) }
+                        / Double(history.count)
+                    let deviation = variance.squareRoot()
+                    if deviation > 0, atr > mean + 2 * deviation {
+                        if !regimeLogged.contains(symbol) {
+                            regimeLogged.insert(symbol)
+                            log(
+                                "\(symbol): ATR \(format(atr)) oltre 2σ dalla media "
+                                    + "\(format(mean)); volatilità anomala, simbolo in pausa.",
+                                agent: .risk
+                            )
+                        }
+                        continue
+                    }
+                }
+                regimeLogged.remove(symbol)
+                history.append(atr)
+                if history.count > 240 { history.removeFirst(history.count - 240) }
+                atrHistory[symbol] = history
                 log(
                     "\(symbol): prezzo \(format(snapshot.lastPrice)), ATR \(format(atr)) "
                         + "→ dati inviati a Kimi.",
@@ -330,13 +389,31 @@ final class QuantSwarmEngine: ObservableObject {
                             + "confidenza \(Int(decision.confidence * 100))% — \(decision.rationale)",
                         agent: .brain
                     )
+                    // Opportunity check: quanto si e' mosso il prezzo dall'HOLD precedente.
+                    if decision.action == .hold {
+                        if let previous = lastHoldPrice[symbol], previous.price > 0 {
+                            let change = (snapshot.lastPrice - previous.price) / previous.price * 100
+                            log(
+                                "\(symbol): dall'HOLD delle "
+                                    + "\(previous.at.formatted(date: .omitted, time: .shortened)) "
+                                    + "il prezzo si è mosso di \(format(change))%.",
+                                agent: .brain
+                            )
+                        }
+                        lastHoldPrice[symbol] = (snapshot.lastPrice, Date())
+                    }
                     if let receipt = try await riskAgent.execute(
                         decision: decision,
                         snapshot: snapshot,
                         credentials: credentials.alpaca
                     ) {
                         try persist(receipt: receipt, atr: atr)
-                        log("Bracket inviato: \(orderDescription(receipt)).", agent: .risk)
+                        let description = orderDescription(receipt)
+                        log("Bracket inviato: \(description).", agent: .risk)
+                        NotificationManager.shared.notify(
+                            "ORDINE INVIATO",
+                            body: description
+                        )
                     }
                 } catch is CancellationError {
                     return
@@ -402,7 +479,12 @@ final class QuantSwarmEngine: ObservableObject {
                         record.stopErrorVariance = pow(exitPrice - record.stopLoss, 2)
                     }
                     record.outcomeRecorded = true
-                    log("Esito \(record.symbol): P&L \(format(record.netPnL ?? 0)) USD.")
+                    let pnlText = format(record.netPnL ?? 0)
+                    log("Esito \(record.symbol): P&L \(pnlText) USD.")
+                    NotificationManager.shared.notify(
+                        "ESITO \(record.symbol)",
+                        body: "P&L \(pnlText) USD"
+                    )
                 } catch {
                     log("Aggiornamento ordine \(record.orderID): \(error.localizedDescription)")
                 }
@@ -411,6 +493,46 @@ final class QuantSwarmEngine: ObservableObject {
         } catch {
             log("SwiftData refresh: \(error.localizedDescription)")
         }
+        computeCalibration()
+    }
+
+    /// Calibrazione di Kimi: Brier score e win rate per fascia di probabilità
+    /// dichiarata, calcolati solo su trade con esito registrato.
+    private func computeCalibration() {
+        let descriptor = FetchDescriptor<TradeRecord>(
+            predicate: #Predicate<TradeRecord> { $0.outcomeRecorded }
+        )
+        guard let records = try? modelContext.fetch(descriptor) else { return }
+        let scored: [(probability: Double, won: Double)] = records.compactMap { record in
+            guard let probability = record.winProbability, let pnl = record.netPnL else {
+                return nil
+            }
+            return (probability, pnl > 0 ? 1 : 0)
+        }
+        guard !scored.isEmpty else {
+            calibration = nil
+            return
+        }
+        let brier = scored.reduce(0) {
+            $0 + pow($1.probability - $1.won, 2)
+        } / Double(scored.count)
+        let ranges: [(String, Range<Double>)] = [
+            ("CONF 55–70%", 0.55..<0.70),
+            ("CONF 70–85%", 0.70..<0.85),
+            ("CONF 85–100%", 0.85..<1.000_001)
+        ]
+        let buckets: [CalibrationBucket] = ranges.compactMap { label, range in
+            let inBucket = scored.filter { range.contains($0.probability) }
+            guard !inBucket.isEmpty else { return nil }
+            let wins = inBucket.filter { $0.won > 0 }.count
+            return CalibrationBucket(
+                id: label,
+                label: label,
+                trades: inBucket.count,
+                winRate: Double(wins) / Double(inBucket.count)
+            )
+        }
+        calibration = CalibrationStats(samples: scored.count, brierScore: brier, buckets: buckets)
     }
 
     private func performanceMatrix() -> PerformanceMatrix {
@@ -479,6 +601,7 @@ final class QuantSwarmEngine: ObservableObject {
                 log("Crediti Kimi: \(error.localizedDescription)")
             }
         }
+        computeCalibration()
     }
 
     /// Variante con throttling per il ciclo automatico: orologio ogni 5 min, crediti ogni 10 min.

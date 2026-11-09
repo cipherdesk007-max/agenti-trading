@@ -20,6 +20,7 @@ struct TerminalDashboardView: View {
                         kimiPanel
                         positionsPanel
                         decisionsPanel
+                        calibrationPanel
                         edgePanel
                         controlPanel
                         ordersPanel
@@ -317,6 +318,40 @@ struct TerminalDashboardView: View {
         .panelStyle(brainColor)
     }
 
+    private var calibrationPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            panelHeader("CALIBRAZIONE KIMI · AFFIDABILITÀ", color: brainColor)
+            if let calibration = engine.calibration {
+                portfolioRow("TRADE MISURATI", "\(calibration.samples)", color: .white)
+                portfolioRow(
+                    "BRIER SCORE",
+                    String(
+                        format: "%.3f",
+                        locale: Locale(identifier: "en_US_POSIX"),
+                        calibration.brierScore
+                    ),
+                    color: calibration.brierScore < 0.25 ? terminalGreen : .orange
+                )
+                ForEach(calibration.buckets) { bucket in
+                    portfolioRow(
+                        bucket.label,
+                        "WIN \(Int(bucket.winRate * 100))% · n=\(bucket.trades)",
+                        color: .white
+                    )
+                }
+                Text("Brier: 0 = previsione perfetta; 0,25 = come lanciare una moneta. Serve per fidarsi della confidenza di Kimi.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Nessun trade completato con esito: la calibrazione apparirà dopo i primi bracket chiusi.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+            }
+        }
+        .panelStyle(brainColor)
+    }
+
     private var ordersPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("ORDINI RECENTI", color: terminalGreen)
@@ -364,6 +399,8 @@ struct TerminalDashboardView: View {
             settingRow("DEVIAZIONE MAX PREZZO", "0,05%")
             settingRow("ATR", "\(SystemLimits.atrPeriod) barre da 1 min")
             settingRow("CICLO DECISIONI", "\(SystemLimits.decisionIntervalSeconds) s")
+            settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
+            settingRow("FILTRO REGIME", "ATR oltre 2σ = pausa")
         }
         .panelStyle(terminalGreen)
     }
