@@ -86,6 +86,36 @@ struct AlpacaPosition: Decodable, Sendable, Identifiable {
     }
 }
 
+struct AlpacaClock: Decodable, Sendable {
+    let isOpen: Bool
+    let nextOpen: String?
+    let nextClose: String?
+
+    enum CodingKeys: String, CodingKey {
+        case isOpen = "is_open"
+        case nextOpen = "next_open"
+        case nextClose = "next_close"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        isOpen = try container.decodeIfPresent(Bool.self, forKey: .isOpen) ?? false
+        nextOpen = try container.decodeIfPresent(String.self, forKey: .nextOpen)
+        nextClose = try container.decodeIfPresent(String.self, forKey: .nextClose)
+    }
+
+    private static func parse(_ raw: String?) -> Date? {
+        guard let raw else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: raw) { return date }
+        return ISO8601DateFormatter().date(from: raw)
+    }
+
+    var nextOpenDate: Date? { Self.parse(nextOpen) }
+    var nextCloseDate: Date? { Self.parse(nextClose) }
+}
+
 actor AlpacaService {
     private let credentials: AlpacaCredentials
     private let session: URLSession
@@ -141,6 +171,11 @@ actor AlpacaService {
     func positions() async throws -> [AlpacaPosition] {
         let data = try await send(path: "/v2/positions", method: "GET")
         return try JSONDecoder().decode([AlpacaPosition].self, from: data)
+    }
+
+    func clock() async throws -> AlpacaClock {
+        let data = try await send(path: "/v2/clock", method: "GET")
+        return try JSONDecoder().decode(AlpacaClock.self, from: data)
     }
 
     func order(id: String) async throws -> AlpacaOrder {

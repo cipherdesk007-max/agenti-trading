@@ -1,6 +1,18 @@
 import Foundation
 import SwiftData
 
+enum SystemLimits {
+    static let kimiModel = "kimi-k3.1-pro-highspeed"
+    static let kimiAPIHost = "api.moonshot.ai"
+    static let marketStreamHost = "stream.data.alpaca.markets/v2/iex"
+    static let atrPeriod = 14
+    static let decisionIntervalSeconds = 60
+    static let maximumRiskFraction = 0.01
+    static let fractionalKellyDivisor = 4.0
+    static let maximumLatencyMilliseconds = 150.0
+    static let maximumPriceDeviation = 0.0005
+}
+
 enum TradeAction: String, Codable, Sendable {
     case buy
     case sell
