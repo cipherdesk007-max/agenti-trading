@@ -1,0 +1,59 @@
+name: Unsigned iOS IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install XcodeGen
+        run: |
+          brew update
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      - name: Build unsigned Release app
+        run: |
+          xcodebuild \
+            -project QuantSwarmAlphaZero.xcodeproj \
+            -scheme QuantSwarmAlphaZero \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$PWD/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            clean build
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="$PWD/DerivedData/Build/Products/Release-iphoneos/QuantSwarmAlphaZero.app"
+          test -d "$APP_PATH"
+          mkdir -p Package/Payload
+          ditto "$APP_PATH" "Package/Payload/QuantSwarmAlphaZero.app"
+          cd Package
+          zip -qry QuantSwarm-Alpha-Zero.ipa Payload
+          unzip -t QuantSwarm-Alpha-Zero.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuantSwarm-Alpha-Zero-unsigned
+          path: Package/QuantSwarm-Alpha-Zero.ipa
+          if-no-files-found: error
+          retention-days: 14
