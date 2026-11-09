@@ -263,6 +263,7 @@ actor AlpacaService {
                 }
                 throw QuantSwarmError.httpStatus(http.statusCode, message)
             } catch let error as URLError {
+                if error.code == .cancelled { throw CancellationError() }
                 if attempt == 3 { throw error }
                 try await backoff(attempt: attempt)
             }

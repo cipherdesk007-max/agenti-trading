@@ -226,7 +226,7 @@ final class QuantSwarmEngine: ObservableObject {
             }
         }
         analysisTask = Task { [weak self] in
-            await self?.analysisLoop(kimi: kimiService)
+            await self?.analysisLoop(kimi: kimiService, credentials: credentials)
         }
     }
 
@@ -285,7 +285,7 @@ final class QuantSwarmEngine: ObservableObject {
         }
     }
 
-    private func analysisLoop(kimi: KimiService) async {
+    private func analysisLoop(kimi: KimiService, credentials: StoredCredentials) async {
         while isRunning && !Task.isCancelled {
             await refreshTradeRecords()
             await refreshPortfolioThrottled()
@@ -333,7 +333,7 @@ final class QuantSwarmEngine: ObservableObject {
                     if let receipt = try await riskAgent.execute(
                         decision: decision,
                         snapshot: snapshot,
-                        credentials: credentials!.alpaca
+                        credentials: credentials.alpaca
                     ) {
                         try persist(receipt: receipt, atr: atr)
                         log("Bracket inviato: \(orderDescription(receipt)).", agent: .risk)
@@ -402,7 +402,7 @@ final class QuantSwarmEngine: ObservableObject {
                         record.stopErrorVariance = pow(exitPrice - record.stopLoss, 2)
                     }
                     record.outcomeRecorded = true
-                    log("Esito \(record.symbol): P&L \(record.netPnL ?? 0).")
+                    log("Esito \(record.symbol): P&L \(format(record.netPnL ?? 0)) USD.")
                 } catch {
                     log("Aggiornamento ordine \(record.orderID): \(error.localizedDescription)")
                 }

@@ -197,11 +197,16 @@ actor MarketScoutAgent {
             let atr = state.update(open: open, high: high, low: low, close: close)
             atrStates[symbol] = state
             lastPrices[symbol] = close
+            // Il timestamp di una barra Alpaca e' l'INIZIO del minuto, quindi un
+            // snapshot da barra avrebbe una "latenza" naturale di ~60 s e verrebbe
+            // respinto dal guard di latenza del risk manager. Per le barre il
+            // riferimento e' l'arrivo della barra; la freschezza e' garantita dal
+            // guard di staleness (120 s) e dal controllo di deviazione prezzo.
             continuation?.yield(.snapshot(MarketSnapshot(
                 symbol: symbol,
                 lastPrice: close,
                 atr14: atr,
-                sourceTimestamp: sourceTimestamp,
+                sourceTimestamp: receivedAt,
                 receivedAt: receivedAt
             )))
             return
