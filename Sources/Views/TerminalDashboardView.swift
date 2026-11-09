@@ -16,11 +16,13 @@ struct TerminalDashboardView: View {
                     VStack(spacing: 16) {
                         statusPanel
                         portfolioPanel
+                        kimiPanel
                         positionsPanel
                         decisionsPanel
                         edgePanel
                         controlPanel
                         ordersPanel
+                        settingsPanel
                         logPanel
                         killButton
                     }
@@ -67,10 +69,24 @@ struct TerminalDashboardView: View {
                 Text(engine.statusMessage)
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
+                if let clock = engine.marketClock {
+                    Text(
+                        clock.isOpen
+                            ? "MERCATO APERTO · chiude \(formatDate(clock.nextCloseDate))"
+                            : "MERCATO CHIUSO · apre \(formatDate(clock.nextOpenDate))"
+                    )
+                    .font(.system(.caption2, design: .monospaced, weight: .bold))
+                    .foregroundStyle(clock.isOpen ? terminalGreen : .orange)
+                }
             }
             Spacer()
         }
         .panelStyle(terminalGreen)
+    }
+
+    private func formatDate(_ date: Date?) -> String {
+        guard let date else { return "n/d" }
+        return date.formatted(date: .abbreviated, time: .shortened)
     }
 
     private var edgePanel: some View {
@@ -182,6 +198,28 @@ struct TerminalDashboardView: View {
         }
     }
 
+    private var kimiPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("KIMI ACCOUNT · CREDITI USD")
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(brainColor)
+            if let balance = engine.kimiBalance {
+                portfolioRow("DISPONIBILE", money(balance.availableBalance), color: .white)
+                portfolioRow("VOUCHER", money(balance.voucherBalance), color: .white)
+                portfolioRow(
+                    "CASH",
+                    money(balance.cashBalance),
+                    color: (balance.cashBalance ?? 0) < 0 ? .red : .white
+                )
+            } else {
+                Text("Saldo non ancora letto: tocca AGGIORNA nel pannello portafoglio.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+            }
+        }
+        .panelStyle(brainColor)
+    }
+
     private var positionsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("POSIZIONI APERTE")
@@ -233,7 +271,7 @@ struct TerminalDashboardView: View {
                 .font(.system(.caption, design: .monospaced, weight: .bold))
                 .foregroundStyle(brainColor)
             if engine.decisions.isEmpty {
-                Text("Nessuna decisione ancora: servono 14 barre e motore avviato.")
+                Text("Nessuna decisione ancora: servono \(SystemLimits.atrPeriod) barre e motore avviato.")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
             } else {
@@ -306,6 +344,40 @@ struct TerminalDashboardView: View {
             }
         }
         .panelStyle(terminalGreen)
+    }
+
+    private var settingsPanel: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("CONFIG SISTEMA")
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(terminalGreen)
+            settingRow("MODELLO KIMI", SystemLimits.kimiModel)
+            settingRow("API KIMI", SystemLimits.kimiAPIHost)
+            settingRow(
+                "BROKER",
+                engine.paperTrading ? "paper-api.alpaca.markets" : "api.alpaca.markets"
+            )
+            settingRow("STREAM DATI", SystemLimits.marketStreamHost)
+            settingRow("RISCHIO MAX / TRADE", "1% equity")
+            settingRow("KELLY", "frazionato /4")
+            settingRow("LATENZA MAX ORDINI", "150 ms")
+            settingRow("DEVIAZIONE MAX PREZZO", "0,05%")
+            settingRow("ATR", "\(SystemLimits.atrPeriod) barre da 1 min")
+            settingRow("CICLO DECISIONI", "\(SystemLimits.decisionIntervalSeconds) s")
+        }
+        .panelStyle(terminalGreen)
+    }
+
+    private func settingRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .foregroundStyle(.gray)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.system(.caption2, design: .monospaced))
     }
 
     private var logPanel: some View {
@@ -471,6 +543,7 @@ private struct TerminalButtonStyle: ButtonStyle {
 private extension View {
     func panelStyle(_ color: Color) -> some View {
         padding()
+            .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color(white: 0.06))
             .overlay(Rectangle().stroke(color.opacity(0.35), lineWidth: 1))
     }
