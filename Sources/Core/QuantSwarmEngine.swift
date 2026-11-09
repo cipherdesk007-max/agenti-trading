@@ -28,6 +28,8 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var positions: [AlpacaPosition] = []
     @Published private(set) var recentOrders: [AlpacaOrder] = []
     @Published private(set) var decisions: [DecisionEntry] = []
+    @Published private(set) var marketClock: AlpacaClock?
+    @Published private(set) var kimiBalance: KimiBalance?
 
     private let keychain: KeychainManager
     private let background: BackgroundPersistenceManager
@@ -154,6 +156,12 @@ final class QuantSwarmEngine: ObservableObject {
         isConfigured = false
         baselineEquity = nil
         edgeHistory = []
+        account = nil
+        positions = []
+        recentOrders = []
+        decisions = []
+        marketClock = nil
+        kimiBalance = nil
         statusMessage = "Credenziali richieste"
     }
 
@@ -188,6 +196,16 @@ final class QuantSwarmEngine: ObservableObject {
         statusMessage = "Sessione \(credentials.paperTrading ? "paper" : "live") attiva"
         background.start()
         log("Motore avviato su \(parsedSymbols.joined(separator: ", ")); ATR richiesto prima dei segnali.")
+        if let clock = try? await AlpacaService(credentials: credentials.alpaca).clock() {
+            marketClock = clock
+            if clock.isOpen {
+                let chiude = clock.nextCloseDate?.formatted(date: .abbreviated, time: .shortened) ?? "n/d"
+                log("Mercato APERTO; chiusura prevista \(chiude).", agent: .scout)
+            } else {
+                let apre = clock.nextOpenDate?.formatted(date: .abbreviated, time: .shortened) ?? "n/d"
+                log("Mercato CHIUSO; prossima apertura \(apre). Le barre arriveranno da quel momento.", agent: .scout)
+            }
+        }
         await riskAgent.setLogHandler { [weak self] message in
             Task { @MainActor [weak self] in
                 self?.log(message, agent: .risk)
@@ -272,7 +290,7 @@ final class QuantSwarmEngine: ObservableObject {
                 guard let snapshot = snapshots[symbol], let atr = snapshot.atr14 else {
                     if !waitingLogEmitted.contains(symbol) {
                         waitingLogEmitted.insert(symbol)
-                        log("\(symbol): attesa di 14 barre per ATR e prezzi correnti.", agent: .scout)
+                        log("\(symbol): attesa di \(SystemLimits.atrPeriod) barre per ATR e prezzi correnti.", agent: .scout)
                     }
                     continue
                 }
@@ -428,6 +446,18 @@ final class QuantSwarmEngine: ObservableObject {
             recentOrders = try await service.recentOrders()
         } catch {
             log("Ordini: \(error.localizedDescription)")
+        }
+        do {
+            marketClock = try await service.clock()
+        } catch {
+            log("Orologio mercato: \(error.localizedDescription)")
+        }
+        if let kimiService {
+            do {
+                kimiBalance = try await kimiService.balance()
+            } catch {
+                log("Crediti Kimi: \(error.localizedDescription)")
+            }
         }
     }
 
