@@ -23,9 +23,11 @@ struct QuantSwarmAlphaZeroApp: App {
                 // Ultima spiaggia: store in memoria, nessun I/O su disco,
                 // quindi non può fallire. L'app resta utilizzabile per il
                 // trading anche se il database locale non si apre.
+                // NOTA: con i modelli variadici, configurations è variadico
+                // (non un array): le parentesi quadre rompono la compilazione.
                 container = try! ModelContainer(
                     for: TradeRecord.self, DecisionSample.self,
-                    configurations: [ModelConfiguration(isStoredInMemoryOnly: true)]
+                    configurations: ModelConfiguration(isStoredInMemoryOnly: true)
                 )
             }
         }
