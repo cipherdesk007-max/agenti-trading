@@ -57,7 +57,14 @@ actor AlpacaService {
 
     func account() async throws -> AccountSnapshot {
         let data = try await send(path: "/v2/account", method: "GET")
-        return try JSONDecoder().decode(AccountSnapshot.self, from: data)
+        do {
+            return try JSONDecoder().decode(AccountSnapshot.self, from: data)
+        } catch {
+            let preview = String(decoding: data.prefix(300), as: UTF8.self)
+            throw QuantSwarmError.invalidServerResponse(
+                "Account decode fallita (\(data.count) byte): \(preview)"
+            )
+        }
     }
 
     func openOrders() async throws -> [AlpacaOrder] {

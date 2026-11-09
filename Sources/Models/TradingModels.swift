@@ -105,6 +105,15 @@ struct AccountSnapshot: Decodable, Sendable {
         case tradeSuspendedByEmail = "trade_suspended_by_email"
     }
 
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        cash = try container.decodeIfPresent(String.self, forKey: .cash) ?? "0"
+        equity = try container.decodeIfPresent(String.self, forKey: .equity) ?? "0"
+        buyingPower = try container.decodeIfPresent(String.self, forKey: .buyingPower) ?? "0"
+        tradingBlocked = try container.decodeIfPresent(Bool.self, forKey: .tradingBlocked) ?? false
+        tradeSuspendedByEmail = try container.decodeIfPresent(Bool.self, forKey: .tradeSuspendedByEmail) ?? false
+    }
+
     var cashValue: Double { Double(cash) ?? 0 }
     var equityValue: Double { Double(equity) ?? 0 }
     var buyingPowerValue: Double { Double(buyingPower) ?? 0 }
