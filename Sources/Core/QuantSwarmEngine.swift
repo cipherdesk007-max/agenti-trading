@@ -486,7 +486,7 @@ final class QuantSwarmEngine: ObservableObject {
                         performance: performanceMatrix()
                     )
                     decisions.append(DecisionEntry(timestamp: Date(), decision: decision))
-                    if decisions.count > 50 { decisions.removeFirst(decisions.count - 50) }
+                    if decisions.count > 500 { decisions.removeFirst(decisions.count - 500) }
                     log(
                         "\(symbol): \(decision.action.rawValue.uppercased()) "
                             + "confidenza \(Int(decision.confidence * 100))% — \(decision.rationale)",
@@ -779,7 +779,7 @@ final class QuantSwarmEngine: ObservableObject {
 
     private func log(_ message: String, agent: AgentKind = .system) {
         logs.append(AgentLogEntry(timestamp: Date(), agent: agent, message: message))
-        if logs.count > 300 { logs.removeFirst(logs.count - 300) }
+        if logs.count > 1000 { logs.removeFirst(logs.count - 1000) }
     }
 
     /// Ignora le cancellazioni: su STOP o chiusura task sono esiti attesi, non errori.

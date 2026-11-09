@@ -130,6 +130,15 @@ actor MarketScoutAgent {
         defer { socket = nil }
 
         let connected = try await receiveMessages(from: task)
+        // Errore gia' in fase di handshake (es. 406 slot ancora occupato): va
+        // propagato come httpStatus per attivare il backoff dedicato del 406
+        // invece del backoff generico da 1 s che martellerebbe lo slot.
+        if let error = connected.first(where: { $0.type == "error" }) {
+            throw QuantSwarmError.httpStatus(
+                error.code ?? 500,
+                error.message ?? "Errore stream in handshake"
+            )
+        }
         guard connected.contains(where: { $0.type == "success" && $0.message == "connected" }) else {
             throw QuantSwarmError.invalidServerResponse("Handshake Alpaca non riuscito")
         }
@@ -158,6 +167,25 @@ actor MarketScoutAgent {
         retryAttempt = 0
         continuation?.yield(.log("Stream Alpaca autenticato: \(symbols.joined(separator: ", "))."))
 
+        // Watchdog ping: una connessione "mezza morta" (es. cambio Wi-Fi/cellulare
+        // o NAT scaduto) non e' rilevata da NWPathMonitor e lascerebbe receive()
+        // appesa all'infinito con l'app apparentemente viva ma muta. Nessun pong
+        // entro 10 s -> chiusura forzata -> il loop run() gestisce la riconnessione.
+        let watchdog = Task {
+            while !Task.isCancelled {
+                do {
+                    try await Task.sleep(nanoseconds: 25_000_000_000)
+                    try await pingWithTimeout(task, timeoutSeconds: 10)
+                } catch is CancellationError {
+                    return
+                } catch {
+                    task.cancel(with: .abnormalClosure, reason: nil)
+                    return
+                }
+            }
+        }
+        defer { watchdog.cancel() }
+
         while running && !Task.isCancelled {
             let messages = try await receiveMessages(from: task)
             for message in messages {
@@ -171,6 +199,35 @@ actor MarketScoutAgent {
                 }
                 process(message)
             }
+        }
+    }
+
+    /// Invia un WebSocket ping e attende il pong. Allo scadere del timeout il
+    /// socket viene cancellato: questo sblocca anche il pong-handler in attesa,
+    /// cosi' il task group non resta appeso su una connessione morta.
+    private func pingWithTimeout(
+        _ task: URLSessionWebSocketTask,
+        timeoutSeconds: UInt64
+    ) async throws {
+        try await withThrowingTaskGroup(of: Void.self) { group in
+            group.addTask {
+                try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+                    task.sendPing { error in
+                        if let error {
+                            cont.resume(throwing: error)
+                        } else {
+                            cont.resume()
+                        }
+                    }
+                }
+            }
+            group.addTask {
+                try await Task.sleep(nanoseconds: timeoutSeconds * 1_000_000_000)
+                task.cancel(with: .abnormalClosure, reason: nil)
+                throw QuantSwarmError.invalidServerResponse("Ping stream senza risposta")
+            }
+            try await group.next()
+            group.cancelAll()
         }
     }
 

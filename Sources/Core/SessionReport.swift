@@ -158,7 +158,7 @@ enum SessionReportBuilder {
         }
         lines.append("")
 
-        lines.append("LOG SESSIONE (\(logs.count) righe, max 300 in memoria)")
+        lines.append("LOG SESSIONE (\(logs.count) righe)")
         lines.append(thin)
         for entry in logs {
             lines.append("\(clockTime(entry.timestamp)) [\(entry.agent.rawValue)] \(entry.message)")
