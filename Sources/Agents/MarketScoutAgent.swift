@@ -16,6 +16,7 @@ actor MarketScoutAgent {
     private var running = false
     private var retryAttempt = 0
     private var monitoring = false
+    private var lastNetworkSatisfied: Bool?
     private var atrStates: [String: ATRState] = [:]
     private var lastPrices: [String: Double] = [:]
     private let session: URLSession
@@ -42,6 +43,7 @@ actor MarketScoutAgent {
         self.atrStates = Dictionary(uniqueKeysWithValues: self.symbols.map { ($0, ATRState()) })
         self.lastPrices = [:]
         self.retryAttempt = 0
+        self.lastNetworkSatisfied = nil
         self.running = true
         startNetworkMonitoring()
 
@@ -76,6 +78,8 @@ actor MarketScoutAgent {
 
     private func networkStatusChanged(_ satisfied: Bool) {
         guard running else { return }
+        guard lastNetworkSatisfied != satisfied else { return }
+        lastNetworkSatisfied = satisfied
         if satisfied {
             continuation?.yield(.log("Rete disponibile: verifica dello stream Alpaca."))
         } else {
