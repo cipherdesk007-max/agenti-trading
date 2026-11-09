@@ -94,6 +94,7 @@ struct AccountSnapshot: Decodable, Sendable {
     let cash: String
     let equity: String
     let buyingPower: String
+    let lastEquity: String?
     let tradingBlocked: Bool
     let tradeSuspendedByEmail: Bool
 
@@ -101,6 +102,7 @@ struct AccountSnapshot: Decodable, Sendable {
         case cash
         case equity
         case buyingPower = "buying_power"
+        case lastEquity = "last_equity"
         case tradingBlocked = "trading_blocked"
         case tradeSuspendedByEmail = "trade_suspended_by_email"
     }
@@ -110,6 +112,7 @@ struct AccountSnapshot: Decodable, Sendable {
         cash = try container.decodeIfPresent(String.self, forKey: .cash) ?? "0"
         equity = try container.decodeIfPresent(String.self, forKey: .equity) ?? "0"
         buyingPower = try container.decodeIfPresent(String.self, forKey: .buyingPower) ?? "0"
+        lastEquity = try container.decodeIfPresent(String.self, forKey: .lastEquity)
         tradingBlocked = try container.decodeIfPresent(Bool.self, forKey: .tradingBlocked) ?? false
         tradeSuspendedByEmail = try container.decodeIfPresent(Bool.self, forKey: .tradeSuspendedByEmail) ?? false
     }
@@ -117,6 +120,8 @@ struct AccountSnapshot: Decodable, Sendable {
     var cashValue: Double { Double(cash) ?? 0 }
     var equityValue: Double { Double(equity) ?? 0 }
     var buyingPowerValue: Double { Double(buyingPower) ?? 0 }
+    var lastEquityValue: Double? { lastEquity.flatMap(Double.init) }
+    var dayPnL: Double? { lastEquityValue.map { equityValue - $0 } }
 }
 
 struct ExecutionReceipt: Sendable {
@@ -131,6 +136,12 @@ struct EdgePoint: Identifiable, Sendable {
     let id = UUID()
     let timestamp: Date
     let value: Double
+}
+
+struct DecisionEntry: Identifiable, Sendable {
+    let id = UUID()
+    let timestamp: Date
+    let decision: KimiDecision
 }
 
 struct PerformanceMatrix: Sendable {

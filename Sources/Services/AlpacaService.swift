@@ -1,6 +1,6 @@
 import Foundation
 
-struct AlpacaOrder: Decodable, Sendable {
+struct AlpacaOrder: Decodable, Sendable, Identifiable {
     let id: String
     let status: String
     let symbol: String
@@ -9,6 +9,7 @@ struct AlpacaOrder: Decodable, Sendable {
     let quantity: String?
     let filledQuantity: String?
     let filledAveragePrice: String?
+    let submittedAt: String?
     let legs: [AlpacaOrder]?
 
     enum CodingKeys: String, CodingKey {
@@ -20,20 +21,68 @@ struct AlpacaOrder: Decodable, Sendable {
         case quantity = "qty"
         case filledQuantity = "filled_qty"
         case filledAveragePrice = "filled_avg_price"
+        case submittedAt = "submitted_at"
         case legs
     }
 
     var filledQuantityValue: Double { Double(filledQuantity ?? "0") ?? 0 }
     var filledAveragePriceValue: Double? { Double(filledAveragePrice ?? "") }
+    var quantityValue: Double { Double(quantity ?? "0") ?? 0 }
+
+    var submittedDate: Date? {
+        guard let submittedAt else { return nil }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: submittedAt) { return date }
+        return ISO8601DateFormatter().date(from: submittedAt)
+    }
 }
 
-struct AlpacaPosition: Decodable, Sendable {
+struct AlpacaPosition: Decodable, Sendable, Identifiable {
     let symbol: String
     let quantity: String
+    let side: String?
+    let averageEntryPrice: String?
+    let currentPrice: String?
+    let marketValue: String?
+    let unrealizedPL: String?
+    let unrealizedPLPercent: String?
+    let changeToday: String?
+
+    var id: String { symbol }
 
     enum CodingKeys: String, CodingKey {
         case symbol
         case quantity = "qty"
+        case side
+        case averageEntryPrice = "avg_entry_price"
+        case currentPrice = "current_price"
+        case marketValue = "market_value"
+        case unrealizedPL = "unrealized_pl"
+        case unrealizedPLPercent = "unrealized_plpc"
+        case changeToday = "change_today"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        symbol = try container.decode(String.self, forKey: .symbol)
+        quantity = try container.decodeIfPresent(String.self, forKey: .quantity) ?? "0"
+        side = try container.decodeIfPresent(String.self, forKey: .side)
+        averageEntryPrice = try container.decodeIfPresent(String.self, forKey: .averageEntryPrice)
+        currentPrice = try container.decodeIfPresent(String.self, forKey: .currentPrice)
+        marketValue = try container.decodeIfPresent(String.self, forKey: .marketValue)
+        unrealizedPL = try container.decodeIfPresent(String.self, forKey: .unrealizedPL)
+        unrealizedPLPercent = try container.decodeIfPresent(String.self, forKey: .unrealizedPLPercent)
+        changeToday = try container.decodeIfPresent(String.self, forKey: .changeToday)
+    }
+
+    var quantityValue: Double { Double(quantity) ?? 0 }
+    var averageEntryPriceValue: Double? { averageEntryPrice.flatMap(Double.init) }
+    var currentPriceValue: Double? { currentPrice.flatMap(Double.init) }
+    var marketValueNumber: Double? { marketValue.flatMap(Double.init) }
+    var unrealizedPLValue: Double { Double(unrealizedPL ?? "0") ?? 0 }
+    var unrealizedPLPercentValue: Double? {
+        unrealizedPLPercent.flatMap(Double.init).map { $0 * 100 }
     }
 }
 
@@ -72,6 +121,19 @@ actor AlpacaService {
             path: "/v2/orders",
             method: "GET",
             query: [URLQueryItem(name: "status", value: "open")]
+        )
+        return try JSONDecoder().decode([AlpacaOrder].self, from: data)
+    }
+
+    func recentOrders(limit: Int = 20) async throws -> [AlpacaOrder] {
+        let data = try await send(
+            path: "/v2/orders",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "status", value: "all"),
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "direction", value: "desc")
+            ]
         )
         return try JSONDecoder().decode([AlpacaOrder].self, from: data)
     }
