@@ -226,9 +226,14 @@ actor MarketScoutAgent {
 }
 
 private struct ATRState {
+    private let period: Int
     private var initialTrueRanges: [Double] = []
     private var previousClose: Double?
     private(set) var atr: Double?
+
+    init(period: Int = SystemLimits.atrPeriod) {
+        self.period = max(2, period)
+    }
 
     mutating func update(open: Double, high: Double, low: Double, close: Double) -> Double? {
         let trueRange: Double
@@ -244,11 +249,11 @@ private struct ATRState {
         previousClose = close
 
         if let currentATR = atr {
-            atr = ((currentATR * 13) + trueRange) / 14
+            atr = ((currentATR * Double(period - 1)) + trueRange) / Double(period)
         } else {
             initialTrueRanges.append(trueRange)
-            if initialTrueRanges.count == 14 {
-                atr = initialTrueRanges.reduce(0, +) / 14
+            if initialTrueRanges.count == period {
+                atr = initialTrueRanges.reduce(0, +) / Double(period)
                 initialTrueRanges.removeAll(keepingCapacity: false)
             }
         }

@@ -1,10 +1,10 @@
 import Foundation
 
 actor RiskExecutionAgent {
-    private let maximumRiskFraction = 0.01
-    private let fractionalKellyDivisor = 4.0
-    private let maximumLatencyMilliseconds = 150.0
-    private let maximumPriceDeviation = 0.0005
+    private let maximumRiskFraction = SystemLimits.maximumRiskFraction
+    private let fractionalKellyDivisor = SystemLimits.fractionalKellyDivisor
+    private let maximumLatencyMilliseconds = SystemLimits.maximumLatencyMilliseconds
+    private let maximumPriceDeviation = SystemLimits.maximumPriceDeviation
     private var logHandler: (@Sendable (String) -> Void)?
 
     func setLogHandler(_ handler: (@Sendable (String) -> Void)?) {

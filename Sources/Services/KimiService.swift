@@ -1,8 +1,44 @@
 import Foundation
 
+struct KimiBalance: Decodable, Sendable {
+    let availableBalance: Double?
+    let voucherBalance: Double?
+    let cashBalance: Double?
+
+    enum CodingKeys: String, CodingKey {
+        case availableBalance = "available_balance"
+        case voucherBalance = "voucher_balance"
+        case cashBalance = "cash_balance"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        availableBalance = Self.flexibleDouble(container, key: .availableBalance)
+        voucherBalance = Self.flexibleDouble(container, key: .voucherBalance)
+        cashBalance = Self.flexibleDouble(container, key: .cashBalance)
+    }
+
+    private static func flexibleDouble(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let string = try? container.decodeIfPresent(String.self, forKey: key) {
+            return string.flatMap(Double.init)
+        }
+        return nil
+    }
+}
+
+private struct BalanceResponse: Decodable {
+    let data: KimiBalance?
+}
+
 actor KimiService {
     private let apiKey: String
-    private let model = "kimi-k3.1-pro-highspeed"
+    private let model = SystemLimits.kimiModel
     private let endpoint = URL(string: "https://api.moonshot.ai/v1/chat/completions")!
     private let session: URLSession
 
@@ -23,6 +59,20 @@ actor KimiService {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         _ = try await sendWithRetry(request)
+    }
+
+    func balance() async throws -> KimiBalance {
+        let url = URL(string: "https://api.moonshot.ai/v1/users/me/balance")!
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let data = try await sendWithRetry(request)
+        let response = try JSONDecoder().decode(BalanceResponse.self, from: data)
+        guard let balance = response.data else {
+            throw QuantSwarmError.invalidServerResponse("Saldo Kimi assente nella risposta")
+        }
+        return balance
     }
 
     func decide(
