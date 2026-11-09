@@ -9,7 +9,7 @@ enum SystemLimits {
     static let decisionIntervalSeconds = 60
     static let maximumRiskFraction = 0.01
     static let fractionalKellyDivisor = 4.0
-    static let maximumLatencyMilliseconds = 150.0
+    static let maximumLatencyMilliseconds = 400.0
     static let maximumPriceDeviation = 0.0005
 }
 

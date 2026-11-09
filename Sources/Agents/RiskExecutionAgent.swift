@@ -36,7 +36,9 @@ actor RiskExecutionAgent {
             throw QuantSwarmError.riskRejected("Snapshot e segnale hanno simboli diversi")
         }
         guard snapshot.feedLatencyMilliseconds <= maximumLatencyMilliseconds else {
-            throw QuantSwarmError.riskRejected("Feed oltre 150 ms")
+            throw QuantSwarmError.riskRejected(
+                "Feed oltre \(format(maximumLatencyMilliseconds, fractionDigits: 0)) ms"
+            )
         }
 
         let deviation = abs(snapshot.lastPrice - decision.entryPrice) / decision.entryPrice
@@ -60,7 +62,10 @@ actor RiskExecutionAgent {
         let latency = Double(elapsed.seconds) * 1_000
             + Double(elapsed.attoseconds) / 1_000_000_000_000_000
         guard latency <= maximumLatencyMilliseconds else {
-            throw QuantSwarmError.riskRejected("Latenza REST \(latency) ms oltre 150 ms")
+            throw QuantSwarmError.riskRejected(
+                "Latenza REST \(format(latency, fractionDigits: 0)) ms oltre "
+                    + "\(format(maximumLatencyMilliseconds, fractionDigits: 0)) ms"
+            )
         }
         guard !account.tradingBlocked, !account.tradeSuspendedByEmail else {
             throw QuantSwarmError.riskRejected("Trading bloccato sul conto Alpaca")
