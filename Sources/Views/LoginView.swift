@@ -65,7 +65,7 @@ struct LoginView: View {
                         .foregroundStyle(.black)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
-                    .disabled(validating || moonshotAPIKey.isEmpty || alpacaKeyID.isEmpty || alpacaSecretKey.isEmpty)
+                    .disabled(validating || !canSubmit)
                     .opacity(validating ? 0.6 : 1)
 
                     Text("Le credenziali sono salvate come generic password nel Keychain con protezione biometrica e accessibilità ThisDeviceOnly. Il Keychain non rende le API key chiavi private del Secure Enclave.")
@@ -92,8 +92,14 @@ struct LoginView: View {
         }
     }
 
+    private var canSubmit: Bool {
+        [moonshotAPIKey, alpacaKeyID, alpacaSecretKey].allSatisfy {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }
+    }
+
     private func validate() {
-        guard !validating else { return }
+        guard !validating, canSubmit else { return }
         validating = true
         errorMessage = nil
         Task {

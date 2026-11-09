@@ -140,6 +140,7 @@ enum QuantSwarmError: LocalizedError {
     case httpStatus(Int, String)
     case invalidDecision(String)
     case riskRejected(String)
+    case validationFailed(stage: String, message: String)
     case persistence(String)
 
     var errorDescription: String? {
@@ -156,6 +157,8 @@ enum QuantSwarmError: LocalizedError {
             return "Segnale Kimi rifiutato: \(message)"
         case .riskRejected(let message):
             return "Ordine bloccato dal risk manager: \(message)"
+        case .validationFailed(let stage, let message):
+            return "Validazione \(stage) fallita: \(message)"
         case .persistence(let message):
             return "Persistenza SwiftData: \(message)"
         }

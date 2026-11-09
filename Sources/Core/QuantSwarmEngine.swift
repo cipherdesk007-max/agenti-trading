@@ -79,15 +79,59 @@ final class QuantSwarmEngine: ObservableObject {
             alpacaSecretKey: alpacaSecret,
             paperTrading: paperTrading
         )
-        let kimi = KimiService(apiKey: moonshot)
-        let alpaca = AlpacaService(credentials: stored.alpaca)
-        async let kimiValidation: Void = kimi.validateCredentials()
-        async let alpacaValidation: Void = alpaca.validateCredentials()
-        _ = try await (kimiValidation, alpacaValidation)
-        let data = try JSONEncoder().encode(stored)
-        try await keychain.save(data: data)
+
+        do {
+            try await KimiService(apiKey: moonshot).validateCredentials()
+        } catch {
+            throw QuantSwarmError.validationFailed(
+                stage: "Kimi",
+                message: describeValidationError(error)
+            )
+        }
+
+        do {
+            try await AlpacaService(credentials: stored.alpaca).validateCredentials()
+        } catch {
+            throw QuantSwarmError.validationFailed(
+                stage: paperTrading ? "Alpaca paper" : "Alpaca live",
+                message: describeValidationError(error)
+            )
+        }
+
+        let data: Data
+        do {
+            data = try JSONEncoder().encode(stored)
+        } catch {
+            throw QuantSwarmError.validationFailed(
+                stage: "encoding credenziali",
+                message: describeValidationError(error)
+            )
+        }
+
+        do {
+            try await keychain.save(data: data)
+        } catch {
+            throw QuantSwarmError.validationFailed(
+                stage: "Keychain/Face ID",
+                message: describeValidationError(error)
+            )
+        }
+
         apply(stored: stored)
         log("API Kimi e Alpaca convalidate; credenziali salvate con Face ID.")
+    }
+
+    private func describeValidationError(_ error: Error) -> String {
+        if let error = error as? QuantSwarmError, let description = error.errorDescription {
+            return description
+        }
+        if let urlError = error as? URLError {
+            return "URLError \(urlError.code.rawValue): \(urlError.localizedDescription)"
+        }
+        if error is DecodingError {
+            return "JSON di risposta vuoto o non decodificabile."
+        }
+        return error.localizedDescription
     }
 
     func logout() async {

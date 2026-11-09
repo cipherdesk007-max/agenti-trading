@@ -29,8 +29,7 @@ actor KeychainManager {
             kSecAttrService as String: service,
             kSecAttrAccount as String: account,
             kSecAttrAccessControl as String: accessControl,
-            kSecValueData as String: data,
-            kSecUseNoAuthenticationUI as String: false
+            kSecValueData as String: data
         ]
         let status = SecItemAdd(addQuery as CFDictionary, nil)
         guard status == errSecSuccess else {
