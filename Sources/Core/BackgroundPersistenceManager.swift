@@ -28,7 +28,7 @@ final class BackgroundPersistenceManager: NSObject, CLLocationManagerDelegate {
             using: nil
         ) { [weak self] task in
             guard let refreshTask = task as? BGAppRefreshTask else {
-                task.setTaskCompleted(withSuccess: false)
+                task.setTaskCompleted(success: false)
                 return
             }
             Task { @MainActor in
@@ -88,7 +88,7 @@ final class BackgroundPersistenceManager: NSObject, CLLocationManagerDelegate {
     private func handleBackgroundTask(_ task: BGAppRefreshTask) async {
         scheduleNextRefresh()
         guard running else {
-            task.setTaskCompleted(withSuccess: false)
+            task.setTaskCompleted(success: false)
             return
         }
         let operation = Task { @MainActor in
@@ -98,7 +98,7 @@ final class BackgroundPersistenceManager: NSObject, CLLocationManagerDelegate {
             operation.cancel()
         }
         await operation.value
-        task.setTaskCompleted(withSuccess: !operation.isCancelled)
+        task.setTaskCompleted(success: !operation.isCancelled)
     }
 
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
