@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 
+@MainActor
 @main
 struct QuantSwarmAlphaZeroApp: App {
     @StateObject private var engine: QuantSwarmEngine
