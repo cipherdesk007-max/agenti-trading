@@ -107,6 +107,7 @@ schemes:
       targets:
         QuantSwarmAlphaZero: all
         QuantSwarmWidgetExtension: all
+        QuantSwarmTests: [test]
     run:
       config: Debug
     test:
