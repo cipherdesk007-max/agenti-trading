@@ -854,7 +854,7 @@ struct TerminalDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("KIMI BRAIN · ULTIME DECISIONI", color: DashboardPalette.cyan)
             if engine.decisions.isEmpty {
-                Text("Nessuna decisione ancora: servono 14 barre e motore avviato.")
+                Text("Nessuna decisione ancora: Kimi viene chiamato solo quando la Strategia trova un segnale.")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
             } else {
@@ -1420,6 +1420,8 @@ private struct TerminalButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(.body, design: .monospaced, weight: .bold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
             .frame(maxWidth: .infinity)
             .padding()
             .background(color.opacity(configuration.isPressed ? 0.35 : 0.18))
