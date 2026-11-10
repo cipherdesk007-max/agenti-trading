@@ -25,7 +25,7 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources
-      - excludes: ["Sources/Widget/**"]
+        excludes: ["Sources/Widget/**"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quantswarm.alphazero
