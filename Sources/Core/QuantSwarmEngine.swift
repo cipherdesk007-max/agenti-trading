@@ -2089,3 +2089,38 @@ extension QuantSwarmEngine {
         computeCalibration()
     }
 }
+
+#if DEBUG
+// MARK: - Dati di esempio per gli screenshot della CI
+
+extension QuantSwarmEngine {
+    func loadPreviewState() {
+        activeMode = .daily
+        isRunning = true
+        paperTrading = true
+        sessionStartedAt = Date().addingTimeInterval(-1_520)
+        lastLoopBeat = Date()
+        statusMessage = "Giornaliera paper attiva"
+        currentActivity = "In attesa · prossimo controllo alle \(Date().addingTimeInterval(780).formatted(date: .omitted, time: .shortened))"
+        nextCheckAt = Date().addingTimeInterval(780)
+        kimiCallsToday = 3
+        creditsSpentToday = 0.04
+        let now = Date()
+        pipeline = [
+            PipelineStage(id: .scout, state: .done, detail: "15/15 ETF aggiornati · mercato aperto", updatedAt: now),
+            PipelineStage(id: .strategy, state: .done, detail: "segnali: XLV (RSI2 6.2), GLD (RSI2 8.9)", updatedAt: now),
+            PipelineStage(id: .analyst, state: .done, detail: "GLD sopra SMA200 · IWM sotto SMA200 · QQQ sopra SMA200 · SPY sopra SMA200 · TLT sotto SMA200", updatedAt: now),
+            PipelineStage(id: .brain, state: .done, detail: "sceglie XLV", updatedAt: now),
+            PipelineStage(id: .reviewer, state: .done, detail: "XLV approvato", updatedAt: now),
+            PipelineStage(id: .risk, state: .done, detail: "XLV: 172 az. · rischio 998.40 USD · stop 139.42", updatedAt: now),
+            PipelineStage(id: .executor, state: .done, detail: "inviato XLV 172 az. limite 145.22 · stop 139.42 (GTC)", updatedAt: now)
+        ]
+        log("════════ SESSIONE AVVIATA (ANTEPRIMA) ════════")
+        log("Strategia: segnali Trend+Pullback su XLV (RSI2 6.2), GLD (RSI2 8.9).", agent: .scout)
+        log("XLV: BUY 74% — pullback profondo in trend, settore difensivo diverso dal portafoglio.", agent: .brain)
+        log("GLD: SKIP 41% — ATR elevato rispetto alla media.", agent: .brain)
+        log("XLV: reviewer approva — trend solido, nessuna anomalia di volatilità.", agent: .brain)
+        log("ORDINE INVIATO: XLV 172 az. limite 145.22 · stop 139.42 (GTC).", agent: .risk)
+    }
+}
+#endif

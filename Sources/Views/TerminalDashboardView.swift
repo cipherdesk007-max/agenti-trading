@@ -57,7 +57,18 @@ private enum Formatters {
 struct TerminalDashboardView: View {
     @EnvironmentObject private var engine: QuantSwarmEngine
     @Environment(\.scenePhase) private var scenePhase
-    @State private var selectedSection: DashboardSection = .operations
+    @State private var selectedSection: DashboardSection = Self.initialSection
+
+    private static var initialSection: DashboardSection {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if let index = args.firstIndex(of: "-QSTab"), index + 1 < args.count,
+           let section = DashboardSection.allCases.first(where: { $0.rawValue == args[index + 1] }) {
+            return section
+        }
+        #endif
+        return .operations
+    }
     @State private var symbols = "SPY"
     @State private var news = ""
     @State private var showKillConfirmation = false

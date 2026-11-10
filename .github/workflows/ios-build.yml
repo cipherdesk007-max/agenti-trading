@@ -53,6 +53,7 @@ jobs:
                       print(d["udid"]); sys.exit(0)
           sys.exit(1)')
           echo "Simulatore: $UDID"
+          echo "SIM_UDID=$UDID" >> "$GITHUB_ENV"
           xcodebuild \
             -project QuantSwarmAlphaZero.xcodeproj \
             -scheme QuantSwarmAlphaZero \
@@ -60,6 +61,35 @@ jobs:
             -derivedDataPath "$PWD/DerivedDataTests" \
             CODE_SIGNING_ALLOWED=NO \
             test
+
+      # Screenshot reali dell'interfaccia (dati di esempio, -QSPreview, solo
+      # build debug): servono a controllare la grafica prima di consegnarla.
+      - name: Screenshot interfaccia
+        continue-on-error: true
+        run: |
+          xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
+          xcrun simctl bootstatus "$SIM_UDID" -b
+          xcrun simctl status_bar "$SIM_UDID" override --time "9:41" --batteryLevel 100 || true
+          APP="$PWD/DerivedDataTests/Build/Products/Debug-iphonesimulator/QuantSwarmAlphaZero.app"
+          xcrun simctl install "$SIM_UDID" "$APP"
+          mkdir -p shots
+          for TAB in CRUSCOTTO DETTAGLI BROKER SISTEMA; do
+            xcrun simctl terminate "$SIM_UDID" com.quantswarm.alphazero 2>/dev/null || true
+            xcrun simctl launch "$SIM_UDID" com.quantswarm.alphazero -QSPreview -QSTab "$TAB"
+            sleep 10
+            xcrun simctl io "$SIM_UDID" screenshot "shots/$TAB.png"
+          done
+          ls -la shots
+
+      - name: Upload screenshot
+        if: always()
+        continue-on-error: true
+        uses: actions/upload-artifact@v7
+        with:
+          name: screenshot-interfaccia
+          path: shots/
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Build unsigned Release app
         run: |

@@ -60,15 +60,31 @@ struct QuantSwarmAlphaZeroApp: App {
 private struct RootView: View {
     @EnvironmentObject private var engine: QuantSwarmEngine
 
+    /// Solo build di debug con argomento -QSPreview: dati di esempio per gli
+    /// screenshot automatici della CI (nessuna rete, nessuna credenziale).
+    static var isPreview: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-QSPreview")
+        #else
+        return false
+        #endif
+    }
+
     var body: some View {
         Group {
-            if engine.isConfigured {
+            if engine.isConfigured || Self.isPreview {
                 TerminalDashboardView()
             } else {
                 LoginView()
             }
         }
         .task {
+            if Self.isPreview {
+                #if DEBUG
+                engine.loadPreviewState()
+                #endif
+                return
+            }
             await engine.restoreCredentials()
             WidgetStatusBridge.write(engine: engine, force: true)
         }

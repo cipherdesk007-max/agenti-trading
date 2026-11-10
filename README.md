@@ -1,8 +1,27 @@
 # QuantSwarm-Alpha-Zero
 
-Applicazione iOS 17+ in Swift 6, SwiftUI e SwiftData. Kimi (`kimi-k3.1-pro-highspeed`) genera segnali JSON vincolati ragionando su candele chiuse e indicatori calcolati in codice; Alpaca fornisce market data IEX, conto, ordini bracket e liquidazione. Il progetto non contiene credenziali.
+App iOS 17+ (Swift 6, SwiftUI, SwiftData) di trading con agenti AI: Kimi via API sceglie e contesta, il codice decide quantità e rischio, Alpaca esegue. Nessuna credenziale nel repository.
 
-È un'app per telefono e resta tale: niente server, niente backend. Il motore gira solo mentre l'app è aperta in foreground (schermo tenuto acceso, indicatore MOTORE ATTIVO visibile).
+## Modalità
+
+| Modalità | Cosa fa | Stato |
+|---|---|---|
+| **GIORNALIERA · ETF** (default) | 15 ETF (SPY, QQQ, IWM, DIA, 9 settori, GLD, TLT). Ingresso se chiusura > SMA200 e RSI(2) < 10. Stop a 2,5 ATR **sul broker, GTC**: resta attivo ad app chiusa. Uscita a chiusura > SMA5 o dopo 10 giorni. Un controllo subito, poi ogni 15 minuti ad app aperta, e a ogni riapertura. | Validata: batte ingressi casuali nel backtest 2006–oggi |
+| **VELOCE · SPERIMENTALE** | Candele 15m, filtro long, bracket in giornata, chiusura totale 10 minuti prima della fine della seduta. Serve l'app sempre aperta. | Nei backtest perde e non batte il caso |
+
+## Catena agenti
+
+Scout (dati, conto, posizioni) → Strategia (segnali a regole, zero crediti) → Analyst (quadro di mercato) → Brain (Kimi sceglie) → Reviewer (Kimi cerca motivi per bocciare) → Rischio (codice: quantità, stop, limiti) → Esecutore (ordine con stop sul broker). Se la Strategia non trova segnali, Kimi non viene chiamato. Ogni errore di Kimi o del broker = nessun ordine. Lo stato di ogni agente è nel CRUSCOTTO.
+
+## Regole di rischio (in codice, testate)
+
+Rischio max 1% per trade (impostabile 0,25–2%, mai oltre 5%), posizione max 25% del capitale, max 3 posizioni, stop giornaliero e stop drawdown 10% con sblocco manuale, solo acquisti (niente short), limite giornaliero di spesa Kimi.
+
+## Verifica indipendente
+
+- **Test automatici**: a ogni push GitHub Actions esegue i test XCTest (regole di rischio, filtro, strategia giornaliera) su simulatore; se un test fallisce l'IPA non viene pubblicata.
+- **Backtest**: Actions → "Backtest filtro" → Run workflow (`tutti`, `giornaliero`, `intraday15`, `veloce5m`). Codice in `tools/`. I risultati sono nel riepilogo del run.
+- **Broker**: confronta il registro dell'app con l'estratto conto Alpaca.
 
 ## Build e artifact
 
