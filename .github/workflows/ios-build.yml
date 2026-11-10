@@ -81,15 +81,17 @@ jobs:
           done
           ls -la shots
 
-      - name: Upload screenshot
-        if: always()
+      - name: Pubblica screenshot (release "screenshot")
         continue-on-error: true
-        uses: actions/upload-artifact@v7
-        with:
-          name: screenshot-interfaccia
-          path: shots/
-          if-no-files-found: ignore
-          retention-days: 7
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ls shots/*.png >/dev/null 2>&1 || exit 0
+          for f in shots/*.png; do sips -Z 1400 "$f" >/dev/null; done
+          gh release delete screenshot --yes --cleanup-tag 2>/dev/null || true
+          gh release create screenshot shots/*.png --prerelease \
+            --target "$GITHUB_SHA" --title "Screenshot interfaccia" \
+            --notes "Screenshot automatici dal simulatore (dati di esempio). Commit: $GITHUB_SHA"
 
       - name: Build unsigned Release app
         run: |
