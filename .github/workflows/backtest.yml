@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app"
         default: "tutti"
 
 jobs:
@@ -32,4 +32,7 @@ jobs:
         run: |
           python tools/backtest_intraday.py | tee -a backtest.md
           BT_COST=0.00005 python tools/backtest_intraday.py | tee -a backtest.md
+      - name: Regole esatte dell'app (giornaliera) + robustezza
+        if: env.Q == 'tutti' || env.Q == 'app'
+        run: python tools/backtest_app.py | tee -a backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
