@@ -25,6 +25,7 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources
+      - excludes: ["Sources/Widget/**"]
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quantswarm.alphazero
@@ -35,6 +36,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         ENABLE_BITCODE: NO
+        CODE_SIGN_ENTITLEMENTS: Sources/App/QuantSwarmAlphaZero.entitlements
     dependencies:
       - sdk: AVFoundation.framework
       - sdk: CoreLocation.framework
@@ -42,6 +44,8 @@ targets:
       - sdk: SwiftUI.framework
       - sdk: SwiftData.framework
       - sdk: UserNotifications.framework
+      - sdk: WidgetKit.framework
+      - target: QuantSwarmWidgetExtension
     info:
       path: Generated/Info.plist
       properties:
@@ -57,11 +61,38 @@ targets:
         ITSAppUsesNonExemptEncryption: false
     scheme:
       gatherCoverageData: false
+  QuantSwarmWidgetExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Sources/Widget
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quantswarm.alphazero.widget
+        PRODUCT_NAME: QuantSwarmWidget
+        MARKETING_VERSION: "1.0.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1"
+        SUPPORTS_MACCATALYST: NO
+        ENABLE_BITCODE: NO
+        CODE_SIGN_ENTITLEMENTS: Sources/Widget/QuantSwarmWidgetExtension.entitlements
+    dependencies:
+      - sdk: SwiftUI.framework
+      - sdk: WidgetKit.framework
+    info:
+      path: Generated/WidgetInfo.plist
+      properties:
+        CFBundleDisplayName: QuantSwarm Status
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
 schemes:
   QuantSwarmAlphaZero:
     build:
       targets:
         QuantSwarmAlphaZero: all
+        QuantSwarmWidgetExtension: all
     run:
       config: Debug
     profile:

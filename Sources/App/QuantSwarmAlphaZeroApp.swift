@@ -73,6 +73,22 @@ private struct RootView: View {
         }
         .task {
             await engine.restoreCredentials()
+            WidgetStatusBridge.write(engine: engine, force: true)
+        }
+        .onReceive(engine.$statusMessage) { _ in
+            WidgetStatusBridge.write(engine: engine)
+        }
+        .onReceive(engine.$isRunning) { _ in
+            WidgetStatusBridge.write(engine: engine, force: true)
+        }
+        .onReceive(engine.$account) { _ in
+            WidgetStatusBridge.write(engine: engine)
+        }
+        .onReceive(engine.$positions) { _ in
+            WidgetStatusBridge.write(engine: engine)
+        }
+        .onReceive(engine.$strategyConfig) { _ in
+            WidgetStatusBridge.write(engine: engine, force: true)
         }
     }
 }
