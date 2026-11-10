@@ -19,4 +19,8 @@ jobs:
         run: BT_COST=0.00005 python tools/backtest.py | tee -a backtest.md
       - name: Backtest giornaliero ETF 2006-oggi
         run: python tools/backtest_daily.py | tee -a backtest.md
+      - name: Backtest veloce 5m (ORB, VWAP) costi 0,02%
+        run: python tools/backtest_intraday.py | tee -a backtest.md
+      - name: Backtest veloce 5m (ORB, VWAP) costi 0,005%
+        run: BT_COST=0.00005 python tools/backtest_intraday.py | tee -a backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
