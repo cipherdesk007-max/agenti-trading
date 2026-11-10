@@ -986,7 +986,7 @@ final class QuantSwarmEngine: ObservableObject {
             creditLimitLogged = false
             for symbol in configuredSymbols {
                 guard isRunning && !Task.isCancelled else { break }
-                guard let snapshot = snapshots[symbol], let atr = snapshot.atr14 else {
+                guard let streamSnapshot = snapshots[symbol], let streamATR = streamSnapshot.atr14 else {
                     if !waitingLogEmitted.contains(symbol) {
                         waitingLogEmitted.insert(symbol)
                         let reason = snapshots[symbol] == nil
@@ -997,7 +997,7 @@ final class QuantSwarmEngine: ObservableObject {
                     continue
                 }
                 waitingLogEmitted.remove(symbol)
-                let dataAge = Date().timeIntervalSince(snapshot.receivedAt)
+                let dataAge = Date().timeIntervalSince(streamSnapshot.receivedAt)
                 guard dataAge <= 120 else {
                     if !staleLogEmitted.contains(symbol) {
                         staleLogEmitted.insert(symbol)
@@ -1049,11 +1049,11 @@ final class QuantSwarmEngine: ObservableObject {
                     let variance = history.reduce(0) { $0 + ($1 - mean) * ($1 - mean) }
                         / Double(history.count)
                     let deviation = variance.squareRoot()
-                    if deviation > 0, atr > mean + 2 * deviation {
+                    if deviation > 0, streamATR > mean + 2 * deviation {
                         if !regimeLogged.contains(symbol) {
                             regimeLogged.insert(symbol)
                             log(
-                                "\(symbol): ATR \(format(atr)) oltre 2σ dalla media "
+                                "\(symbol): ATR \(format(streamATR)) oltre 2σ dalla media "
                                     + "\(format(mean)); volatilità anomala, simbolo in pausa.",
                                 agent: .risk
                             )
@@ -1062,7 +1062,7 @@ final class QuantSwarmEngine: ObservableObject {
                     }
                 }
                 regimeLogged.remove(symbol)
-                history.append(atr)
+                history.append(streamATR)
                 if history.count > 240 { history.removeFirst(history.count - 240) }
                 atrHistory[symbol] = history
                 // Kimi solo alla CHIUSURA di una candela nuova del timeframe
@@ -1080,6 +1080,17 @@ final class QuantSwarmEngine: ObservableObject {
                     continue
                 }
                 waitingCandlesLogged.remove(symbol)
+                // ATR del timeframe DECISIONALE (es. 15m): è su queste candele che
+                // Kimi ragiona e mette lo stop. L'ATR 1m dello stream resta solo
+                // per il filtro di volatilità anomala qui sopra.
+                let atr = Indicators.atr(decisionCandles, period: SystemLimits.atrPeriod) ?? streamATR
+                let snapshot = MarketSnapshot(
+                    symbol: streamSnapshot.symbol,
+                    lastPrice: streamSnapshot.lastPrice,
+                    atr14: atr,
+                    sourceTimestamp: streamSnapshot.sourceTimestamp,
+                    receivedAt: streamSnapshot.receivedAt
+                )
                 guard lastDecisionBucket[symbol] != lastClosed.timestamp else { continue }
                 lastDecisionBucket[symbol] = lastClosed.timestamp
                 // Filtro gratuito in codice: EMA cross, rottura high/low 20 o

@@ -144,34 +144,47 @@ struct CandleStore: Sendable {
 /// = nessuna chiamata = crediti risparmiati.
 enum FilterTrigger {
     /// Restituisce la descrizione del trigger scattato, oppure nil.
+    ///
+    /// Il conto opera SOLO in acquisto: i trigger sono tutti setup long.
+    /// Segnali ribassisti (incrocio al ribasso, rottura dei minimi, RSI
+    /// ipercomprato) non chiamano Kimi, perché l'unica risposta possibile
+    /// sarebbe HOLD e i crediti andrebbero sprecati.
     static func evaluate(candles: [Candle]) -> String? {
         guard candles.count >= 30, let last = candles.last else { return nil }
         let closes = candles.map(\.close)
+        let previousCloses = Array(closes.dropLast())
+        guard let ema12 = Indicators.ema(closes, period: 12),
+              let ema26 = Indicators.ema(closes, period: 26) else { return nil }
+        let rsiNow = Indicators.rsi(closes, period: 14)
+        let rsiPrev = Indicators.rsi(previousCloses, period: 14)
 
-        // EMA cross 12/26 fra le ultime due candele chiuse.
-        if let ema12Now = Indicators.ema(closes, period: 12),
-           let ema26Now = Indicators.ema(closes, period: 26),
-           let ema12Prev = Indicators.ema(Array(closes.dropLast()), period: 12),
-           let ema26Prev = Indicators.ema(Array(closes.dropLast()), period: 26) {
-            let diffNow = ema12Now - ema26Now
-            let diffPrev = ema12Prev - ema26Prev
-            if diffPrev <= 0, diffNow > 0 { return "incrocio EMA 12/26 al rialzo" }
-            if diffPrev >= 0, diffNow < 0 { return "incrocio EMA 12/26 al ribasso" }
+        // 1. Incrocio EMA 12/26 al rialzo fra le ultime due candele chiuse.
+        if let ema12Prev = Indicators.ema(previousCloses, period: 12),
+           let ema26Prev = Indicators.ema(previousCloses, period: 26),
+           ema12Prev <= ema26Prev, ema12 > ema26 {
+            return "incrocio EMA 12/26 al rialzo"
         }
 
-        // Rottura dei massimi/minimi delle 20 candele precedenti.
-        let previous20 = candles.dropLast().suffix(20)
+        // 2. Rottura del massimo delle 20 candele precedenti, con volume
+        //    almeno nella media (rotture senza volume falliscono spesso).
+        let previous20 = Array(candles.dropLast().suffix(20))
         if let high20 = previous20.map(\.high).max(), last.close > high20 {
-            return "rottura del massimo a 20 candele"
-        }
-        if let low20 = previous20.map(\.low).min(), last.close < low20 {
-            return "rottura del minimo a 20 candele"
+            let averageVolume = previous20.map(\.volume).reduce(0, +) / Double(previous20.count)
+            if averageVolume <= 0 || last.volume >= averageVolume {
+                return "rottura del massimo a 20 candele con volume"
+            }
         }
 
-        // RSI estremo.
-        if let rsi = Indicators.rsi(closes, period: 14) {
-            if rsi <= 30 { return "RSI ipervenduto (\(Int(rsi)))" }
-            if rsi >= 70 { return "RSI ipercomprato (\(Int(rsi)))" }
+        // 3. Pullback in trend rialzista: EMA12 > EMA26, prezzo sopra EMA26,
+        //    RSI sceso a ≤ 40 e ora in risalita.
+        if ema12 > ema26, last.close > ema26,
+           let now = rsiNow, let prev = rsiPrev, prev <= 40, now > prev {
+            return "pullback in trend rialzista (RSI \(Int(prev)) → \(Int(now)))"
+        }
+
+        // 4. Rimbalzo da ipervenduto: RSI risale sopra 30 con candela verde.
+        if let now = rsiNow, let prev = rsiPrev, prev < 30, now >= 30, last.close > last.open {
+            return "rimbalzo da ipervenduto (RSI \(Int(prev)) → \(Int(now)))"
         }
         return nil
     }
