@@ -17,4 +17,6 @@ jobs:
         run: python tools/backtest.py | tee backtest.md
       - name: Backtest (costi quasi nulli 0,005% per lato)
         run: BT_COST=0.00005 python tools/backtest.py | tee -a backtest.md
+      - name: Backtest giornaliero ETF 2006-oggi
+        run: python tools/backtest_daily.py | tee -a backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
