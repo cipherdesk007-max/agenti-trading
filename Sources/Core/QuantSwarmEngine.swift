@@ -418,12 +418,19 @@ final class QuantSwarmEngine: ObservableObject {
         // non solo sulle barre arrivate dopo l'avvio dello stream. L'ultima
         // candela REST può essere in formazione e viene scartata da seed().
         let alpaca = AlpacaService(credentials: credentials.alpaca)
+        var backfilledOneMinute: [String: [Candle]] = [:]
         for symbol in parsedSymbols {
             do {
                 async let oneMinuteRequest = alpaca.bars(symbol: symbol, timeframe: "1Min", limit: 100)
                 async let fifteenMinuteRequest = alpaca.bars(symbol: symbol, timeframe: "15Min", limit: 100)
                 let (oneMinute, fifteenMinute) = try await (oneMinuteRequest, fifteenMinuteRequest)
                 candleStores[symbol]?.seed(oneMinute: oneMinute, fifteenMinute: fifteenMinute)
+                // Solo barre chiuse per l'ATR: l'ultima può essere in formazione.
+                var closedOneMinute = oneMinute
+                if let last = closedOneMinute.last, Date() < last.timestamp.addingTimeInterval(60) {
+                    closedOneMinute.removeLast()
+                }
+                backfilledOneMinute[symbol] = closedOneMinute
                 log(
                     "\(symbol): storico candele caricato (1m \(oneMinute.count), 15m \(fifteenMinute.count)).",
                     agent: .scout
@@ -442,6 +449,10 @@ final class QuantSwarmEngine: ObservableObject {
             credentials: credentials.alpaca,
             symbols: parsedSymbols
         )
+        // start() azzera gli stati ATR: il seed dallo storico va fatto dopo.
+        for (symbol, candles) in backfilledOneMinute {
+            await marketScout.seedATR(symbol: symbol, oneMinute: candles)
+        }
         marketTask = Task { [weak self] in
             for await event in stream {
                 self?.handle(event)

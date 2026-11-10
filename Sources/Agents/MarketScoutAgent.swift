@@ -22,6 +22,8 @@ actor MarketScoutAgent {
     private var lastNetworkSatisfied: Bool?
     private var atrStates: [String: ATRState] = [:]
     private var lastPrices: [String: Double] = [:]
+    private var undecodableCount = 0
+    private var lastUndecodableLog: Date?
     private let session: URLSession
     private let pathMonitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.quantswarm.alphazero.network")
@@ -45,6 +47,8 @@ actor MarketScoutAgent {
         self.symbols = Array(Set(symbols.map { $0.uppercased() })).sorted()
         self.atrStates = Dictionary(uniqueKeysWithValues: self.symbols.map { ($0, ATRState()) })
         self.lastPrices = [:]
+        self.undecodableCount = 0
+        self.lastUndecodableLog = nil
         self.retryAttempt = 0
         self.lastNetworkSatisfied = nil
         self.running = true
@@ -256,15 +260,64 @@ actor MarketScoutAgent {
         // Decodifica tollerante: un solo frame malformato non deve mai far cadere
         // lo stream (il piano IEX permette una sola connessione e la riconnessione
         // immediata scatena il 406 connection limit sullo slot ancora occupato).
-        if let messages = try? JSONDecoder().decode([StreamMessage].self, from: data) {
+        let decoder = JSONDecoder()
+        if let elements = try? decoder.decode([LenientStreamMessage].self, from: data) {
+            let messages = elements.compactMap(\.value)
+            let dropped = elements.count - messages.count
+            if dropped > 0 {
+                reportUndecodable(count: dropped, sample: data)
+            }
             return messages
         }
-        if let single = try? JSONDecoder().decode(StreamMessage.self, from: data) {
+        if let single = try? decoder.decode(StreamMessage.self, from: data) {
             return [single]
         }
-        let preview = String(decoding: data.prefix(120), as: UTF8.self)
-        continuation?.yield(.log("Frame stream ignorato (non decodificabile): \(preview)"))
+        reportUndecodable(count: 1, sample: data)
         return []
+    }
+
+    /// Log limitato: al massimo una riga ogni 60 s con il conteggio dei
+    /// messaggi scartati, così la console non viene inondata.
+    private func reportUndecodable(count: Int, sample: Data) {
+        undecodableCount += count
+        let now = Date()
+        if let last = lastUndecodableLog, now.timeIntervalSince(last) < 60 {
+            return
+        }
+        lastUndecodableLog = now
+        let preview = String(decoding: sample.prefix(160), as: UTF8.self)
+        continuation?.yield(.log(
+            "Stream: \(undecodableCount) messaggi non decodificabili scartati "
+                + "(ultimo minuto). Esempio: \(preview)"
+        ))
+        undecodableCount = 0
+    }
+
+    /// Avvia l'ATR dallo storico REST: senza questo il primo ATR arrivava
+    /// solo dopo 14 barre 1m dallo stream (≈14 minuti di attesa) e Kimi
+    /// riceveva atr_14 nullo.
+    func seedATR(symbol: String, oneMinute candles: [Candle]) {
+        let key = symbol.uppercased()
+        guard candles.count > SystemLimits.atrPeriod else { return }
+        var state = ATRState()
+        for candle in candles {
+            _ = state.update(
+                open: candle.open,
+                high: candle.high,
+                low: candle.low,
+                close: candle.close
+            )
+        }
+        atrStates[key] = state
+        if let last = candles.last {
+            lastPrices[key] = last.close
+        }
+        if let atr = state.atr {
+            continuation?.yield(.log(
+                "\(key): ATR 14 avviato dallo storico (\(candles.count) barre 1m): "
+                    + String(format: "%.4f", locale: Locale(identifier: "en_US_POSIX"), atr) + "."
+            ))
+        }
     }
 
     private func process(_ message: StreamMessage) {
@@ -385,5 +438,69 @@ private struct StreamMessage: Decodable {
         case close = "c"
         case volume = "v"
         case timestamp = "t"
+    }
+
+    /// Decodifica tollerante campo per campo. Alpaca riusa le stesse chiavi
+    /// con tipi diversi a seconda del tipo di messaggio: nei trade ("T":"t")
+    /// "c" è l'array delle condizioni ([" ","I"]), nelle barre ("T":"b") è
+    /// il prezzo di chiusura. Con la sintesi automatica di Decodable un "c"
+    /// non numerico faceva fallire l'intero frame: ogni trade veniva scartato.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        type = try container.decode(String.self, forKey: .type)
+        message = Self.string(container, .message)
+        code = Self.int(container, .code)
+        symbol = Self.string(container, .symbol)
+        price = Self.double(container, .price)
+        open = Self.double(container, .open)
+        high = Self.double(container, .high)
+        low = Self.double(container, .low)
+        // "c" vale come chiusura solo nelle barre; nei trade sono condizioni.
+        close = type == "b" ? Self.double(container, .close) : nil
+        volume = Self.double(container, .volume)
+        timestamp = Self.string(container, .timestamp)
+    }
+
+    private static func double(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Double? {
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return value
+        }
+        if let text = try? container.decodeIfPresent(String.self, forKey: key) {
+            return Double(text)
+        }
+        return nil
+    }
+
+    private static func int(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> Int? {
+        if let value = try? container.decodeIfPresent(Int.self, forKey: key) {
+            return value
+        }
+        if let value = try? container.decodeIfPresent(Double.self, forKey: key) {
+            return Int(value)
+        }
+        return nil
+    }
+
+    private static func string(
+        _ container: KeyedDecodingContainer<CodingKeys>,
+        _ key: CodingKeys
+    ) -> String? {
+        try? container.decodeIfPresent(String.self, forKey: key)
+    }
+}
+
+/// Elemento di un array di frame: se un singolo messaggio è malformato
+/// viene scartato solo quello, non l'intero frame con tutti gli altri.
+private struct LenientStreamMessage: Decodable {
+    let value: StreamMessage?
+
+    init(from decoder: Decoder) throws {
+        value = try? StreamMessage(from: decoder)
     }
 }

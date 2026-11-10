@@ -268,19 +268,28 @@ actor AlpacaService {
         guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
             throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
         }
+        // Senza "start" Alpaca restituisce solo le barre di OGGI (a inizio
+        // sessione 1m ≈ 20, 15m ≈ 4). Si parte da 7 giorni fa (copre weekend
+        // e festivi) e si chiedono le PIÙ RECENTI con sort=desc, poi si
+        // riordina dalla più vecchia: con sort=asc + limit arrivavano le più
+        // vecchie della finestra.
+        let start = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-7 * 86_400))
         let data = try await send(
             baseURL: credentials.marketDataBaseURL,
             path: "/v2/stocks/\(escaped)/bars",
             method: "GET",
             query: [
                 URLQueryItem(name: "timeframe", value: timeframe),
+                URLQueryItem(name: "start", value: start),
                 URLQueryItem(name: "limit", value: String(limit)),
                 URLQueryItem(name: "feed", value: "iex"),
-                URLQueryItem(name: "sort", value: "asc")
+                URLQueryItem(name: "sort", value: "desc")
             ]
         )
         let response = try JSONDecoder().decode(BarsResponse.self, from: data)
-        return (response.bars ?? []).compactMap(\.candle)
+        return (response.bars ?? [])
+            .compactMap(\.candle)
+            .sorted { $0.timestamp < $1.timestamp }
     }
 
     /// Ultimo prezzo scambiato (feed IEX): rilettura DOPO la risposta di Kimi,
