@@ -137,7 +137,8 @@ actor KimiService {
         news: String,
         performance: PerformanceMatrix,
         calibration: CalibrationStats? = nil,
-        marketContext: MarketContext? = nil
+        marketContext: MarketContext? = nil,
+        analystView: KimiAnalysis? = nil
     ) async throws -> KimiDecision {
         let systemPrompt = """
         Sei il modulo decisionale di un sistema di trading. Non fornire consulenza finanziaria \
@@ -147,7 +148,9 @@ actor KimiService {
         azioni valide sono buy o hold (in un quadro ribassista rispondi hold). Per buy vale \
         stop_loss < entry_price < take_profit, con stop tra 0,5 e 5 volte atr_14 sotto \
         l'ingresso e (take_profit - entry_price) almeno 1,5 volte (entry_price - stop_loss). \
-        entry_price deve essere il prezzo corrente fornito. win_probability è una stima \
+        entry_price deve essere il prezzo corrente fornito. Il campo analyst_view, se presente, \
+        è la lettura di regime/volatilità/bias dell'agente Analyst sugli stessi dati: usala come \
+        contesto e segnala nel rationale se sei in disaccordo, ma decidi sui dati. win_probability è una stima \
         soggettiva in (0,1), payoff_ratio è il rapporto reward/risk positivo. Il campo \
         candles_two_timeframes contiene le ultime candele CHIUSE (t = secondi unix di inizio \
         candela, o/h/l/c/v) e gli indicatori calcolati in codice sui timeframe 1m e 15m: usali \
@@ -175,6 +178,8 @@ actor KimiService {
             ]
         ]
         payload["candles_two_timeframes"] = marketContext.map(Self.contextPayload) ?? NSNull()
+        // Collegamento agenti: la lettura dell'Analyst arriva al Brain.
+        payload["analyst_view"] = analystView.map(Self.analysisPayload) ?? NSNull()
         // Apprendimento in-context: la calibrazione misurata sui trade passati
         // rientra nel prompt, così Kimi corregge da solo l'over/under-confidence.
         if let calibration {
@@ -241,14 +246,15 @@ actor KimiService {
     func review(
         decision: KimiDecision,
         snapshot: MarketSnapshot,
-        marketContext: MarketContext? = nil
+        marketContext: MarketContext? = nil,
+        analystView: KimiAnalysis? = nil
     ) async throws -> KimiReview {
         let systemPrompt = """
         Sei il revisore avversario di un sistema di trading. Assumi che la decisione proposta sia \
         SBAGLIATA e cerca attivamente motivi concreti per respingerla: livelli incoerenti con le \
         candele chiuse fornite, rapporto rischio/rendimento reale insufficiente, volatilità anomala \
-        rispetto all'ATR, dati contraddittori o stantii, ancoraggio errato al prezzo corrente. \
-        Approva solo se non trovi nulla di concreto da obiettare. Non usare Markdown.
+        rispetto all'ATR, dati contraddittori o stantii, ancoraggio errato al prezzo corrente, \
+        contrasto con la lettura dell'Analyst (analyst_view) non giustificato. Approva solo se non trovi nulla di concreto da obiettare. Non usare Markdown.
         """
         var payload: [String: Any] = [
             "proposal": [
@@ -269,6 +275,7 @@ actor KimiService {
             ]
         ]
         payload["candles_two_timeframes"] = marketContext.map(Self.contextPayload) ?? NSNull()
+        payload["analyst_view"] = analystView.map(Self.analysisPayload) ?? NSNull()
         let payloadData = try JSONSerialization.data(withJSONObject: payload)
         let payloadString = String(decoding: payloadData, as: UTF8.self)
         let messages: [[String: String]] = [
@@ -296,6 +303,16 @@ actor KimiService {
 
     /// Serializzazione compatta del contesto candele: numeri a 4 decimali e
     /// timestamp in secondi unix per contenere i token spesi a ogni chiamata.
+    private static func analysisPayload(_ analysis: KimiAnalysis) -> [String: Any] {
+        [
+            "regime": analysis.regime,
+            "volatility": analysis.volatility,
+            "bias": analysis.bias,
+            "confidence": analysis.confidence,
+            "comment": analysis.comment
+        ]
+    }
+
     private static func contextPayload(_ context: MarketContext) -> [String: Any] {
         [
             "timeframe_1m": timeframePayload(context.oneMinuteCandles, context.oneMinuteIndicators),
@@ -350,14 +367,18 @@ actor KimiService {
         positions: [AlpacaPosition],
         account: AccountSnapshot?,
         news: String,
-        recentDecisions: [KimiDecision]
+        recentDecisions: [KimiDecision],
+        contexts: [String: MarketContext] = [:]
     ) async throws -> KimiAnalysis {
         let systemPrompt = """
         Sei l'analista di mercato di un sistema di trading algoritmico. Commenta in italiano, \
         con al massimo tre frasi, il regime, la volatilità e il bias dei simboli forniti usando \
         solo i dati ricevuti. Non fornire consulenza finanziaria e non affermare certezze. \
-        Segnala rischi concreti se presenti (volatilità anomala rispetto all'ATR, posizioni \
-        aperte in perdita, dati fermi). Non usare Markdown.
+        Per ogni simbolo il campo candles_two_timeframes contiene le ultime candele CHIUSE 1m e \
+        15m con indicatori calcolati in codice (EMA, SMA, RSI, ATR): basa regime e bias su questi. \
+        La tua lettura viene passata all'agente decisionale e al revisore. Segnala rischi concreti \
+        se presenti (volatilità anomala rispetto all'ATR, posizioni aperte in perdita, dati fermi). \
+        Non usare Markdown.
         """
         let now = Date()
         let symbolsPayload: [[String: Any]] = snapshots.map { snapshot in
@@ -366,7 +387,8 @@ actor KimiService {
                 "last_price": snapshot.lastPrice,
                 "atr_14": snapshot.atr14.map { $0 as Any } ?? NSNull(),
                 "atr_pct_of_price": snapshot.atr14.map { ($0 / snapshot.lastPrice * 100) as Any } ?? NSNull(),
-                "data_age_seconds": Int(now.timeIntervalSince(snapshot.receivedAt))
+                "data_age_seconds": Int(now.timeIntervalSince(snapshot.receivedAt)),
+                "candles_two_timeframes": contexts[snapshot.symbol].map(Self.contextPayload) ?? NSNull()
             ]
         }
         let positionsPayload: [[String: Any]] = positions.map { position in

@@ -275,7 +275,7 @@ final class QuantSwarmEngine: ObservableObject {
         log(
             "Impostazioni aggiornate: rischio \(format(sanitized.riskPerTradePercent))%, "
                 + "max posizioni \(sanitized.maxOpenPositions), stop giorno \(format(sanitized.dailyStopPercent))%, "
-                + "ciclo \(sanitized.decisionIntervalSeconds)s, analisi \(format(sanitized.analysisIntervalMinutes, fractionDigits: 1)) min, "
+                + "ciclo \(sanitized.decisionIntervalSeconds)s, validità analisi \(format(sanitized.analysisIntervalMinutes, fractionDigits: 1)) min, "
                 + "timeframe \(sanitized.decisionTimeframeMinutes)m, filtro \(sanitized.kimiFilterEnabled ? "ON" : "OFF"), "
                 + "limite crediti \(sanitized.creditLimitEnabled ? format(sanitized.dailyCreditLimitUSD) + " USD" : "OFF"), "
                 + "modello \(sanitized.kimiModel)."
@@ -729,20 +729,6 @@ final class QuantSwarmEngine: ObservableObject {
         await performAnalysis(kimi: kimiService, manual: true)
     }
 
-    /// Analisi automatica: cadenza presa dalle impostazioni live. Sospesa se
-    /// il limite crediti giornaliero è stato raggiunto.
-    private func runScheduledAnalysis(kimi: KimiService) async {
-        guard isRunning, !Task.isCancelled else { return }
-        guard !creditLimitExceeded else { return }
-        let now = Date()
-        let interval = strategyConfig.analysisInterval
-        let due = lastAnalysisAt.map {
-            now.timeIntervalSince($0) >= interval
-        } ?? true
-        guard due else { return }
-        await performAnalysis(kimi: kimi, manual: false)
-    }
-
     private func performAnalysis(kimi: KimiService, manual: Bool) async {
         guard !analysisInFlight else { return }
         let fresh = snapshots.values
@@ -758,13 +744,21 @@ final class QuantSwarmEngine: ObservableObject {
         analysisInFlight = true
         defer { analysisInFlight = false }
         registerKimiCall()
+        // L'Analyst vede le stesse candele e indicatori del Brain.
+        var contexts: [String: MarketContext] = [:]
+        for snapshot in fresh {
+            if let context = candleStores[snapshot.symbol]?.context() {
+                contexts[snapshot.symbol] = context
+            }
+        }
         do {
             let analysis = try await kimi.analyze(
                 snapshots: fresh,
                 positions: positions,
                 account: account,
                 news: configuredNews,
-                recentDecisions: decisions.suffix(5).map(\.decision)
+                recentDecisions: decisions.suffix(5).map(\.decision),
+                contexts: contexts
             )
             lastAnalysisAt = Date()
             latestAnalysis = AnalysisEntry(timestamp: Date(), analysis: analysis)
@@ -929,9 +923,9 @@ final class QuantSwarmEngine: ObservableObject {
             await refreshTradeRecords()
             await refreshPortfolioThrottled()
             evaluateHoldSamples()
-            if pauseReason == nil, acceptsNewOrders {
-                await runScheduledAnalysis(kimi: kimi)
-            }
+            // L'Analyst non gira più a orologio: parte solo prima di una
+            // decisione (catena Scout → filtro → Analyst → Brain → Reviewer →
+            // Rischio) o su ANALIZZA ORA. Niente crediti spesi a vuoto.
             // Flat by close: a T-10 minuti chiude tutto a mercato; una strategia
             // intraday non resta esposta overnight con le gambe del bracket scadute.
             // Resta attivo anche in pausa: è protezione del capitale, non un nuovo ingresso.
@@ -1115,13 +1109,25 @@ final class QuantSwarmEngine: ObservableObject {
                     )
                 }
                 let context = candleStores[symbol]?.context()
+                // Catena agenti: se la lettura dell'Analyst è più vecchia di
+                // "validità analisi" (impostazioni), viene aggiornata PRIMA del
+                // Brain e gli viene passata.
+                let analysisValidity = strategyConfig.sanitized.analysisInterval
+                let analysisAge = latestAnalysis.map { Date().timeIntervalSince($0.timestamp) }
+                if (analysisAge ?? .infinity) > analysisValidity, !creditLimitExceeded {
+                    await performAnalysis(kimi: kimi, manual: false)
+                }
+                let analystView = latestAnalysis.flatMap {
+                    Date().timeIntervalSince($0.timestamp) <= analysisValidity ? $0.analysis : nil
+                }
                 do {
                     let decision = try await kimi.decide(
                         snapshot: snapshot,
                         news: configuredNews,
                         performance: performanceMatrix(),
                         calibration: calibration,
-                        marketContext: context
+                        marketContext: context,
+                        analystView: analystView
                     )
                     registerKimiCall()
                     decisions.append(DecisionEntry(timestamp: Date(), decision: decision))
@@ -1194,7 +1200,8 @@ final class QuantSwarmEngine: ObservableObject {
                             review = try await kimi.review(
                                 decision: decision,
                                 snapshot: snapshot,
-                                marketContext: context
+                                marketContext: context,
+                                analystView: analystView
                             )
                             registerKimiCall()
                         } catch is CancellationError {

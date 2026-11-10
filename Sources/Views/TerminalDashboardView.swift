@@ -515,11 +515,11 @@ struct TerminalDashboardView: View {
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
-                Text("\(Formatters.time(entry.timestamp)) · cadenza \(Int(engine.strategyConfig.analysisIntervalMinutes)) min")
+                Text("\(Formatters.time(entry.timestamp)) · prima di ogni decisione → Brain e Reviewer")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
             } else {
-                Text("Nessuna analisi ancora: con il motore avviato e dati freschi, Kimi commenta il mercato alla cadenza impostata. Puoi forzarla con ANALIZZA ORA.")
+                Text("Nessuna analisi ancora: l'Analyst parte quando il filtro trova un segnale, prima della decisione, e la sua lettura arriva a Brain e Reviewer. Puoi forzarla con ANALIZZA ORA.")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1012,7 +1012,7 @@ private struct SystemSettingsView: View {
                 )
                 Stepper("Ciclo decisioni: \(draft.decisionIntervalSeconds)s", value: $draft.decisionIntervalSeconds, in: 30...120, step: 5)
                 Stepper(
-                    "Kimi Analyst ogni: \(String(format: "%.1f", draft.analysisIntervalMinutes)) min",
+                    "Validità analisi Analyst: \(String(format: "%.1f", draft.analysisIntervalMinutes)) min",
                     value: $draft.analysisIntervalMinutes,
                     in: 2...15,
                     step: 1
