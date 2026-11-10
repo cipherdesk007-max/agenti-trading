@@ -62,6 +62,7 @@ struct TerminalDashboardView: View {
     @State private var news = ""
     @State private var showKillConfirmation = false
     @State private var showLogoutConfirmation = false
+    @State private var showUnlockConfirmation = false
     @State private var pulse = false
 
     private let terminalGreen = DashboardPalette.green
@@ -85,9 +86,11 @@ struct TerminalDashboardView: View {
                             switch selectedSection {
                             case .operations:
                                 controlPanel
+                                guardPanel
                                 reportPanel
                                 positionsPanel
                                 portfolioPanel
+                                kimiPanel
                                 edgePanel
                                 killButton
                             case .agents:
@@ -146,14 +149,30 @@ struct TerminalDashboardView: View {
             } message: {
                 Text("Ferma il motore, cancella tutti gli ordini e richiede ad Alpaca la chiusura a mercato di tutte le posizioni del conto configurato.")
             }
+            .alert("SBLOCCO DRAWDOWN", isPresented: $showUnlockConfirmation) {
+                Button("ANNULLA", role: .cancel) {}
+                Button("SBLOCCA", role: .destructive) {
+                    engine.unlockDrawdown()
+                }
+            } message: {
+                Text("Riattiva i nuovi ordini e riallinea il picco di equity all'equity corrente. Fallo solo dopo aver capito la causa del drawdown.")
+            }
             .onChange(of: scenePhase) { _, phase in
-                // Snapshot su disco solo a motore attivo: se l'utente ha già
-                // premuto STOP il report esiste con il motivo corretto e non
-                // va sovrascritto con un generico "app chiusa".
-                if phase == .background, engine.isRunning {
-                    engine.exportSessionReport(
-                        reason: "App chiusa con motore ancora attivo (snapshot)"
-                    )
+                switch phase {
+                case .background:
+                    // Snapshot su disco solo a motore attivo: se l'utente ha già
+                    // premuto STOP il report esiste con il motivo corretto e non
+                    // va sovrascritto con un generico "app chiusa".
+                    if engine.isRunning {
+                        engine.exportSessionReport(
+                            reason: "App chiusa con motore ancora attivo (snapshot)"
+                        )
+                    }
+                    engine.handleEnteredBackground()
+                case .active:
+                    Task { await engine.handleEnteredForeground() }
+                default:
+                    break
                 }
             }
             .onAppear {
@@ -184,6 +203,14 @@ struct TerminalDashboardView: View {
                     Text(engine.paperTrading ? "PAPER" : "LIVE")
                         .font(.system(.caption2, design: .monospaced, weight: .black))
                         .foregroundStyle(engine.paperTrading ? terminalGreen : .red)
+                    if engine.isRunning {
+                        Text("MOTORE ATTIVO")
+                            .font(.system(.caption2, design: .monospaced, weight: .black))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(terminalGreen)
+                    }
                     if let clock = engine.marketClock {
                         Text(clock.isOpen ? "MERCATO APERTO" : "MERCATO CHIUSO")
                             .font(.system(.caption2, design: .monospaced, weight: .bold))
@@ -197,6 +224,11 @@ struct TerminalDashboardView: View {
                                 .foregroundStyle(lag > 120 ? .red : .gray)
                         }
                     }
+                }
+                if let pause = engine.pauseReason {
+                    Text("PAUSA · \(pause)")
+                        .font(.system(.caption2, design: .monospaced, weight: .bold))
+                        .foregroundStyle(.orange)
                 }
                 Text(engine.statusMessage)
                     .font(.system(.caption2, design: .monospaced))
@@ -237,6 +269,36 @@ struct TerminalDashboardView: View {
                 .frame(height: 170)
         }
         .panelStyle(terminalGreen)
+    }
+
+    /// Banner protezioni: appare solo quando un circuit breaker è scattato.
+    /// Lo stop giornaliero si riapre da solo a mezzanotte UTC; il drawdown
+    /// richiede sempre lo sblocco manuale con conferma.
+    private var guardPanel: some View {
+        Group {
+            if engine.dailyStopOn || engine.drawdownLocked {
+                VStack(alignment: .leading, spacing: 10) {
+                    panelHeader("PROTEZIONI ATTIVE", color: .red)
+                    if engine.dailyStopOn {
+                        Text("STOP GIORNALIERO: perdita oltre la soglia impostata. Nuovi segnali sospesi fino alla mezzanotte UTC; le posizioni restano protette dalle gambe stop/target sul broker.")
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    if engine.drawdownLocked {
+                        Text("STOP DRAWDOWN: equity oltre il -10% dal picco. Nessun nuovo ordine finché non sblocchi manualmente.")
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.85))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Button("SBLOCCA DRAWDOWN") {
+                            showUnlockConfirmation = true
+                        }
+                        .buttonStyle(TerminalButtonStyle(color: .red))
+                    }
+                }
+                .panelStyle(.red)
+            }
+        }
     }
 
     private var controlPanel: some View {
@@ -919,8 +981,7 @@ private struct SystemSettingsView: View {
                     in: 0.25...2.0,
                     step: 0.25
                 )
-                Stepper("Max posizioni aperte: \(draft.maxOpenPositions)", value: $draft.maxOpenPositions, in: 1...5)
-                Stepper("Kelly frazionato: 1/\(Int(draft.kellyDivisor))", value: $draft.kellyDivisor, in: 2...8, step: 1)
+                Stepper("Max posizioni aperte: \(draft.maxOpenPositions)", value: $draft.maxOpenPositions, in: 1...3)
                 Stepper(
                     "Stop giornaliero: \(String(format: "%.1f", draft.dailyStopPercent))% equity",
                     value: $draft.dailyStopPercent,
@@ -965,9 +1026,6 @@ private struct SystemSettingsView: View {
                     .foregroundStyle(.red)
             }
 
-            Toggle("MANTIENI SCHERMO ACCESO", isOn: $draft.keepScreenAwake)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .tint(DashboardPalette.green)
             Toggle("RIPRENDI SESSIONE AL RIAVVIO", isOn: $draft.autoResumeOnLaunch)
                 .font(.system(.caption, design: .monospaced, weight: .bold))
                 .tint(DashboardPalette.green)
@@ -978,14 +1036,15 @@ private struct SystemSettingsView: View {
             .buttonStyle(TerminalButtonStyle(color: DashboardPalette.green))
 
             VStack(alignment: .leading, spacing: 6) {
-                settingRow("STATO APPLICATO", "rischio \(String(format: "%.2f", engine.strategyConfig.riskPerTradePercent))% · max \(engine.strategyConfig.maxOpenPositions) · Kelly 1/\(Int(engine.strategyConfig.kellyDivisor))")
+                settingRow("STATO APPLICATO", "rischio \(String(format: "%.2f", engine.strategyConfig.riskPerTradePercent))% · max \(engine.strategyConfig.maxOpenPositions) · stop \(String(format: "%.1f", engine.strategyConfig.dailyStopPercent))%")
                 settingRow("MODELLO ATTIVO", engine.strategyConfig.kimiModel)
                 settingRow("STREAM DATI", SystemLimits.marketStreamHost)
                 settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
                 settingRow("FLAT BY CLOSE", "chiusura totale a T-10 min")
-                settingRow("BACKGROUND", "BGTask + location + notifica: iOS decide quando eseguire")
+                settingRow("FOREGROUND", "motore solo ad app aperta: in background nessun ordine, rientro con riconciliazione")
+                settingRow("PAUSE AUTOMATICHE", "rete assente o batteria < 20%")
             }
-            Text("Verità tecnica: nessuna app iOS può garantire un WebSocket attivo 24/7 se chiusa o sospesa. Per operatività continua usa MANTIENI SCHERMO ACCESO con l'app in foreground; per 24/7 reale serve un servizio server-side.")
+            Text("Verità tecnica: nessuna app iOS può garantire un WebSocket attivo 24/7 se chiusa o sospesa. Il motore gira solo in foreground con schermo tenuto acceso e indicatore MOTORE ATTIVO; in background le posizioni restano protette dalle gambe stop/target sul broker. Per operatività 24/7 reale serve un servizio server-side.")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)
