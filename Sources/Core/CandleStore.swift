@@ -93,6 +93,88 @@ struct CandleStore: Sendable {
             fifteenMinuteIndicators: Indicators.snapshot(of: fifteenMinute)
         )
     }
+
+    /// Candele CHIUSE del timeframe decisionale (1/5/15 min). Per 15m si usa
+    /// la serie dedicata (semeata dal backfill con 100 candele); per 5m si
+    /// aggrega dalle 1m; per 1m è la serie stessa. Il bucket ancora aperto
+    /// è escluso: il filtro e la chiamata Kimi partono solo a candela chiusa.
+    func decisionCandles(frameSeconds: Int, asOf now: Date = Date()) -> [Candle] {
+        if frameSeconds >= 900 {
+            return fifteenMinute.filter { $0.timestamp.addingTimeInterval(900) <= now }
+        }
+        if frameSeconds <= 60 {
+            return oneMinute.filter { $0.timestamp.addingTimeInterval(60) <= now }
+        }
+        let frame = Double(frameSeconds)
+        var order: [Date] = []
+        var buckets: [Date: Candle] = [:]
+        for candle in oneMinute {
+            let bucketStart = Date(
+                timeIntervalSince1970: (candle.timestamp.timeIntervalSince1970 / frame).rounded(.down) * frame
+            )
+            // Il bucket è chiuso solo quando il timeframe è trascorso tutto.
+            guard bucketStart.addingTimeInterval(frame) <= now else { continue }
+            if let existing = buckets[bucketStart] {
+                buckets[bucketStart] = Candle(
+                    timestamp: bucketStart,
+                    open: existing.open,
+                    high: max(existing.high, candle.high),
+                    low: min(existing.low, candle.low),
+                    close: candle.close,
+                    volume: existing.volume + candle.volume
+                )
+            } else {
+                buckets[bucketStart] = Candle(
+                    timestamp: bucketStart,
+                    open: candle.open,
+                    high: candle.high,
+                    low: candle.low,
+                    close: candle.close,
+                    volume: candle.volume
+                )
+                order.append(bucketStart)
+            }
+        }
+        return order.sorted().compactMap { buckets[$0] }
+    }
+}
+
+/// Trigger gratuiti calcolati in codice sulle candele chiuse del timeframe
+/// decisionale: Kimi viene chiamato solo se almeno uno scatta. Nessun trigger
+/// = nessuna chiamata = crediti risparmiati.
+enum FilterTrigger {
+    /// Restituisce la descrizione del trigger scattato, oppure nil.
+    static func evaluate(candles: [Candle]) -> String? {
+        guard candles.count >= 30, let last = candles.last else { return nil }
+        let closes = candles.map(\.close)
+
+        // EMA cross 12/26 fra le ultime due candele chiuse.
+        if let ema12Now = Indicators.ema(closes, period: 12),
+           let ema26Now = Indicators.ema(closes, period: 26),
+           let ema12Prev = Indicators.ema(Array(closes.dropLast()), period: 12),
+           let ema26Prev = Indicators.ema(Array(closes.dropLast()), period: 26) {
+            let diffNow = ema12Now - ema26Now
+            let diffPrev = ema12Prev - ema26Prev
+            if diffPrev <= 0, diffNow > 0 { return "incrocio EMA 12/26 al rialzo" }
+            if diffPrev >= 0, diffNow < 0 { return "incrocio EMA 12/26 al ribasso" }
+        }
+
+        // Rottura dei massimi/minimi delle 20 candele precedenti.
+        let previous20 = candles.dropLast().suffix(20)
+        if let high20 = previous20.map(\.high).max(), last.close > high20 {
+            return "rottura del massimo a 20 candele"
+        }
+        if let low20 = previous20.map(\.low).min(), last.close < low20 {
+            return "rottura del minimo a 20 candele"
+        }
+
+        // RSI estremo.
+        if let rsi = Indicators.rsi(closes, period: 14) {
+            if rsi <= 30 { return "RSI ipervenduto (\(Int(rsi)))" }
+            if rsi >= 70 { return "RSI ipercomprato (\(Int(rsi)))" }
+        }
+        return nil
+    }
 }
 
 /// Indicatori tecnici calcolati in codice (Wilder dove applicabile):

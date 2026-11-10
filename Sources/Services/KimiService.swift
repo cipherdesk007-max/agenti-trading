@@ -231,6 +231,66 @@ actor KimiService {
         return decision
     }
 
+    /// Kimi Reviewer avversario: gira SOLO quando l'analyst propone un trade.
+    /// Parte dal presupposto che la decisione sia sbagliata e cerca motivi
+    /// concreti per respingerla. Un trade respinto non diventa mai un ordine;
+    /// un errore del reviewer vale come rifiuto (fail-closed, gestito dal motore).
+    func review(
+        decision: KimiDecision,
+        snapshot: MarketSnapshot,
+        marketContext: MarketContext? = nil
+    ) async throws -> KimiReview {
+        let systemPrompt = """
+        Sei il revisore avversario di un sistema di trading. Assumi che la decisione proposta sia \
+        SBAGLIATA e cerca attivamente motivi concreti per respingerla: livelli incoerenti con le \
+        candele chiuse fornite, rapporto rischio/rendimento reale insufficiente, volatilità anomala \
+        rispetto all'ATR, dati contraddittori o stantii, ancoraggio errato al prezzo corrente. \
+        Approva solo se non trovi nulla di concreto da obiettare. Non usare Markdown.
+        """
+        var payload: [String: Any] = [
+            "proposal": [
+                "symbol": decision.symbol,
+                "action": decision.action.rawValue,
+                "confidence": decision.confidence,
+                "entry_price": decision.entryPrice,
+                "stop_loss": decision.stopLoss,
+                "take_profit": decision.takeProfit,
+                "win_probability": decision.winProbability,
+                "payoff_ratio": decision.payoffRatio,
+                "rationale": decision.rationale
+            ],
+            "market": [
+                "last_price": snapshot.lastPrice,
+                "atr_14": snapshot.atr14.map { $0 as Any } ?? NSNull(),
+                "data_age_seconds": Int(Date().timeIntervalSince(snapshot.receivedAt))
+            ]
+        ]
+        payload["candles_two_timeframes"] = marketContext.map(Self.contextPayload) ?? NSNull()
+        let payloadData = try JSONSerialization.data(withJSONObject: payload)
+        let payloadString = String(decoding: payloadData, as: UTF8.self)
+        let messages: [[String: String]] = [
+            ["role": "system", "content": systemPrompt],
+            ["role": "user", "content": payloadString]
+        ]
+        let schema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "verdict": ["type": "string", "enum": ["approve", "reject"]],
+                "reason": ["type": "string"]
+            ],
+            "required": ["verdict", "reason"],
+            "additionalProperties": false
+        ]
+        let content = try await chat(
+            messages: messages,
+            schema: schema,
+            schemaName: "adversarial_review",
+            maxTokens: 1024
+        )
+        let json = try extractJSONObject(from: content)
+        return try JSONDecoder().decode(KimiReview.self, from: Data(json.utf8))
+    }
+
     /// Serializzazione compatta del contesto candele: numeri a 4 decimali e
     /// timestamp in secondi unix per contenere i token spesi a ogni chiamata.
     private static func contextPayload(_ context: MarketContext) -> [String: Any] {

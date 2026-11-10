@@ -25,8 +25,10 @@ enum SystemLimits {
     /// Bug 6: drawdown massimo dal picco di equity; oltre serve sblocco manuale.
     static let maxDrawdownFraction = 0.10
     static let maxConcurrentPositions = 3
-    /// Minimo di candele chiuse da 1 minuto prima di coinvolgere Kimi.
+    /// Minimo di candele chiuse del timeframe decisionale prima di chiamare Kimi.
     static let minimumCandlesForKimi = 20
+    /// Timeframe decisionali ammessi (minuti): Kimi solo a chiusura candela.
+    static let decisionTimeframesMinutes = [1, 5, 15]
 }
 
 /// Vincoli di arrotondamento dello strumento: lot size, tick size e nozionale
@@ -113,6 +115,36 @@ enum RiskGuardStore {
     }
 }
 
+/// Contatore crediti Kimi, persistito sul giorno UTC. La spesa è misurata
+/// dal saldo reale dell'account (baseline a inizio giornata − saldo attuale),
+/// non da stime sui token: il numero mostrato è quello vero.
+struct CreditGuardState: Codable, Sendable {
+    var dayUTC: String
+    var baselineBalance: Double?
+    var calls: Int
+
+    static func empty(day: String) -> CreditGuardState {
+        CreditGuardState(dayUTC: day, baselineBalance: nil, calls: 0)
+    }
+}
+
+enum CreditGuardStore {
+    private static let key = "com.quantswarm.alphazero.creditGuard"
+
+    static func load() -> CreditGuardState? {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let state = try? JSONDecoder().decode(CreditGuardState.self, from: data) else {
+            return nil
+        }
+        return state
+    }
+
+    static func save(_ state: CreditGuardState) {
+        guard let data = try? JSONEncoder().encode(state) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+}
+
 /// Impostazioni operative modificabili dall'app (tab SISTEMA), persistite in
 /// UserDefaults come JSON: nessuna ricompilazione per cambiare strategia.
 /// Il motore legge questi valori a ogni ciclo, quindi le modifiche sono attive
@@ -133,6 +165,15 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     /// Se l'app viene chiusa col motore attivo, al riavvio la sessione
     /// riparte da sola sugli stessi simboli.
     var autoResumeOnLaunch: Bool
+    /// Timeframe della candela alla cui CHIUSURA Kimi viene chiamato (1/5/15 min).
+    var decisionTimeframeMinutes: Int
+    /// Filtro gratuito in codice (EMA cross, rottura high/low 20, RSI estremo):
+    /// se nessun trigger scatta, Kimi non viene chiamato e i crediti restano.
+    var kimiFilterEnabled: Bool
+    /// Limite di spesa giornaliera Kimi (giorno UTC) misurato dal saldo reale.
+    var creditLimitEnabled: Bool
+    /// Limite di spesa in USD (0,10 – 50).
+    var dailyCreditLimitUSD: Double
 
     init(
         riskPerTradePercent: Double = 1.0,
@@ -141,7 +182,11 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         decisionIntervalSeconds: Int = 60,
         analysisIntervalMinutes: Double = 5.0,
         kimiModel: String = SystemLimits.kimiModel,
-        autoResumeOnLaunch: Bool = true
+        autoResumeOnLaunch: Bool = true,
+        decisionTimeframeMinutes: Int = 15,
+        kimiFilterEnabled: Bool = true,
+        creditLimitEnabled: Bool = true,
+        dailyCreditLimitUSD: Double = 1.0
     ) {
         self.riskPerTradePercent = riskPerTradePercent
         self.maxOpenPositions = maxOpenPositions
@@ -150,6 +195,10 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         self.analysisIntervalMinutes = analysisIntervalMinutes
         self.kimiModel = kimiModel
         self.autoResumeOnLaunch = autoResumeOnLaunch
+        self.decisionTimeframeMinutes = decisionTimeframeMinutes
+        self.kimiFilterEnabled = kimiFilterEnabled
+        self.creditLimitEnabled = creditLimitEnabled
+        self.dailyCreditLimitUSD = dailyCreditLimitUSD
     }
 
     init(from decoder: Decoder) throws {
@@ -161,7 +210,11 @@ struct StrategyConfig: Codable, Sendable, Equatable {
             decisionIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .decisionIntervalSeconds) ?? 60,
             analysisIntervalMinutes: try container.decodeIfPresent(Double.self, forKey: .analysisIntervalMinutes) ?? 5.0,
             kimiModel: try container.decodeIfPresent(String.self, forKey: .kimiModel) ?? SystemLimits.kimiModel,
-            autoResumeOnLaunch: try container.decodeIfPresent(Bool.self, forKey: .autoResumeOnLaunch) ?? true
+            autoResumeOnLaunch: try container.decodeIfPresent(Bool.self, forKey: .autoResumeOnLaunch) ?? true,
+            decisionTimeframeMinutes: try container.decodeIfPresent(Int.self, forKey: .decisionTimeframeMinutes) ?? 15,
+            kimiFilterEnabled: try container.decodeIfPresent(Bool.self, forKey: .kimiFilterEnabled) ?? true,
+            creditLimitEnabled: try container.decodeIfPresent(Bool.self, forKey: .creditLimitEnabled) ?? true,
+            dailyCreditLimitUSD: try container.decodeIfPresent(Double.self, forKey: .dailyCreditLimitUSD) ?? 1.0
         )
     }
 
@@ -176,6 +229,10 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         copy.analysisIntervalMinutes = min(max(copy.analysisIntervalMinutes, 2.0), 15.0)
         let model = copy.kimiModel.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.kimiModel = model.isEmpty ? SystemLimits.kimiModel : model
+        if !SystemLimits.decisionTimeframesMinutes.contains(copy.decisionTimeframeMinutes) {
+            copy.decisionTimeframeMinutes = 15
+        }
+        copy.dailyCreditLimitUSD = min(max(copy.dailyCreditLimitUSD, 0.10), 50.0)
         return copy
     }
 
@@ -183,6 +240,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     var dailyStopFraction: Double { dailyStopPercent / 100 }
     var decisionInterval: TimeInterval { TimeInterval(decisionIntervalSeconds) }
     var analysisInterval: TimeInterval { analysisIntervalMinutes * 60 }
+    var decisionFrameSeconds: Int { decisionTimeframeMinutes * 60 }
 }
 
 enum StrategyConfigStore {
@@ -254,6 +312,15 @@ struct KimiDecision: Codable, Sendable {
         guard risk > 0 else { return nil }
         return abs(takeProfit - entryPrice) / risk
     }
+}
+
+/// Verdetto del Kimi Reviewer avversario: parte dal presupposto che la
+/// decisione sia sbagliata e approva solo se non trova obiezioni concrete.
+struct KimiReview: Codable, Sendable {
+    let verdict: String
+    let reason: String
+
+    var approved: Bool { verdict == "approve" }
 }
 
 /// Lettura qualitativa del mercato prodotta dal Kimi Analyst ogni 5 minuti
