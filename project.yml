@@ -25,7 +25,9 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources
-        excludes: ["Sources/Widget/**"]
+        excludes:
+          - "Widget/**"
+          - "Sources/Widget/**"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quantswarm.alphazero
@@ -46,6 +48,7 @@ targets:
       - sdk: UserNotifications.framework
       - sdk: WidgetKit.framework
       - target: QuantSwarmWidgetExtension
+        embed: true
     info:
       path: Generated/Info.plist
       properties:
@@ -67,6 +70,8 @@ targets:
     deploymentTarget: "17.0"
     sources:
       - path: Sources/Widget
+        excludes:
+          - "*.entitlements"
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quantswarm.alphazero.widget
@@ -77,6 +82,7 @@ targets:
         TARGETED_DEVICE_FAMILY: "1"
         SUPPORTS_MACCATALYST: NO
         ENABLE_BITCODE: NO
+        APPLICATION_EXTENSION_API_ONLY: YES
         CODE_SIGN_ENTITLEMENTS: Sources/Widget/QuantSwarmWidgetExtension.entitlements
     dependencies:
       - sdk: SwiftUI.framework
