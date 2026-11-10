@@ -10,13 +10,107 @@ enum SystemLimits {
     static let analysisIntervalSeconds: TimeInterval = 300
     static let holdEvaluationSeconds: TimeInterval = 1800
     static let maximumRiskFraction = 0.01
-    static let fractionalKellyDivisor = 4.0
     static let maximumLatencyMilliseconds = 400.0
-    static let maximumPriceDeviation = 0.0005
+    /// Scostamento massimo tra prezzo di snapshot e entry proposto da Kimi
+    /// (sanity check: Kimi deve ancorarsi al prezzo corrente).
+    static let maximumEntryAnchorATR = 2.0
+    /// Bug 3: dopo la risposta di Kimi il prezzo viene riletto; se si è mosso
+    /// oltre questa frazione di ATR l'ordine viene annullato.
+    static let priceRetestATRFraction = 0.5
+    /// Bug 2: rapporto rendimento/rischio minimo, calcolato in codice dai livelli.
+    static let minimumRiskReward = 1.5
     static let closeGuardSeconds: TimeInterval = 900
     static let flatByCloseSeconds: TimeInterval = 600
     static let maxDailyLossFraction = 0.02
+    /// Bug 6: drawdown massimo dal picco di equity; oltre serve sblocco manuale.
+    static let maxDrawdownFraction = 0.10
     static let maxConcurrentPositions = 3
+    /// Minimo di candele chiuse da 1 minuto prima di coinvolgere Kimi.
+    static let minimumCandlesForKimi = 20
+}
+
+/// Vincoli di arrotondamento dello strumento: lot size, tick size e nozionale
+/// minimo dell'exchange. Per le azioni USA su Alpaca: 1 azione intera.
+struct InstrumentConstraints: Sendable {
+    let lotSize: Double
+    let tickSize: Double
+    let minNotional: Double
+
+    static let alpacaStock = InstrumentConstraints(lotSize: 1, tickSize: 0.01, minNotional: 1)
+
+    /// Cifre decimali ammesse dalla lot size (azioni intere → 0).
+    var quantityFractionDigits: Int {
+        if lotSize >= 1 { return 0 }
+        var digits = 0
+        var lot = lotSize
+        while lot < 1, digits < 8 {
+            lot *= 10
+            digits += 1
+        }
+        return digits
+    }
+}
+
+/// Candela OHLCV chiusa. Quella in formazione non esce mai da CandleStore:
+/// Kimi e i filtri vedono solo candele concluse.
+struct Candle: Sendable, Equatable {
+    let timestamp: Date
+    let open: Double
+    let high: Double
+    let low: Double
+    let close: Double
+    let volume: Double
+}
+
+/// Indicatori calcolati in codice sulle candele chiuse di un timeframe.
+/// nil = storico insufficiente per quell'indicatore.
+struct IndicatorSnapshot: Sendable {
+    let rsi14: Double?
+    let ema12: Double?
+    let ema26: Double?
+    let sma50: Double?
+    let sma200: Double?
+    let atr14: Double?
+    let high20: Double?
+    let low20: Double?
+    let avgVolume20: Double?
+}
+
+/// Contesto di mercato per Kimi: ultime 100 candele chiuse + indicatori su
+/// 2 timeframe (1m e 15m), tutto calcolato in codice.
+struct MarketContext: Sendable {
+    let oneMinuteCandles: [Candle]
+    let fifteenMinuteCandles: [Candle]
+    let oneMinuteIndicators: IndicatorSnapshot
+    let fifteenMinuteIndicators: IndicatorSnapshot
+}
+
+/// Stato delle protezioni di rischio, persistito (sopravvive al riavvio).
+/// Lo stop giornaliero è calcolato sul giorno UTC; lo stop drawdown resta
+/// attivo finché l'utente non lo sblocca manualmente.
+struct RiskGuardState: Codable, Sendable {
+    var dailyStopDayUTC: String?
+    var peakEquity: Double
+    var drawdownLocked: Bool
+
+    static let empty = RiskGuardState(dailyStopDayUTC: nil, peakEquity: 0, drawdownLocked: false)
+}
+
+enum RiskGuardStore {
+    private static let key = "com.quantswarm.alphazero.riskGuard"
+
+    static func load() -> RiskGuardState {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let state = try? JSONDecoder().decode(RiskGuardState.self, from: data) else {
+            return .empty
+        }
+        return state
+    }
+
+    static func save(_ state: RiskGuardState) {
+        guard let data = try? JSONEncoder().encode(state) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
 }
 
 /// Impostazioni operative modificabili dall'app (tab SISTEMA), persistite in
@@ -26,10 +120,8 @@ enum SystemLimits {
 struct StrategyConfig: Codable, Sendable, Equatable {
     /// Rischio massimo per singolo trade, in % di equity (0,25 – 2).
     var riskPerTradePercent: Double
-    /// Tetto di posizioni aperte simultanee (1 – 5).
+    /// Tetto di posizioni aperte simultanee (1 – 3).
     var maxOpenPositions: Int
-    /// Divisore del Kelly pieno: /4 = quarto di Kelly (2 – 8).
-    var kellyDivisor: Double
     /// Circuit breaker giornaliero, perdita in % di equity (0,5 – 5).
     var dailyStopPercent: Double
     /// Pausa tra due cicli di decisione completi (30 – 120 s).
@@ -38,9 +130,6 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     var analysisIntervalMinutes: Double
     /// Modello Kimi usato per decisioni e analisi (lista caricabile via API).
     var kimiModel: String
-    /// Tiene lo schermo acceso: il motore resta in foreground e non viene
-    /// sospeso da iOS. È l'unico modo affidabile di operare in continuo.
-    var keepScreenAwake: Bool
     /// Se l'app viene chiusa col motore attivo, al riavvio la sessione
     /// riparte da sola sugli stessi simboli.
     var autoResumeOnLaunch: Bool
@@ -48,22 +137,18 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     init(
         riskPerTradePercent: Double = 1.0,
         maxOpenPositions: Int = 3,
-        kellyDivisor: Double = 4.0,
         dailyStopPercent: Double = 2.0,
         decisionIntervalSeconds: Int = 60,
         analysisIntervalMinutes: Double = 5.0,
         kimiModel: String = SystemLimits.kimiModel,
-        keepScreenAwake: Bool = false,
         autoResumeOnLaunch: Bool = true
     ) {
         self.riskPerTradePercent = riskPerTradePercent
         self.maxOpenPositions = maxOpenPositions
-        self.kellyDivisor = kellyDivisor
         self.dailyStopPercent = dailyStopPercent
         self.decisionIntervalSeconds = decisionIntervalSeconds
         self.analysisIntervalMinutes = analysisIntervalMinutes
         self.kimiModel = kimiModel
-        self.keepScreenAwake = keepScreenAwake
         self.autoResumeOnLaunch = autoResumeOnLaunch
     }
 
@@ -72,12 +157,10 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         self.init(
             riskPerTradePercent: try container.decodeIfPresent(Double.self, forKey: .riskPerTradePercent) ?? 1.0,
             maxOpenPositions: try container.decodeIfPresent(Int.self, forKey: .maxOpenPositions) ?? 3,
-            kellyDivisor: try container.decodeIfPresent(Double.self, forKey: .kellyDivisor) ?? 4.0,
             dailyStopPercent: try container.decodeIfPresent(Double.self, forKey: .dailyStopPercent) ?? 2.0,
             decisionIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .decisionIntervalSeconds) ?? 60,
             analysisIntervalMinutes: try container.decodeIfPresent(Double.self, forKey: .analysisIntervalMinutes) ?? 5.0,
             kimiModel: try container.decodeIfPresent(String.self, forKey: .kimiModel) ?? SystemLimits.kimiModel,
-            keepScreenAwake: try container.decodeIfPresent(Bool.self, forKey: .keepScreenAwake) ?? false,
             autoResumeOnLaunch: try container.decodeIfPresent(Bool.self, forKey: .autoResumeOnLaunch) ?? true
         )
     }
@@ -87,8 +170,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     var sanitized: StrategyConfig {
         var copy = self
         copy.riskPerTradePercent = min(max(copy.riskPerTradePercent, 0.25), 2.0)
-        copy.maxOpenPositions = min(max(copy.maxOpenPositions, 1), 5)
-        copy.kellyDivisor = min(max(copy.kellyDivisor, 2.0), 8.0)
+        copy.maxOpenPositions = min(max(copy.maxOpenPositions, 1), 3)
         copy.dailyStopPercent = min(max(copy.dailyStopPercent, 0.5), 5.0)
         copy.decisionIntervalSeconds = min(max(copy.decisionIntervalSeconds, 30), 120)
         copy.analysisIntervalMinutes = min(max(copy.analysisIntervalMinutes, 2.0), 15.0)
@@ -165,6 +247,13 @@ struct KimiDecision: Codable, Sendable {
             ? stopLoss < entryPrice && entryPrice < takeProfit
             : takeProfit < entryPrice && entryPrice < stopLoss
     }
+
+    /// R/R calcolato in codice dai livelli (mai fidarsi del payoff dichiarato).
+    var riskRewardRatio: Double? {
+        let risk = abs(entryPrice - stopLoss)
+        guard risk > 0 else { return nil }
+        return abs(takeProfit - entryPrice) / risk
+    }
 }
 
 /// Lettura qualitativa del mercato prodotta dal Kimi Analyst ogni 5 minuti
@@ -219,6 +308,10 @@ struct AlpacaCredentials: Sendable {
         URL(string: paperTrading
             ? "https://paper-api.alpaca.markets"
             : "https://api.alpaca.markets")!
+    }
+
+    var marketDataBaseURL: URL {
+        URL(string: "https://data.alpaca.markets")!
     }
 
     var marketDataStreamURL: URL {

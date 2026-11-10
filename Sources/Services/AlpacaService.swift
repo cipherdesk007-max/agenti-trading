@@ -11,6 +11,9 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
     let filledAveragePrice: String?
     let submittedAt: String?
     let legs: [AlpacaOrder]?
+    /// Le gambe di un bracket (stop/target) hanno il parent_order_id valorizzato:
+    /// serve a distinguerle dagli ordini di ingresso nel conteggio dell'esposizione.
+    let parentOrderId: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -23,6 +26,7 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
         case filledAveragePrice = "filled_avg_price"
         case submittedAt = "submitted_at"
         case legs
+        case parentOrderId = "parent_order_id"
     }
 
     var filledQuantityValue: Double { Double(filledQuantity ?? "0") ?? 0 }
@@ -42,6 +46,9 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
         ["new", "partially_filled", "accepted", "pending_new", "pending_replace",
          "pending_cancel", "held", "done_for_day"].contains(status)
     }
+
+    /// True se è un ordine di ingresso (non una gamba stop/target di un bracket).
+    var isEntryOrder: Bool { parentOrderId == nil }
 }
 
 struct AlpacaPosition: Decodable, Sendable, Identifiable {
@@ -122,6 +129,41 @@ struct AlpacaClock: Decodable, Sendable {
     var nextCloseDate: Date? { Self.parse(nextClose) }
 }
 
+/// Barra storica dal market data REST di Alpaca (backfill candele per Kimi).
+struct AlpacaBar: Decodable, Sendable {
+    let timestamp: String
+    let open: Double
+    let high: Double
+    let low: Double
+    let close: Double
+    let volume: Double
+
+    enum CodingKeys: String, CodingKey {
+        case timestamp = "t"
+        case open = "o"
+        case high = "h"
+        case low = "l"
+        case close = "c"
+        case volume = "v"
+    }
+
+    var date: Date? {
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let date = fractional.date(from: timestamp) { return date }
+        return ISO8601DateFormatter().date(from: timestamp)
+    }
+
+    var candle: Candle? {
+        guard let date else { return nil }
+        return Candle(timestamp: date, open: open, high: high, low: low, close: close, volume: volume)
+    }
+}
+
+private struct BarsResponse: Decodable {
+    let bars: [AlpacaBar]?
+}
+
 actor AlpacaService {
     private let credentials: AlpacaCredentials
     private let session: URLSession
@@ -192,26 +234,71 @@ actor AlpacaService {
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
     }
 
+    /// Lookup per client_order_id: dopo un invio fallito (timeout, rete caduta)
+    /// verifica se il broker ha comunque registrato l'ordine, così un retry
+    /// non può creare un duplicato. 404 = l'ordine non esiste.
+    func order(byClientOrderId clientOrderId: String) async throws -> AlpacaOrder? {
+        do {
+            let data = try await send(
+                path: "/v2/orders:by_client_order_id",
+                method: "GET",
+                query: [URLQueryItem(name: "client_order_id", value: clientOrderId)]
+            )
+            return try JSONDecoder().decode(AlpacaOrder.self, from: data)
+        } catch QuantSwarmError.httpStatus(let code, _) where code == 404 {
+            return nil
+        }
+    }
+
+    /// Candele storiche per il contesto di Kimi (backfill all'avvio del motore).
+    /// Host market data dedicato, piano IEX gratuito.
+    func bars(symbol: String, timeframe: String, limit: Int = 100) async throws -> [Candle] {
+        guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
+        }
+        let data = try await send(
+            baseURL: credentials.marketDataBaseURL,
+            path: "/v2/stocks/\(escaped)/bars",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "timeframe", value: timeframe),
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "feed", value: "iex"),
+                URLQueryItem(name: "sort", value: "asc")
+            ]
+        )
+        let response = try JSONDecoder().decode(BarsResponse.self, from: data)
+        return (response.bars ?? []).compactMap(\.candle)
+    }
+
     func submitBracket(
         decision: KimiDecision,
         quantity: Double,
-        limitPrice: Double
+        quantityFractionDigits: Int,
+        limitPrice: Double,
+        clientOrderId: String
     ) async throws -> AlpacaOrder {
         let body: [String: Any] = [
             "symbol": decision.symbol.uppercased(),
-            "qty": decimalString(quantity, fractionDigits: 0),
+            "qty": decimalString(quantity, fractionDigits: quantityFractionDigits),
             "side": decision.action.rawValue,
             "type": "limit",
             "time_in_force": "day",
-            "limit_price": decimalString(limitPrice, fractionDigits: 4),
+            "limit_price": decimalString(limitPrice, fractionDigits: priceFractionDigits(limitPrice)),
             "order_class": "bracket",
-            "client_order_id": "qswarm-\(UUID().uuidString.lowercased())",
+            "client_order_id": clientOrderId,
             "extended_hours": false,
             "take_profit": [
-                "limit_price": decimalString(decision.takeProfit, fractionDigits: 4)
+                "limit_price": decimalString(
+                    decision.takeProfit,
+                    fractionDigits: priceFractionDigits(decision.takeProfit)
+                )
             ],
             "stop_loss": [
-                "stop_price": decimalString(decision.stopLoss, fractionDigits: 4)
+                "stop_price": decimalString(
+                    decision.stopLoss,
+                    fractionDigits: priceFractionDigits(decision.stopLoss)
+                )
             ]
         ]
         let data = try await send(path: "/v2/orders", method: "POST", body: body)
@@ -240,12 +327,13 @@ actor AlpacaService {
     }
 
     private func send(
+        baseURL: URL? = nil,
         path: String,
         method: String,
         query: [URLQueryItem] = [],
         body: [String: Any]? = nil
     ) async throws -> Data {
-        let absoluteURL = credentials.tradingBaseURL.absoluteString + path
+        let absoluteURL = (baseURL ?? credentials.tradingBaseURL).absoluteString + path
         guard var components = URLComponents(string: absoluteURL) else {
             throw QuantSwarmError.invalidServerResponse("URL Alpaca non valido")
         }
@@ -304,5 +392,10 @@ actor AlpacaService {
             locale: Locale(identifier: "en_US_POSIX"),
             value
         )
+    }
+
+    /// Regola Alpaca per i prezzi azionari: 2 decimali sopra 1 USD, 4 sotto.
+    private func priceFractionDigits(_ price: Double) -> Int {
+        price >= 1 ? 2 : 4
     }
 }
