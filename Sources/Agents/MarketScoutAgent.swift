@@ -3,6 +3,9 @@ import Network
 
 enum MarketEvent: Sendable {
     case snapshot(MarketSnapshot)
+    /// Candela 1 minuto CHIUSA (Alpaca invia la barra a minuto concluso):
+    /// alimenta lo storico che Kimi riceve, mai la candela in formazione.
+    case candle(symbol: String, candle: Candle)
     case log(String)
     case disconnected(String)
 }
@@ -278,6 +281,16 @@ actor MarketScoutAgent {
             let atr = state.update(open: open, high: high, low: low, close: close)
             atrStates[symbol] = state
             lastPrices[symbol] = close
+            // La barra 1m e' chiusa: entra nello storico candele (con il suo
+            // timestamp di inizio minuto) per il contesto di Kimi.
+            continuation?.yield(.candle(symbol: symbol, candle: Candle(
+                timestamp: sourceTimestamp,
+                open: open,
+                high: high,
+                low: low,
+                close: close,
+                volume: message.volume ?? 0
+            )))
             // Il timestamp di una barra Alpaca e' l'INIZIO del minuto, quindi un
             // snapshot da barra avrebbe una "latenza" naturale di ~60 s e verrebbe
             // respinto dal guard di latenza del risk manager. Per le barre il
@@ -357,6 +370,7 @@ private struct StreamMessage: Decodable {
     let high: Double?
     let low: Double?
     let close: Double?
+    let volume: Double?
     let timestamp: String?
 
     enum CodingKeys: String, CodingKey {
@@ -369,6 +383,7 @@ private struct StreamMessage: Decodable {
         case high = "h"
         case low = "l"
         case close = "c"
+        case volume = "v"
         case timestamp = "t"
     }
 }

@@ -17,6 +17,9 @@ struct WidgetStatusSnapshot: Codable, Sendable {
     let riskPerTradePercent: Double
 }
 
+/// @MainActor: in Swift 6 una `static var` mutabile non isolata è un errore
+/// di concorrenza; l'intero bridge vive sul main actor (scritture dal motore).
+@MainActor
 enum WidgetStatusBridge {
     private static let suiteName = "group.com.quantswarm.alphazero"
     private static let statusKey = "widget_status_json"
@@ -24,7 +27,6 @@ enum WidgetStatusBridge {
     private static let lastSymbolsKey = "com.quantswarm.alphazero.lastSymbols"
     private static var lastWriteAt: Date?
 
-    @MainActor
     static func write(engine: QuantSwarmEngine, force: Bool = false) {
         let now = Date()
         if !force, let lastWriteAt, now.timeIntervalSince(lastWriteAt) < 10 {

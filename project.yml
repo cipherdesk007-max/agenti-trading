@@ -41,7 +41,6 @@ targets:
         CODE_SIGN_ENTITLEMENTS: Sources/App/QuantSwarmAlphaZero.entitlements
     dependencies:
       - sdk: AVFoundation.framework
-      - sdk: CoreLocation.framework
       - sdk: Security.framework
       - sdk: SwiftUI.framework
       - sdk: SwiftData.framework
@@ -56,11 +55,7 @@ targets:
         UILaunchScreen: {}
         UIRequiredDeviceCapabilities: [arm64]
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
-        UIBackgroundModes: [location, fetch]
-        BGTaskSchedulerPermittedIdentifiers: [com.quantswarm.alphazero.refresh]
         NSFaceIDUsageDescription: "Face ID protegge l'accesso alle credenziali API salvate nel Keychain."
-        NSLocationWhenInUseUsageDescription: "La posizione è usata solo durante la sessione di trading esplicitamente avviata; non viene simulata alcuna navigazione."
-        NSLocationAlwaysAndWhenInUseUsageDescription: "L'accesso continuo consente aggiornamenti di sessione in background quando consentiti da iOS; non garantisce un WebSocket permanente."
         ITSAppUsesNonExemptEncryption: false
     scheme:
       gatherCoverageData: false

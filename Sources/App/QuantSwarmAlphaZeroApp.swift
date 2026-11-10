@@ -9,8 +9,6 @@ struct QuantSwarmAlphaZeroApp: App {
 
     init() {
         let keychain = KeychainManager()
-        let background = BackgroundPersistenceManager()
-        background.registerBackgroundTasks()
         if let stored = try? ModelContainer(for: TradeRecord.self, DecisionSample.self) {
             container = stored
         } else {
@@ -33,7 +31,6 @@ struct QuantSwarmAlphaZeroApp: App {
         }
         let engine = QuantSwarmEngine(
             keychain: keychain,
-            background: background,
             container: container
         )
         _engine = StateObject(wrappedValue: engine)
