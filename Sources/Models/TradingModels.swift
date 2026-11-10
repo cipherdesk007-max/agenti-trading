@@ -25,25 +25,100 @@ enum SystemLimits {
 /// dal ciclo di decisioni successivo.
 struct StrategyConfig: Codable, Sendable {
     /// Rischio massimo per singolo trade, in % di equity (0,25 – 2).
-    var riskPerTradePercent: Double = 1.0
+    var riskPerTradePercent: Double
     /// Tetto di posizioni aperte simultanee (1 – 5).
-    var maxOpenPositions: Int = 3
+    var maxOpenPositions: Int
     /// Divisore del Kelly pieno: /4 = quarto di Kelly (2 – 8).
-    var kellyDivisor: Double = 4.0
+    var kellyDivisor: Double
     /// Circuit breaker giornaliero, perdita in % di equity (0,5 – 5).
-    var dailyStopPercent: Double = 2.0
+    var dailyStopPercent: Double
     /// Pausa tra due cicli di decisione completi (30 – 120 s).
-    var decisionIntervalSeconds: Int = 60
+    var decisionIntervalSeconds: Int
     /// Intervallo del Kimi Analyst, in minuti (2 – 15).
-    var analysisIntervalMinutes: Double = 5.0
+    var analysisIntervalMinutes: Double
     /// Modello Kimi usato per decisioni e analisi (lista caricabile via API).
-    var kimiModel: String = SystemLimits.kimiModel
+    var kimiModel: String
     /// Tiene lo schermo acceso: il motore resta in foreground e non viene
     /// sospeso da iOS. È l'unico modo affidabile di operare in continuo.
-    var keepScreenAwake: Bool = false
+    var keepScreenAwake: Bool
     /// Se l'app viene chiusa col motore attivo, al riavvio la sessione
     /// riparte da sola sugli stessi simboli.
-    var autoResumeOnLaunch: Bool = true
+    var autoResumeOnLaunch: Bool
+
+    init(
+        riskPerTradePercent: Double = 1.0,
+        maxOpenPositions: Int = 3,
+        kellyDivisor: Double = 4.0,
+        dailyStopPercent: Double = 2.0,
+        decisionIntervalSeconds: Int = 60,
+        analysisIntervalMinutes: Double = 5.0,
+        kimiModel: String = SystemLimits.kimiModel,
+        keepScreenAwake: Bool = false,
+        autoResumeOnLaunch: Bool = true
+    ) {
+        self.riskPerTradePercent = riskPerTradePercent
+        self.maxOpenPositions = maxOpenPositions
+        self.kellyDivisor = kellyDivisor
+        self.dailyStopPercent = dailyStopPercent
+        self.decisionIntervalSeconds = decisionIntervalSeconds
+        self.analysisIntervalMinutes = analysisIntervalMinutes
+        self.kimiModel = kimiModel
+        self.keepScreenAwake = keepScreenAwake
+        self.autoResumeOnLaunch = autoResumeOnLaunch
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(
+            riskPerTradePercent: try container.decodeIfPresent(Double.self, forKey: .riskPerTradePercent) ?? 1.0,
+            maxOpenPositions: try container.decodeIfPresent(Int.self, forKey: .maxOpenPositions) ?? 3,
+            kellyDivisor: try container.decodeIfPresent(Double.self, forKey: .kellyDivisor) ?? 4.0,
+            dailyStopPercent: try container.decodeIfPresent(Double.self, forKey: .dailyStopPercent) ?? 2.0,
+            decisionIntervalSeconds: try container.decodeIfPresent(Int.self, forKey: .decisionIntervalSeconds) ?? 60,
+            analysisIntervalMinutes: try container.decodeIfPresent(Double.self, forKey: .analysisIntervalMinutes) ?? 5.0,
+            kimiModel: try container.decodeIfPresent(String.self, forKey: .kimiModel) ?? SystemLimits.kimiModel,
+            keepScreenAwake: try container.decodeIfPresent(Bool.self, forKey: .keepScreenAwake) ?? false,
+            autoResumeOnLaunch: try container.decodeIfPresent(Bool.self, forKey: .autoResumeOnLaunch) ?? true
+        )
+    }
+
+    /// Limiti già pronti per il motore, con clamp di sicurezza: anche un JSON
+    /// corrotto o un valore fuori scala non può mandare l'app fuori guardrail.
+    var sanitized: StrategyConfig {
+        var copy = self
+        copy.riskPerTradePercent = min(max(copy.riskPerTradePercent, 0.25), 2.0)
+        copy.maxOpenPositions = min(max(copy.maxOpenPositions, 1), 5)
+        copy.kellyDivisor = min(max(copy.kellyDivisor, 2.0), 8.0)
+        copy.dailyStopPercent = min(max(copy.dailyStopPercent, 0.5), 5.0)
+        copy.decisionIntervalSeconds = min(max(copy.decisionIntervalSeconds, 30), 120)
+        copy.analysisIntervalMinutes = min(max(copy.analysisIntervalMinutes, 2.0), 15.0)
+        let model = copy.kimiModel.trimmingCharacters(in: .whitespacesAndNewlines)
+        copy.kimiModel = model.isEmpty ? SystemLimits.kimiModel : model
+        return copy
+    }
+
+    var riskFraction: Double { riskPerTradePercent / 100 }
+    var dailyStopFraction: Double { dailyStopPercent / 100 }
+    var decisionInterval: TimeInterval { TimeInterval(decisionIntervalSeconds) }
+    var analysisInterval: TimeInterval { analysisIntervalMinutes * 60 }
+}
+
+enum StrategyConfigStore {
+    private static let key = "com.quantswarm.alphazero.strategyConfig"
+
+    static func load() -> StrategyConfig {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let config = try? JSONDecoder().decode(StrategyConfig.self, from: data) else {
+            return StrategyConfig()
+        }
+        return config.sanitized
+    }
+
+    static func save(_ config: StrategyConfig) {
+        let sanitized = config.sanitized
+        guard let data = try? JSONEncoder().encode(sanitized) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
 }
 
 enum TradeAction: String, Codable, Sendable {
