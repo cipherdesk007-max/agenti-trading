@@ -54,6 +54,17 @@ xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -d
 - Barre giornaliere dal feed consolidato SIP (gratuito oltre i 15 minuti), con ripiego su IEX.
 - Esito delle uscite dal prezzo di esecuzione reale.
 
+## Misura e verifica
+
+- **Backtest con le regole esatte dell'app** (`tools/backtest_app.py`, Actions → "Backtest filtro" → `app`): 2006–oggi +2,3% annuo, perdita massima −9%, Sharpe 0,43; batte ingressi casuali con le stesse regole; tutte le 18 varianti di parametri vicine guadagnano (strategia robusta, parametri lasciati invariati). Guadagna meno del buy & hold (+10,9%, ma −55% di perdita massima).
+- **Registro ombra** (DETTAGLI → "Kimi · scelti vs scartati"): esito ipotetico, con le stesse regole, dei candidati comprati e di quelli scartati da Brain/Reviewer. Dopo almeno 10 esiti dice se Kimi aggiunge valore; l'esito passato viene anche dato al Brain.
+- **Ordini eseguiti**: inviati, mai eseguiti, eseguiti in parte.
+- **Take-profit +2 ATR sul broker** (bracket con lo stop): nel backtest non cambia il risultato ma fa uscire anche ad app chiusa.
+- **Promemoria** lun–ven 15:30 New York (21:30 in Italia) per aprire l'app. Un controllo automatico in background non è possibile senza togliere la protezione Face ID alle chiavi.
+- **Crash e blocchi** raccolti con MetricKit e riportati nel report di sessione.
+- **CSV dei trade chiusi** (DETTAGLI), per il commercialista e il confronto con l'estratto conto.
+- **Test**: unitari (rischio, strategia, ciclo con broker e Kimi finti) e di interfaccia (conferma live, HARD KILL, START/STOP).
+
 ## Sicurezza e privacy
 
 - Chiavi nel Keychain con Face ID (`biometryCurrentSet`, solo questo dispositivo): se cambiano i volti o le impronte registrati vanno reinserite.

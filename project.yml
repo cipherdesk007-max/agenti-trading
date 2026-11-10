@@ -60,6 +60,7 @@ targets:
       gatherCoverageData: false
       testTargets:
         - QuantSwarmTests
+        - QuantSwarmUITests
   QuantSwarmWidgetExtension:
     type: app-extension
     platform: iOS
@@ -102,6 +103,19 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.quantswarm.alphazero.tests
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: "6.0"
+  QuantSwarmUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: UITests
+    dependencies:
+      - target: QuantSwarmAlphaZero
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quantswarm.alphazero.uitests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
 schemes:
   QuantSwarmAlphaZero:
     build:
@@ -109,12 +123,14 @@ schemes:
         QuantSwarmAlphaZero: all
         QuantSwarmWidgetExtension: all
         QuantSwarmTests: [test]
+        QuantSwarmUITests: [test]
     run:
       config: Debug
     test:
       config: Debug
       targets:
         - QuantSwarmTests
+        - QuantSwarmUITests
     profile:
       config: Release
     analyze:

@@ -310,7 +310,8 @@ actor KimiService {
         candidates: [DailyStrategy.Candidate],
         market: [String: DailyStrategy.Snapshot],
         openPositions: [String],
-        slotsAvailable: Int
+        slotsAvailable: Int,
+        feedback: String? = nil
     ) async throws -> [DailyVerdict] {
         let systemPrompt = """
         Sei l'agente decisionale (Brain) della modalità giornaliera di un sistema di trading \
@@ -320,7 +321,10 @@ actor KimiService {
         SMA5 o dopo 10 giorni, stop a 2,5 ATR. Per ogni candidato rispondi buy o skip. Scegli \
         al massimo slots_available buy, preferendo i pullback più profondi (RSI2 più basso) e \
         la diversificazione: evita ETF quasi uguali tra loro o a quelli già in portafoglio \
-        (per esempio SPY, DIA e QQQ insieme). Usa market_overview per il contesto generale. \
+        (per esempio SPY, DIA e QQQ insieme). Usa market_overview per il contesto generale e \
+        recent_closes (ultime 20 chiusure) per giudicare la forma del ribasso. Se c'è \
+        past_outcomes, tienine conto: se gli ETF che scarti vanno meglio di quelli che scegli, \
+        sii meno selettivo. \
         Non inventare dati. Non usare Markdown.
         """
         func snap(_ s: DailyStrategy.Snapshot) -> [String: Any] {
@@ -335,11 +339,16 @@ actor KimiService {
         }
         let payload: [String: Any] = [
             "candidates": candidates.map { candidate -> [String: Any] in
-                ["symbol": candidate.symbol, "indicators": snap(candidate.snapshot)]
+                [
+                    "symbol": candidate.symbol,
+                    "indicators": snap(candidate.snapshot),
+                    "recent_closes": candidate.recentCloses.map { ($0 * 100).rounded() / 100 }
+                ]
             },
             "market_overview": market.mapValues(snap),
             "open_positions": openPositions,
-            "slots_available": slotsAvailable
+            "slots_available": slotsAvailable,
+            "past_outcomes": feedback.map { $0 as Any } ?? NSNull()
         ]
         let payloadData = try JSONSerialization.data(withJSONObject: payload)
         let messages: [[String: String]] = [
@@ -715,9 +724,9 @@ private struct ChatCompletionResponse: Decodable {
 
 extension KimiService: DailyBrain {
     func decide(candidates: [DailyStrategy.Candidate], market: [String: DailyStrategy.Snapshot],
-                openPositions: [String], slots: Int) async throws -> [DailyVerdict] {
+                openPositions: [String], slots: Int, feedback: String?) async throws -> [DailyVerdict] {
         try await dailyDecide(candidates: candidates, market: market,
-                              openPositions: openPositions, slotsAvailable: slots)
+                              openPositions: openPositions, slotsAvailable: slots, feedback: feedback)
     }
 
     func review(candidate: DailyStrategy.Candidate, verdict: DailyVerdict,

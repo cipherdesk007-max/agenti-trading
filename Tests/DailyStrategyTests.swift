@@ -79,6 +79,34 @@ final class DailyStrategyTests: XCTestCase {
         XCTAssertFalse(book.alreadyDecided("SPY", day: "2026-11-11"))
     }
 
+    func testShadowResolvesOnFirstCloseAboveSMA5() throws {
+        let series = pullbackInUptrend + [141.0, 150.0, 151.0]
+        let candles = bars(series)
+        let day = DailyStrategy.tradingDay(start.addingTimeInterval(249 * 86_400))
+        let entry = ShadowEntry(symbol: "SPY", day: day, entry: 142, stop: 130, outcome: ShadowEntry.brainSkip)
+        let exit = try XCTUnwrap(ShadowEvaluator.resolve(entry, bars: candles))
+        XCTAssertEqual(exit.price, 150, accuracy: 1e-9)
+    }
+
+    func testShadowResolvesOnStop() throws {
+        let series = pullbackInUptrend + [120.0]
+        let day = DailyStrategy.tradingDay(start.addingTimeInterval(249 * 86_400))
+        let entry = ShadowEntry(symbol: "SPY", day: day, entry: 142, stop: 135, outcome: ShadowEntry.bought)
+        let exit = try XCTUnwrap(ShadowEvaluator.resolve(entry, bars: bars(series)))
+        XCTAssertEqual(exit.price, 120, accuracy: 1e-9, "Gap sotto lo stop: esce all'apertura")
+    }
+
+    func testShadowSummaryComparesChosenAndSkipped() {
+        var a = ShadowEntry(symbol: "SPY", day: "d", entry: 100, stop: 90, outcome: ShadowEntry.bought)
+        a.exitPrice = 102
+        var b = ShadowEntry(symbol: "QQQ", day: "d", entry: 100, stop: 90, outcome: ShadowEntry.brainSkip)
+        b.exitPrice = 99
+        let summary = ShadowSummary.from([a, b])
+        XCTAssertEqual(summary.chosenAverage ?? 0, 0.02, accuracy: 1e-9)
+        XCTAssertEqual(summary.skippedAverage ?? 0, -0.01, accuracy: 1e-9)
+        XCTAssertNil(summary.feedbackText, "Con meno di 3 esiti niente feedback a Kimi")
+    }
+
     func testBasketHasNoDuplicates() {
         XCTAssertEqual(Set(DailyStrategy.basket).count, DailyStrategy.basket.count)
     }

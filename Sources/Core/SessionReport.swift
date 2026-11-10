@@ -187,6 +187,14 @@ enum SessionReportBuilder {
         }
         lines.append("")
 
+        lines.append("DIAGNOSTICA (crash e blocchi segnalati da iOS)")
+        lines.append(thin)
+        if let diagnostics = DiagnosticsCollector.recentSummary() {
+            lines.append(contentsOf: diagnostics)
+        } else {
+            lines.append("Nessun crash o blocco segnalato.")
+        }
+        lines.append("")
         lines.append("LOG SESSIONE (\(logs.count) righe)")
         lines.append(thin)
         for entry in logs {

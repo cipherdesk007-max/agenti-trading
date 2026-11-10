@@ -8,6 +8,7 @@ struct QuantSwarmAlphaZeroApp: App {
     private let container: ModelContainer
 
     init() {
+        DiagnosticsCollector.shared.start()
         let keychain = KeychainManager()
         if let stored = try? ModelContainer(for: TradeRecord.self, DecisionSample.self) {
             container = stored

@@ -108,6 +108,7 @@ struct TerminalDashboardView: View {
                                 killButton
                             case .agents:
                                 decisionsPanel
+                                shadowPanel
                                 analysisPanel
                                 portfolioPanel
                                 kimiPanel
@@ -318,6 +319,38 @@ struct TerminalDashboardView: View {
     }
 
     // MARK: - Cruscotto
+
+    /// Kimi aggiunge valore? Esito ipotetico, con le stesse regole, dei
+    /// candidati scelti e di quelli scartati.
+    private var shadowPanel: some View {
+        let s = engine.shadowSummary
+        let stats = engine.entryStats
+        func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", $0 * 100) } ?? "—" }
+        return VStack(alignment: .leading, spacing: 8) {
+            panelHeader("KIMI · SCELTI VS SCARTATI", color: DashboardPalette.cyan)
+            portfolioRow("SCELTI DA KIMI", "\(s.chosenCount) · medio \(pct(s.chosenAverage))", color: .white)
+            portfolioRow("SCARTATI", "\(s.skippedCount) · medio \(pct(s.skippedAverage))", color: .white)
+            portfolioRow("IN CORSO", "\(s.pending)", color: .gray)
+            if let c = s.chosenAverage, let k = s.skippedAverage, s.chosenCount + s.skippedCount >= 10 {
+                Text(c >= k ? "Finora le scelte di Kimi vanno meglio degli scartati." : "ATTENZIONE: gli scartati vanno meglio delle scelte di Kimi.")
+                    .font(.system(.caption2, design: .monospaced, weight: .bold))
+                    .foregroundStyle(c >= k ? terminalGreen : .orange)
+            } else {
+                Text("Servono almeno 10 esiti per un giudizio. Gli esiti sono ipotetici, con le stesse regole di uscita dell'app.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Divider().overlay(Color.gray.opacity(0.3))
+            let filled = max(stats.placed - stats.unfilled - stats.partial, 0)
+            portfolioRow(
+                "ORDINI ESEGUITI",
+                stats.placed == 0 ? "—" : "\(filled)/\(stats.placed) · parziali \(stats.partial) · mai \(stats.unfilled)",
+                color: .white
+            )
+        }
+        .panelStyle(DashboardPalette.cyan)
+    }
 
     private var liveBanner: some View {
         Text("CONTO LIVE · SOLDI VERI")
@@ -811,6 +844,27 @@ struct TerminalDashboardView: View {
                     .buttonStyle(TerminalButtonStyle(color: .red))
                 }
             }
+            Button("ESPORTA TRADE CHIUSI CSV") {
+                engine.exportTradesCSV()
+            }
+            .buttonStyle(TerminalButtonStyle(color: terminalGreen))
+            if let url = engine.tradesCSVURL {
+                HStack(spacing: 12) {
+                    ShareLink(item: url) {
+                        Text("INVIA CSV")
+                            .font(.system(.body, design: .monospaced, weight: .bold))
+                            .frame(maxWidth: .infinity)
+                            .padding()
+                            .background(terminalGreen.opacity(0.18))
+                            .foregroundStyle(terminalGreen)
+                            .overlay(Rectangle().stroke(terminalGreen, lineWidth: 1))
+                    }
+                    Button("ELIMINA") {
+                        engine.deleteTradesCSV()
+                    }
+                    .buttonStyle(TerminalButtonStyle(color: .red))
+                }
+            }
             Text("Ogni decisione (anche gli HOLD) è registrata con prezzo, ATR, livelli ed esito: win/loss per i trade eseguiti, movimento del prezzo a 30 min per gli HOLD.")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.gray)
@@ -1260,7 +1314,7 @@ private struct SystemSettingsView: View {
                     in: 0.25...2.0,
                     step: 0.25
                 )
-                Stepper("Max posizioni aperte: \(draft.maxOpenPositions)", value: $draft.maxOpenPositions, in: 1...3)
+                Stepper("Max posizioni aperte: \(draft.maxOpenPositions)", value: $draft.maxOpenPositions, in: 1...5)
                 Stepper(
                     "Stop giornaliero: \(String(format: "%.1f", draft.dailyStopPercent))% equity",
                     value: $draft.dailyStopPercent,
@@ -1352,6 +1406,14 @@ private struct SystemSettingsView: View {
             Toggle("RIPRENDI SESSIONE AL RIAVVIO", isOn: $draft.autoResumeOnLaunch)
                 .font(.system(.caption, design: .monospaced, weight: .bold))
                 .tint(DashboardPalette.green)
+
+            Toggle("PROMEMORIA 15:30 NEW YORK (21:30 ITALIA)", isOn: $draft.dailyReminder)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .tint(DashboardPalette.green)
+            Text("Lun–ven, mezz'ora prima della chiusura USA: ti ricorda di aprire l'app per la modalità giornaliera. iOS non permette di leggere le chiavi protette da Face ID in background, quindi l'app non controlla da sola: ti avvisa.")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+                .fixedSize(horizontal: false, vertical: true)
 
             Toggle("IMPORTI NEL WIDGET", isOn: $draft.widgetShowsAmounts)
                 .font(.system(.caption, design: .monospaced, weight: .bold))

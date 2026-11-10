@@ -41,6 +41,8 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var latestAnalysis: AnalysisEntry?
     @Published private(set) var datasetStats = DatasetStats(total: 0, completed: 0)
     @Published private(set) var datasetExportURL: URL?
+    /// CSV dei trade chiusi pronto da inviare.
+    @Published private(set) var tradesCSVURL: URL?
     @Published private(set) var lastLoopBeat: Date?
     @Published private(set) var performanceStats: PerformanceStats?
     @Published var strategyConfig = StrategyConfigStore.load()
@@ -68,6 +70,10 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var dailyCandidates: [DailyStrategy.Candidate] = []
     /// Modalità attiva della sessione in corso.
     @Published private(set) var activeMode: TradingMode?
+    /// Registro ombra: scelti da Kimi vs scartati (esiti ipotetici).
+    @Published private(set) var shadowSummary = ShadowSummary.from(DailyBookStore.load().shadow)
+    /// Ordini d'ingresso giornalieri: inviati, mai eseguiti, eseguiti in parte.
+    @Published private(set) var entryStats = (placed: 0, unfilled: 0, partial: 0)
 
     private let keychain: KeychainManager
     private let modelContext: ModelContext
@@ -279,6 +285,7 @@ final class QuantSwarmEngine: ObservableObject {
         strategyConfig = sanitized
         StrategyConfigStore.save(sanitized)
         kimiService?.setModel(sanitized.kimiModel)
+        NotificationManager.shared.scheduleDailyReminder(enabled: sanitized.dailyReminder && sanitized.tradingMode == .daily)
         applyIdleTimer()
         // Il promemoria "motore in background" si programma solo quando l'app
         // va davvero in background (handleEnteredBackground), mai ad app aperta.
@@ -826,6 +833,25 @@ final class QuantSwarmEngine: ObservableObject {
         } else {
             log("Export dataset fallito.", agent: .brain)
         }
+    }
+
+    /// Esporta in CSV i trade con esito registrato.
+    func exportTradesCSV() {
+        let descriptor = FetchDescriptor<TradeRecord>(
+            predicate: #Predicate<TradeRecord> { $0.outcomeRecorded },
+            sortBy: [SortDescriptor(\.createdAt)]
+        )
+        guard let records = try? modelContext.fetch(descriptor), !records.isEmpty else {
+            log("Nessun trade chiuso da esportare.", agent: .risk)
+            return
+        }
+        tradesCSVURL = TradeExporter.write(records: records)
+        log(tradesCSVURL != nil ? "Trade esportati in CSV: \(records.count)." : "Export CSV fallito.", agent: .risk)
+    }
+
+    func deleteTradesCSV() {
+        if let url = tradesCSVURL { try? FileManager.default.removeItem(at: url) }
+        tradesCSVURL = nil
     }
 
     func deleteDatasetExport() {
@@ -1731,6 +1757,7 @@ extension QuantSwarmEngine {
 
     fileprivate func startDaily(credentials: StoredCredentials, kimi: KimiService) async {
         activeMode = .daily
+        NotificationManager.shared.scheduleDailyReminder(enabled: strategyConfig.sanitized.dailyReminder)
         configuredSymbols = DailyStrategy.basket
         acceptsNewOrders = true
         pauseReason = nil
@@ -1825,6 +1852,8 @@ extension QuantSwarmEngine {
         }
         guard !result.aborted else { return }
         DailyBookStore.save(result.book)
+        shadowSummary = ShadowSummary.from(result.book.shadow)
+        entryStats = (result.book.placedEntries, result.book.unfilledEntries, result.book.partialEntries)
         dailyCandidates = result.candidates
         for _ in 0..<result.kimiCalls { registerKimiCall() }
         for verdict in result.verdicts {

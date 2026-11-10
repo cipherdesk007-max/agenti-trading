@@ -54,9 +54,12 @@ private actor FakeBroker: BrokerClient {
         heldPositions.removeAll { $0.symbol == symbol }
         return "close-\(symbol)"
     }
+    var lastTakeProfit: Double?
+
     func submitEntryWithStop(symbol: String, quantity: Double, limitPrice: Double,
-                             stopPrice: Double, clientOrderId: String) async throws -> String {
+                             stopPrice: Double, takeProfitPrice: Double?, clientOrderId: String) async throws -> String {
         entryCalls.append((symbol, quantity, limitPrice, stopPrice))
+        lastTakeProfit = takeProfitPrice
         let id = "entry-\(entryCalls.count)"
         if timeoutButCreated {
             created[clientOrderId] = id
@@ -82,7 +85,7 @@ private actor FakeBrain: DailyBrain {
     func set(reviewApproves: Bool) { self.reviewApproves = reviewApproves }
 
     func decide(candidates: [DailyStrategy.Candidate], market: [String: DailyStrategy.Snapshot],
-                openPositions: [String], slots: Int) async throws -> [DailyVerdict] {
+                openPositions: [String], slots: Int, feedback: String?) async throws -> [DailyVerdict] {
         decideCalls += 1
         if decideError { throw FakeError() }
         return candidates.map { DailyVerdict(symbol: $0.symbol, action: "buy", confidence: 0.8, rationale: "test") }
@@ -200,6 +203,42 @@ final class DailyCycleTests: XCTestCase {
         XCTAssertEqual(result.book.entries["SPY"], today)
         XCTAssertEqual(result.book.stops["SPY"] ?? 0, order.stopPrice, accuracy: 1e-9)
         XCTAssertTrue(result.book.alreadyDecided("SPY", day: today))
+        let tp = await broker.lastTakeProfit
+        XCTAssertGreaterThan(tp ?? 0, order.limitPrice, "Il take-profit deve stare sopra l'ingresso")
+        XCTAssertEqual(result.book.placedEntries, 1)
+        XCTAssertEqual(result.book.shadow.last?.outcome, ShadowEntry.bought)
+    }
+
+    func testShadowRecordsReviewerRejection() async {
+        let brain = FakeBrain()
+        await brain.set(reviewApproves: false)
+        let result = await runner(FakeBroker(bars: ["SPY": pullback]), brain).run(input()) { _ in }
+        XCTAssertEqual(result.book.shadow.count, 1)
+        XCTAssertEqual(result.book.shadow.first?.outcome, ShadowEntry.reviewerReject)
+        XCTAssertEqual(result.book.shadow.first?.day, today)
+    }
+
+    func testOrphanTakeProfitCancelledBeforeRestoringStop() async {
+        let broker = FakeBroker(bars: ["SPY": pullback])
+        await broker.set(positions: [position(10)])
+        let tp = BrokerOrder(id: "tp1", symbol: "SPY", side: "sell", type: "limit", status: "new", quantity: 10,
+                             filledQuantity: 0, stopPrice: nil, parentOrderId: "p1", submittedAt: nil)
+        await broker.set(orders: [tp])
+        _ = await runner(broker, FakeBrain()).run(input(book: bookWithSPY())) { _ in }
+        let cancelled = await broker.cancelled
+        XCTAssertTrue(cancelled.contains("tp1"), "Un target senza stop gemello va annullato prima di rimettere lo stop")
+        let stops = await broker.stopCalls.count
+        XCTAssertEqual(stops, 1)
+    }
+
+    func testUnfilledStaleEntryIsCounted() async {
+        let broker = FakeBroker(bars: ["SPY": rising])
+        let entry = BrokerOrder(id: "p1", symbol: "SPY", side: "buy", type: "limit", status: "new",
+                                quantity: 10, filledQuantity: 0, stopPrice: nil, parentOrderId: nil, submittedAt: nil)
+        await broker.set(orders: [entry])
+        let result = await runner(broker, FakeBrain()).run(input(book: bookWithSPY(day: "2026-11-09"))) { _ in }
+        XCTAssertEqual(result.book.unfilledEntries, 1)
+        XCTAssertNil(result.book.entries["SPY"])
     }
 
     func testTimeoutRecoversOrderWithoutDuplicate() async {

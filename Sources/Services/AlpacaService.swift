@@ -408,9 +408,10 @@ actor AlpacaService {
         quantity: Double,
         limitPrice: Double,
         stopPrice: Double,
+        takeProfitPrice: Double? = nil,
         clientOrderId: String
     ) async throws -> AlpacaOrder {
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "symbol": symbol.uppercased(),
             "qty": decimalString(quantity, fractionDigits: 0),
             "side": "buy",
@@ -423,6 +424,14 @@ actor AlpacaService {
                 "stop_price": decimalString(stopPrice, fractionDigits: priceFractionDigits(stopPrice))
             ]
         ]
+        // Con il take-profit diventa un bracket: stop e target collegati (OCO),
+        // eseguito uno l'altro si annulla, nessun rischio di doppia vendita.
+        if let takeProfitPrice, takeProfitPrice > limitPrice {
+            body["order_class"] = "bracket"
+            body["take_profit"] = [
+                "limit_price": decimalString(takeProfitPrice, fractionDigits: priceFractionDigits(takeProfitPrice))
+            ]
+        }
         let data = try await send(path: "/v2/orders", method: "POST", body: body)
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
     }
@@ -591,9 +600,10 @@ struct AlpacaBroker: BrokerClient {
     }
 
     func submitEntryWithStop(symbol: String, quantity: Double, limitPrice: Double,
-                             stopPrice: Double, clientOrderId: String) async throws -> String {
+                             stopPrice: Double, takeProfitPrice: Double?, clientOrderId: String) async throws -> String {
         try await service.submitEntryWithStop(symbol: symbol, quantity: quantity, limitPrice: limitPrice,
-                                              stopPrice: stopPrice, clientOrderId: clientOrderId).id
+                                              stopPrice: stopPrice, takeProfitPrice: takeProfitPrice,
+                                              clientOrderId: clientOrderId).id
     }
 
     func submitStop(symbol: String, quantity: Double, stopPrice: Double) async throws -> String {

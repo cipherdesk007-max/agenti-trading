@@ -29,6 +29,7 @@ struct BrokerOrder: Sendable, Equatable {
 
     var isEntry: Bool { parentOrderId == nil && side == "buy" }
     var isProtectiveStop: Bool { side == "sell" && (type == "stop" || type == "stop_limit") }
+    var isTakeProfit: Bool { side == "sell" && type == "limit" }
 }
 
 /// Tutto ciò che il ciclo giornaliero chiede al broker.
@@ -43,8 +44,9 @@ protocol BrokerClient: Sendable {
     /// Chiude a mercato; ritorna l'id dell'ordine di chiusura (nil se il broker
     /// non lo restituisce). Lancia solo se la chiusura è stata rifiutata.
     func closePosition(symbol: String) async throws -> String?
+    /// Ingresso limite con stop (e take-profit, se indicato) sul broker, GTC.
     func submitEntryWithStop(symbol: String, quantity: Double, limitPrice: Double,
-                             stopPrice: Double, clientOrderId: String) async throws -> String
+                             stopPrice: Double, takeProfitPrice: Double?, clientOrderId: String) async throws -> String
     func submitStop(symbol: String, quantity: Double, stopPrice: Double) async throws -> String
     func orderId(byClientOrderId: String) async throws -> String?
     func filledAveragePrice(orderId: String) async throws -> Double?
@@ -53,7 +55,7 @@ protocol BrokerClient: Sendable {
 /// Brain e Reviewer della modalità giornaliera (Kimi).
 protocol DailyBrain: Sendable {
     func decide(candidates: [DailyStrategy.Candidate], market: [String: DailyStrategy.Snapshot],
-                openPositions: [String], slots: Int) async throws -> [DailyVerdict]
+                openPositions: [String], slots: Int, feedback: String?) async throws -> [DailyVerdict]
     func review(candidate: DailyStrategy.Candidate, verdict: DailyVerdict,
                 market: [String: DailyStrategy.Snapshot]) async throws -> KimiReview
 }
@@ -84,6 +86,7 @@ struct DailyPlacedOrder: Sendable, Equatable {
     let quantity: Double
     let limitPrice: Double
     let stopPrice: Double
+    let takeProfitPrice: Double
     let atr: Double
     let verdict: DailyVerdict
 }
@@ -162,6 +165,14 @@ struct DailyCycleRunner: Sendable {
 
         // 2. STRATEGIA: manutenzione, protezione, uscite.
         await emit(.init(stage: .strategy, state: .working, detail: "controllo stop, uscite e segnali"))
+        // Registro ombra: chiude gli esiti ipotetici maturati.
+        for index in book.shadow.indices where !book.shadow[index].resolved {
+            let entry = book.shadow[index]
+            if let b = bars[entry.symbol], let exit = ShadowEvaluator.resolve(entry, bars: b) {
+                book.shadow[index].exitPrice = exit.price
+                book.shadow[index].exitDay = exit.day
+            }
+        }
         var held = Dictionary(positions.map { ($0.symbol.uppercased(), $0) }, uniquingKeysWith: { first, _ in first })
 
         // Posizioni chiuse dal broker (stop eseguito o chiusura manuale).
@@ -177,6 +188,7 @@ struct DailyCycleRunner: Sendable {
             guard let day = book.entries[symbol], day < today else { continue }
             do {
                 try await broker.cancelOrder(id: order.id)
+                if order.filledQuantity > 0 { book.partialEntries += 1 } else { book.unfilledEntries += 1 }
                 if held[symbol] == nil { book.remove(symbol) }
                 let partial = order.filledQuantity > 0 ? " (eseguito in parte: \(Int(order.filledQuantity)) az. restano in portafoglio)" : ""
                 await emit(.init(log: "\(symbol): residuo dell'ordine d'ingresso del \(day) annullato\(partial).", agent: .risk))
@@ -197,6 +209,11 @@ struct DailyCycleRunner: Sendable {
                 await emit(.init(log: "\(symbol): ATTENZIONE posizione senza stop e prezzo di stop non calcolabile.", agent: .risk,
                                  notify: ("POSIZIONE SENZA STOP", "\(symbol): controlla il broker")))
                 continue
+            }
+            // Un take-profit rimasto senza il suo stop gemello va annullato prima:
+            // due vendite scollegate potrebbero scattare entrambe e aprire uno short.
+            for orphan in orders where orphan.symbol.uppercased() == symbol && orphan.isTakeProfit {
+                try? await broker.cancelOrder(id: orphan.id)
             }
             do {
                 _ = try await broker.submitStop(symbol: symbol, quantity: missingQty, stopPrice: stop)
@@ -282,7 +299,8 @@ struct DailyCycleRunner: Sendable {
         do {
             result.kimiCalls += 1
             verdicts = try await brain.decide(candidates: fresh, market: market,
-                                              openPositions: Array(held.keys).sorted(), slots: slots)
+                                              openPositions: Array(held.keys).sorted(), slots: slots,
+                                              feedback: ShadowSummary.from(book.shadow).feedbackText)
         } catch {
             await emit(.init(stage: .brain, state: .failed, detail: "Kimi non ha risposto: nessun ordine",
                              log: "Brain Kimi fallito (\(error.localizedDescription)): nessun ordine.", agent: .brain))
@@ -295,10 +313,25 @@ struct DailyCycleRunner: Sendable {
         for v in verdicts {
             await emit(.init(log: "\(v.symbol): \(v.wantsBuy ? "BUY" : "SKIP") \(Int(v.confidence * 100))% — \(v.rationale)", agent: .brain))
         }
-        let buys = Array(verdicts.filter(\.wantsBuy).sorted { $0.confidence > $1.confidence }.prefix(slots))
+        let ranked = verdicts.filter(\.wantsBuy).sorted { $0.confidence > $1.confidence }
+        let buys = Array(ranked.prefix(slots))
+        // Esito di ogni candidato per il registro ombra (default: scartato).
+        var status = Dictionary(fresh.map { ($0.symbol, ShadowEntry.brainSkip) }, uniquingKeysWith: { a, _ in a })
+        for extra in ranked.dropFirst(slots) { status[extra.symbol.uppercased()] = ShadowEntry.noSlot }
+        func recordShadow(_ book: inout DailyBook) {
+            for candidate in fresh {
+                let s = candidate.snapshot
+                book.addShadow(ShadowEntry(
+                    symbol: candidate.symbol, day: today, entry: s.close,
+                    stop: s.close - DailyStrategy.stopATR * s.atr14,
+                    outcome: status[candidate.symbol] ?? ShadowEntry.brainSkip
+                ))
+            }
+        }
         guard !buys.isEmpty else {
             await emit(.init(stage: .brain, state: .done, detail: "nessun acquisto scelto"))
             await skip(after: .brain, "Brain: nessun acquisto", emit)
+            recordShadow(&book)
             result.book = book
             return result
         }
@@ -317,11 +350,13 @@ struct DailyCycleRunner: Sendable {
                 result.kimiCalls += 1
                 review = try await brain.review(candidate: candidate, verdict: verdict, market: market)
             } catch {
+                status[symbol] = ShadowEntry.blocked
                 await emit(.init(stage: .reviewer, state: .failed, detail: "\(symbol): revisore non raggiungibile",
                                  log: "\(symbol): reviewer fallito (\(error.localizedDescription)); ordine annullato.", agent: .brain))
                 continue
             }
             guard review.approved else {
+                status[symbol] = ShadowEntry.reviewerReject
                 await emit(.init(stage: .reviewer, state: .done, detail: "\(symbol) bocciato: \(review.reason)",
                                  log: "\(symbol): REVIEWER respinge — \(review.reason)", agent: .brain))
                 continue
@@ -330,6 +365,7 @@ struct DailyCycleRunner: Sendable {
                              log: "\(symbol): reviewer approva — \(review.reason)", agent: .brain))
 
             // 6. RISCHIO
+            status[symbol] = ShadowEntry.blocked
             await emit(.init(stage: .risk, state: .working, detail: "dimensiono \(symbol)"))
             guard let price = try? await broker.latestPrice(symbol: symbol), price > 0 else {
                 await emit(.init(stage: .risk, state: .failed, detail: "\(symbol): prezzo non disponibile",
@@ -360,10 +396,12 @@ struct DailyCycleRunner: Sendable {
             // 7. ESECUTORE
             await emit(.init(stage: .executor, state: .working, detail: "invio \(symbol)"))
             let clientOrderId = "qsd-\(symbol)-\(today)"
+            let takeProfit = RiskRules.roundDown(sizing.limitPrice + DailyStrategy.takeProfitATR * snap.atr14, tick: 0.01)
             var orderId: String?
             do {
                 orderId = try await broker.submitEntryWithStop(symbol: symbol, quantity: sizing.quantity,
                                                                limitPrice: sizing.limitPrice, stopPrice: sizing.stopPrice,
+                                                               takeProfitPrice: takeProfit,
                                                                clientOrderId: clientOrderId)
             } catch {
                 // Timeout: l'ordine potrebbe essere comunque arrivato. Mai un secondo invio.
@@ -375,6 +413,8 @@ struct DailyCycleRunner: Sendable {
                 }
             }
             guard let orderId else { continue }
+            status[symbol] = ShadowEntry.bought
+            book.placedEntries += 1
             book.entries[symbol] = today
             book.stops[symbol] = sizing.stopPrice
             let notional = sizing.quantity * sizing.limitPrice
@@ -382,8 +422,8 @@ struct DailyCycleRunner: Sendable {
                                        buyingPower: equityLeft.buyingPower - notional)
             result.orders.append(DailyPlacedOrder(symbol: symbol, orderId: orderId, quantity: sizing.quantity,
                                                   limitPrice: sizing.limitPrice, stopPrice: sizing.stopPrice,
-                                                  atr: snap.atr14, verdict: verdict))
-            let text = "\(symbol) \(Int(sizing.quantity)) az. limite \(fmt(sizing.limitPrice)) · stop \(fmt(sizing.stopPrice)) (GTC)"
+                                                  takeProfitPrice: takeProfit, atr: snap.atr14, verdict: verdict))
+            let text = "\(symbol) \(Int(sizing.quantity)) az. limite \(fmt(sizing.limitPrice)) · stop \(fmt(sizing.stopPrice)) · target \(fmt(takeProfit)) (GTC)"
             await emit(.init(stage: .executor, state: .done, detail: "inviato \(text)",
                              log: "ORDINE INVIATO: \(text)\(marketOpen ? "" : " · in coda per l'apertura").", agent: .risk,
                              notify: ("ORDINE INVIATO", text)))
@@ -391,6 +431,7 @@ struct DailyCycleRunner: Sendable {
         if result.orders.isEmpty {
             await emit(.init(stage: .executor, state: .skipped, detail: "nessun ordine da inviare"))
         }
+        recordShadow(&book)
         result.book = book
         return result
     }

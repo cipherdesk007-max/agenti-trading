@@ -167,7 +167,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     var tradingMode: TradingMode
     /// Rischio massimo per singolo trade, in % di equity (0,25 – 2).
     var riskPerTradePercent: Double
-    /// Tetto di posizioni aperte simultanee (1 – 3).
+    /// Tetto di posizioni aperte simultanee (1 – 5; nel backtest 5 rende un po' di più).
     var maxOpenPositions: Int
     /// Circuit breaker giornaliero, perdita in % di equity (0,5 – 5).
     var dailyStopPercent: Double
@@ -191,6 +191,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     var dailyCreditLimitUSD: Double
     /// Il widget mostra equity e P&L (visibili anche a telefono bloccato).
     var widgetShowsAmounts: Bool
+    /// Promemoria lun–ven 15:30 New York per aprire l'app (giornaliera).
+    var dailyReminder: Bool
 
     init(
         tradingMode: TradingMode = .daily,
@@ -205,7 +207,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         kimiFilterEnabled: Bool = true,
         creditLimitEnabled: Bool = true,
         dailyCreditLimitUSD: Double = 1.0,
-        widgetShowsAmounts: Bool = false
+        widgetShowsAmounts: Bool = false,
+        dailyReminder: Bool = true
     ) {
         self.tradingMode = tradingMode
         self.riskPerTradePercent = riskPerTradePercent
@@ -220,6 +223,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         self.creditLimitEnabled = creditLimitEnabled
         self.dailyCreditLimitUSD = dailyCreditLimitUSD
         self.widgetShowsAmounts = widgetShowsAmounts
+        self.dailyReminder = dailyReminder
     }
 
     init(from decoder: Decoder) throws {
@@ -237,7 +241,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
             kimiFilterEnabled: try container.decodeIfPresent(Bool.self, forKey: .kimiFilterEnabled) ?? true,
             creditLimitEnabled: try container.decodeIfPresent(Bool.self, forKey: .creditLimitEnabled) ?? true,
             dailyCreditLimitUSD: try container.decodeIfPresent(Double.self, forKey: .dailyCreditLimitUSD) ?? 1.0,
-            widgetShowsAmounts: try container.decodeIfPresent(Bool.self, forKey: .widgetShowsAmounts) ?? false
+            widgetShowsAmounts: try container.decodeIfPresent(Bool.self, forKey: .widgetShowsAmounts) ?? false,
+            dailyReminder: try container.decodeIfPresent(Bool.self, forKey: .dailyReminder) ?? true
         )
     }
 
@@ -246,12 +251,12 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     var sanitized: StrategyConfig {
         var copy = self
         copy.riskPerTradePercent = min(max(copy.riskPerTradePercent, 0.25), 2.0)
-        copy.maxOpenPositions = min(max(copy.maxOpenPositions, 1), 3)
         copy.dailyStopPercent = min(max(copy.dailyStopPercent, 0.5), 5.0)
         copy.decisionIntervalSeconds = min(max(copy.decisionIntervalSeconds, 30), 120)
         copy.analysisIntervalMinutes = min(max(copy.analysisIntervalMinutes, 2.0), 15.0)
         let model = copy.kimiModel.trimmingCharacters(in: .whitespacesAndNewlines)
         copy.kimiModel = model.isEmpty ? SystemLimits.kimiModel : model
+        copy.maxOpenPositions = min(max(copy.maxOpenPositions, 1), 5)
         if !SystemLimits.decisionTimeframesMinutes.contains(copy.decisionTimeframeMinutes) {
             copy.decisionTimeframeMinutes = 15
         }
