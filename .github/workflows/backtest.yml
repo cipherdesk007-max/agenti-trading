@@ -1,0 +1,18 @@
+name: Backtest filtro
+
+on:
+  workflow_dispatch:
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install yfinance pandas
+      - name: Backtest
+        run: python tools/backtest.py | tee backtest.md
+      - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
