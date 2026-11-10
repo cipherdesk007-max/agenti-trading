@@ -13,6 +13,8 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install yfinance pandas
-      - name: Backtest
+      - name: Backtest (costi realistici 0,03% per lato)
         run: python tools/backtest.py | tee backtest.md
+      - name: Backtest (costi quasi nulli 0,005% per lato)
+        run: BT_COST=0.00005 python tools/backtest.py | tee -a backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"

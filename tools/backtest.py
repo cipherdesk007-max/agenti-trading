@@ -15,6 +15,7 @@ Regole replicate:
 Uso: python tools/backtest.py  (scarica 60 giorni di 15m da Yahoo Finance)
 """
 import math
+import os
 import random
 import sys
 
@@ -23,7 +24,7 @@ import yfinance as yf
 
 SYMBOLS = ["SPY", "QQQ", "IWM", "AAPL", "MSFT", "NVDA", "AMD", "TSLA", "META", "AMZN", "GOOGL"]
 WINDOW = 100
-COST = 0.0003
+COST = float(os.environ.get("BT_COST", "0.0003"))
 VARIANTS = [(1.0, 2.0), (1.5, 2.0), (2.0, 1.5)]  # (K stop in ATR, R/R)
 RANDOM_RUNS = 200
 
@@ -159,7 +160,7 @@ def main():
         bars = load(s)
         if len(bars) > WINDOW + 10:
             data[s] = bars
-    print(f"Dati: {', '.join(f'{s} {len(b)}' for s, b in data.items())} candele 15m\n")
+    print(f"Dati: {', '.join(f'{s} {len(b)}' for s, b in data.items())} candele 15m · costo {COST:.4%} per lato\n")
     lines = ["| K stop | R/R | trade filtro | win | R medio | profit factor | R totali | R medio CASUALE (p5–p95) | il filtro batte il caso? |",
              "|---|---|---|---|---|---|---|---|---|"]
     by_trigger = {}
