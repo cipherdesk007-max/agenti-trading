@@ -164,6 +164,18 @@ private struct BarsResponse: Decodable {
     let bars: [AlpacaBar]?
 }
 
+/// Ultimo trade dal market data REST (rilettura prezzo dopo la risposta di Kimi).
+private struct LatestTradeResponse: Decodable {
+    struct Trade: Decodable {
+        let price: Double?
+
+        enum CodingKeys: String, CodingKey {
+            case price = "p"
+        }
+    }
+    let trade: Trade?
+}
+
 actor AlpacaService {
     private let credentials: AlpacaCredentials
     private let session: URLSession
@@ -269,6 +281,26 @@ actor AlpacaService {
         )
         let response = try JSONDecoder().decode(BarsResponse.self, from: data)
         return (response.bars ?? []).compactMap(\.candle)
+    }
+
+    /// Ultimo prezzo scambiato (feed IEX): rilettura DOPO la risposta di Kimi,
+    /// prima dell'invio dell'ordine. Se il prezzo si è mosso oltre 0,5×ATR
+    /// il risk manager annulla: i livelli proposti non valgono più.
+    func latestTradePrice(symbol: String) async throws -> Double {
+        guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
+        }
+        let data = try await send(
+            baseURL: credentials.marketDataBaseURL,
+            path: "/v2/stocks/\(escaped)/trades/latest",
+            method: "GET",
+            query: [URLQueryItem(name: "feed", value: "iex")]
+        )
+        let response = try JSONDecoder().decode(LatestTradeResponse.self, from: data)
+        guard let price = response.trade?.price, price > 0 else {
+            throw QuantSwarmError.invalidServerResponse("Ultimo prezzo assente per \(symbol)")
+        }
+        return price
     }
 
     func submitBracket(

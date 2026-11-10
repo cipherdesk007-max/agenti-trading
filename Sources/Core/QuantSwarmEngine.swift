@@ -1,4 +1,5 @@
 import Foundation
+import Network
 import SwiftData
 #if canImport(UIKit)
 import UIKit
@@ -45,9 +46,15 @@ final class QuantSwarmEngine: ObservableObject {
     @Published var strategyConfig = StrategyConfigStore.load()
     @Published private(set) var availableKimiModels: [String] = []
     @Published private(set) var modelListError: String?
+    /// Motivo di pausa visibile (rete assente / batteria < 20%): niente Kimi
+    /// né ordini finché resta attivo.
+    @Published private(set) var pauseReason: String?
+    /// Stop giornaliero (giorno UTC, persistito): sopravvive al riavvio.
+    @Published private(set) var dailyStopOn = false
+    /// Stop drawdown -10% dal picco: sblocco solo manuale.
+    @Published private(set) var drawdownLocked = false
 
     private let keychain: KeychainManager
-    private let background: BackgroundPersistenceManager
     private let modelContext: ModelContext
     private let marketScout = MarketScoutAgent()
     private let riskAgent = RiskExecutionAgent()
@@ -63,17 +70,33 @@ final class QuantSwarmEngine: ObservableObject {
     private var staleLogEmitted: Set<String> = []
     private var closeGuardLogged: Set<String> = []
     private var regimeLogged: Set<String> = []
+    private var waitingCandlesLogged: Set<String> = []
     private var atrHistory: [String: [Double]] = [:]
     private var lastHoldPrice: [String: (price: Double, at: Date)] = [:]
     private var flatByCloseTriggered = false
     private var maxPositionsLogged = false
-    private var dailyStopDay: String?
     private var lastClockRefresh: Date?
     private var lastBalanceRefresh: Date?
     private var lastAnalysisAt: Date?
     private var analysisInFlight = false
     private var heartbeatTask: Task<Void, Never>?
     private var heartbeatAlerted = false
+    /// Protezioni persistite (stop giornaliero UTC + drawdown): un riavvio
+    /// dell'app non azzera i circuit breaker.
+    private var guardState = RiskGuardStore.load()
+    /// Storico candele chiuse per simbolo (1m dallo stream/backfill, 15m
+    /// aggregate in codice): è il contesto che Kimi riceve a ogni decisione.
+    private var candleStores: [String: CandleStore] = [:]
+    /// Simboli per cui un ordine è già partito in questo ciclo: contano
+    /// nell'esposizione complessiva anche prima della conferma del broker.
+    private var cycleCommittedSymbols: Set<String> = []
+    /// Foreground-only: in background nessun nuovo ordine né chiamata Kimi;
+    /// al rientro riconciliazione completa col broker.
+    private var acceptsNewOrders = true
+    private var networkSatisfied = true
+    private var lastRiskRejectedNotice: [String: Date] = [:]
+    private let pathMonitor = NWPathMonitor()
+    private let monitorQueue = DispatchQueue(label: "com.quantswarm.alphazero.engine.network")
 
     private let backgroundReminderIdentifier = "quantswarm.background.reminder"
     private let lastSymbolsKey = "com.quantswarm.alphazero.lastSymbols"
@@ -81,15 +104,22 @@ final class QuantSwarmEngine: ObservableObject {
 
     init(
         keychain: KeychainManager,
-        background: BackgroundPersistenceManager,
         container: ModelContainer
     ) {
         self.keychain = keychain
-        self.background = background
         modelContext = ModelContext(container)
-        background.setRefreshHandler { [weak self] in
-            await self?.performBackgroundRefresh()
+        #if canImport(UIKit)
+        UIDevice.current.isBatteryMonitoringEnabled = true
+        #endif
+        pathMonitor.pathUpdateHandler = { [weak self] path in
+            let satisfied = path.status == .satisfied
+            Task { @MainActor [weak self] in
+                self?.networkSatisfied = satisfied
+            }
         }
+        pathMonitor.start(queue: monitorQueue)
+        drawdownLocked = guardState.drawdownLocked
+        dailyStopOn = guardState.dailyStopDayUTC == Self.dayStampUTC()
         // Report .txt di un'eventuale sessione precedente (es. generato alla
         // chiusura dell'app): riappare in dashboard per export/eliminazione.
         sessionReportURL = SessionReportBuilder.existingReportURL()
@@ -207,6 +237,8 @@ final class QuantSwarmEngine: ObservableObject {
         lastAnalysisAt = nil
         availableKimiModels = []
         modelListError = nil
+        pauseReason = nil
+        acceptsNewOrders = true
         statusMessage = "Credenziali richieste"
     }
 
@@ -227,9 +259,9 @@ final class QuantSwarmEngine: ObservableObject {
         }
         log(
             "Impostazioni aggiornate: rischio \(format(sanitized.riskPerTradePercent))%, "
-                + "max posizioni \(sanitized.maxOpenPositions), Kelly /\(format(sanitized.kellyDivisor, fractionDigits: 0)), "
-                + "stop giorno \(format(sanitized.dailyStopPercent))%, ciclo \(sanitized.decisionIntervalSeconds)s, "
-                + "analisi \(format(sanitized.analysisIntervalMinutes, fractionDigits: 1)) min, modello \(sanitized.kimiModel)."
+                + "max posizioni \(sanitized.maxOpenPositions), stop giorno \(format(sanitized.dailyStopPercent))%, "
+                + "ciclo \(sanitized.decisionIntervalSeconds)s, analisi \(format(sanitized.analysisIntervalMinutes, fractionDigits: 1)) min, "
+                + "modello \(sanitized.kimiModel)."
         )
     }
 
@@ -310,7 +342,6 @@ final class QuantSwarmEngine: ObservableObject {
             return
         }
 
-        let config = strategyConfig.sanitized
         configuredSymbols = parsedSymbols
         configuredNews = news.trimmingCharacters(in: .whitespacesAndNewlines)
         UserDefaults.standard.set(symbolsText, forKey: lastSymbolsKey)
@@ -320,20 +351,30 @@ final class QuantSwarmEngine: ObservableObject {
         staleLogEmitted = []
         closeGuardLogged = []
         regimeLogged = []
+        waitingCandlesLogged = []
         atrHistory = [:]
         lastHoldPrice = [:]
         flatByCloseTriggered = false
         maxPositionsLogged = false
         lastAnalysisAt = nil
+        acceptsNewOrders = true
+        pauseReason = nil
+        cycleCommittedSymbols = []
+        lastRiskRejectedNotice = [:]
+        candleStores = Dictionary(uniqueKeysWithValues: parsedSymbols.map { ($0, CandleStore()) })
+        drawdownLocked = guardState.drawdownLocked
+        dailyStopOn = guardState.dailyStopDayUTC == Self.dayStampUTC()
         NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
         applyIdleTimer()
         scheduleBackgroundReminder()
         sessionStartedAt = Date()
         statusMessage = "Sessione \(credentials.paperTrading ? "paper" : "live") attiva"
-        background.start()
         log("════════ SESSIONE AVVIATA · ORE \(Date().formatted(date: .omitted, time: .standard)) ════════")
         log("Motore avviato su \(parsedSymbols.joined(separator: ", ")); ATR richiesto prima dei segnali.")
+        if drawdownLocked {
+            log("ATTENZIONE: stop drawdown attivo da una sessione precedente; sblocco manuale in OPERATIVO.", agent: .risk)
+        }
         if let clock = try? await AlpacaService(credentials: credentials.alpaca).clock() {
             marketClock = clock
             if clock.isOpen {
@@ -347,6 +388,30 @@ final class QuantSwarmEngine: ObservableObject {
         await riskAgent.setLogHandler { [weak self] message in
             Task { @MainActor [weak self] in
                 self?.log(message, agent: .risk)
+            }
+        }
+
+        // Backfill candele: Kimi ragiona su storico vero fin dal primo ciclo,
+        // non solo sulle barre arrivate dopo l'avvio dello stream. L'ultima
+        // candela REST può essere in formazione e viene scartata da seed().
+        let alpaca = AlpacaService(credentials: credentials.alpaca)
+        for symbol in parsedSymbols {
+            do {
+                async let oneMinuteRequest = alpaca.bars(symbol: symbol, timeframe: "1Min", limit: 100)
+                async let fifteenMinuteRequest = alpaca.bars(symbol: symbol, timeframe: "15Min", limit: 100)
+                let (oneMinute, fifteenMinute) = try await (oneMinuteRequest, fifteenMinuteRequest)
+                candleStores[symbol]?.seed(oneMinute: oneMinute, fifteenMinute: fifteenMinute)
+                log(
+                    "\(symbol): storico candele caricato (1m \(oneMinute.count), 15m \(fifteenMinute.count)).",
+                    agent: .scout
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                log(
+                    "\(symbol): backfill candele non riuscito; lo storico si costruirà dallo stream.",
+                    agent: .scout
+                )
             }
         }
 
@@ -378,9 +443,12 @@ final class QuantSwarmEngine: ObservableObject {
         await start(symbolsText: symbolsText, news: news)
     }
 
+    /// Schermo sempre acceso mentre il motore gira: l'app è fatta per restare
+    /// in foreground durante la sessione, con l'indicatore MOTORE ATTIVO
+    /// ben visibile in cima alla dashboard.
     private func applyIdleTimer() {
         #if canImport(UIKit)
-        UIApplication.shared.isIdleTimerDisabled = isRunning && strategyConfig.keepScreenAwake
+        UIApplication.shared.isIdleTimerDisabled = isRunning
         #endif
     }
 
@@ -436,8 +504,9 @@ final class QuantSwarmEngine: ObservableObject {
         heartbeatTask = nil
         lastLoopBeat = nil
         heartbeatAlerted = false
+        pauseReason = nil
+        acceptsNewOrders = true
         await marketScout.stop()
-        background.stop()
         statusMessage = "Motore fermo; posizioni invariate"
         log("Motore fermato. Usa HARD KILL SWITCH per liquidare le posizioni.")
         log("════════ SESSIONE CHIUSA · ORE \(Date().formatted(date: .omitted, time: .standard)) · \(reason) ════════")
@@ -502,6 +571,66 @@ final class QuantSwarmEngine: ObservableObject {
         }
         // Rigenera il report includendo l'esito della liquidazione.
         exportSessionReport(reason: "HARD KILL")
+    }
+
+    // MARK: - Foreground / background
+
+    /// L'app va in background: nessun nuovo ordine né chiamata Kimi. Le
+    /// posizioni aperte restano protette dalle gambe stop/target già sul broker.
+    func handleEnteredBackground() {
+        guard acceptsNewOrders else { return }
+        acceptsNewOrders = false
+        if isRunning {
+            log("App in background: nuovi ordini e chiamate Kimi sospesi; posizioni protette sul broker.", agent: .system)
+        }
+    }
+
+    /// Rientro in foreground: riconciliazione completa con il broker (esiti,
+    /// posizioni, ordini, equity) PRIMA di riabilitare i nuovi ordini.
+    func handleEnteredForeground() async {
+        NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
+        if isRunning {
+            scheduleBackgroundReminder()
+        }
+        let wasSuspended = !acceptsNewOrders
+        if wasSuspended, credentials != nil {
+            log("App di nuovo in foreground: riconciliazione col broker in corso…", agent: .system)
+            await refreshTradeRecords()
+            await refreshPortfolio()
+            log("Riconciliazione completata: nuovi ordini riabilitati.", agent: .system)
+        }
+        acceptsNewOrders = true
+    }
+
+    /// Sblocco manuale dello stop drawdown: il picco viene riallineato
+    /// all'equity corrente, altrimenti il blocco scattarebbe di nuovo al
+    /// primo ciclo.
+    func unlockDrawdown() {
+        if let equity = account?.equityValue, equity > 0 {
+            guardState.peakEquity = equity
+        }
+        guardState.drawdownLocked = false
+        RiskGuardStore.save(guardState)
+        drawdownLocked = false
+        log("Stop drawdown sbloccato manualmente; picco equity riallineato all'equity corrente.", agent: .risk)
+        NotificationManager.shared.notify(
+            "DRAWDOWN SBLOCCATO",
+            body: "Nuovi ordini riabilitati manualmente."
+        )
+    }
+
+    /// Motivi di pausa gratuiti e locali: rete assente o batteria sotto il 20%
+    /// (e non in carica). Finché la pausa resta, niente Kimi né ordini.
+    private func computePauseReason() -> String? {
+        if !networkSatisfied { return "RETE ASSENTE" }
+        #if canImport(UIKit)
+        let device = UIDevice.current
+        if device.batteryLevel >= 0, device.batteryLevel < 0.20,
+           device.batteryState != .charging, device.batteryState != .full {
+            return "BATTERIA SOTTO 20%"
+        }
+        #endif
+        return nil
     }
 
     // MARK: - Kimi Analyst
@@ -663,6 +792,8 @@ final class QuantSwarmEngine: ObservableObject {
         switch event {
         case .snapshot(let snapshot):
             snapshots[snapshot.symbol] = snapshot
+        case .candle(let symbol, let candle):
+            candleStores[symbol]?.ingest(candle)
         case .log(let message):
             log(message, agent: .scout)
         case .disconnected(let message):
@@ -672,17 +803,17 @@ final class QuantSwarmEngine: ObservableObject {
     }
 
     private var dailyStopActive: Bool {
-        guard let day = dailyStopDay else { return false }
-        return day == Self.dayStamp()
+        guard let day = guardState.dailyStopDayUTC else { return false }
+        return day == Self.dayStampUTC()
     }
 
-    private static func dayStamp() -> String {
+    /// Lo stop giornaliero segue il giorno UTC ed è persistito su disco:
+    /// chiudere e riaprire l'app non azzera il circuit breaker.
+    private static func dayStampUTC() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        // Il circuit breaker giornaliero segue la giornata di borsa USA,
-        // non la mezzanotte italiana del dispositivo.
-        formatter.timeZone = TimeZone(identifier: "America/New_York")
+        formatter.timeZone = TimeZone(identifier: "UTC")
         return formatter.string(from: Date())
     }
 
@@ -692,12 +823,33 @@ final class QuantSwarmEngine: ObservableObject {
             // Battito cardiaco del motore: monitorato da heartbeatMonitor().
             lastLoopBeat = Date()
             heartbeatAlerted = false
+
+            // Pausa locale (rete/batteria): log e notifica solo alle transizioni.
+            let pause = computePauseReason()
+            if pause != pauseReason {
+                pauseReason = pause
+                if let pause {
+                    log(
+                        "MOTORE IN PAUSA: \(pause). Kimi e nuovi ordini sospesi; posizioni protette sul broker.",
+                        agent: .system
+                    )
+                    NotificationManager.shared.notify("MOTORE IN PAUSA", body: pause)
+                } else {
+                    log("Pausa rientrata: motore di nuovo operativo.", agent: .system)
+                }
+            }
+            if dailyStopOn != dailyStopActive { dailyStopOn = dailyStopActive }
+            cycleCommittedSymbols = []
+
             await refreshTradeRecords()
             await refreshPortfolioThrottled()
             evaluateHoldSamples()
-            await runScheduledAnalysis(kimi: kimi)
+            if pauseReason == nil, acceptsNewOrders {
+                await runScheduledAnalysis(kimi: kimi)
+            }
             // Flat by close: a T-10 minuti chiude tutto a mercato; una strategia
             // intraday non resta esposta overnight con le gambe del bracket scadute.
+            // Resta attivo anche in pausa: è protezione del capitale, non un nuovo ingresso.
             if let clock = marketClock, clock.isOpen, let close = clock.nextCloseDate {
                 let toClose = close.timeIntervalSinceNow
                 if toClose > 0, toClose <= SystemLimits.flatByCloseSeconds,
@@ -721,7 +873,9 @@ final class QuantSwarmEngine: ObservableObject {
                     }
                 }
             }
-            if dailyStopActive {
+            // Gate globale: pausa, background, stop giornaliero o drawdown
+            // bloccano nuovi segnali e ordini; il monitoraggio continua.
+            guard pauseReason == nil, acceptsNewOrders, !dailyStopActive, !drawdownLocked else {
                 do {
                     try await Task.sleep(nanoseconds: UInt64(config.decisionInterval * 1_000_000_000))
                 } catch {
@@ -807,9 +961,23 @@ final class QuantSwarmEngine: ObservableObject {
                 history.append(atr)
                 if history.count > 240 { history.removeFirst(history.count - 240) }
                 atrHistory[symbol] = history
+                // Candele: Kimi ragiona solo su storico CHIUSO; sotto il minimo
+                // non si chiama (dati insufficienti = crediti sprecati).
+                let context = candleStores[symbol]?.context()
+                guard (context?.oneMinuteCandles.count ?? 0) >= SystemLimits.minimumCandlesForKimi else {
+                    if !waitingCandlesLogged.contains(symbol) {
+                        waitingCandlesLogged.insert(symbol)
+                        log(
+                            "\(symbol): attesa candele chiuse (\(context?.oneMinuteCandles.count ?? 0)/\(SystemLimits.minimumCandlesForKimi)).",
+                            agent: .scout
+                        )
+                    }
+                    continue
+                }
+                waitingCandlesLogged.remove(symbol)
                 log(
-                    "\(symbol): prezzo \(format(snapshot.lastPrice)), ATR \(format(atr)) "
-                        + "→ dati inviati a Kimi.",
+                    "\(symbol): prezzo \(format(snapshot.lastPrice)), ATR \(format(atr)), "
+                        + "candele 1m \(context?.oneMinuteCandles.count ?? 0) → dati inviati a Kimi.",
                     agent: .scout
                 )
                 do {
@@ -817,7 +985,8 @@ final class QuantSwarmEngine: ObservableObject {
                         snapshot: snapshot,
                         news: configuredNews,
                         performance: performanceMatrix(),
-                        calibration: calibration
+                        calibration: calibration,
+                        marketContext: context
                     )
                     decisions.append(DecisionEntry(timestamp: Date(), decision: decision))
                     if decisions.count > 500 { decisions.removeFirst(decisions.count - 500) }
@@ -857,13 +1026,30 @@ final class QuantSwarmEngine: ObservableObject {
                     // Race STOP: se l'utente ha fermato il motore mentre Kimi
                     // rispondeva, nessun ordine deve partire dopo lo STOP.
                     guard isRunning, !Task.isCancelled else { return }
+                    // Race background/pausa: l'utente può aver chiuso l'app o
+                    // la rete può essere caduta mentre Kimi rispondeva.
+                    guard acceptsNewOrders, pauseReason == nil, !dailyStopActive, !drawdownLocked else {
+                        log("\(symbol): segnale scartato, motore non più operativo.", agent: .risk)
+                        continue
+                    }
                     if let receipt = try await riskAgent.execute(
                         decision: decision,
                         snapshot: snapshot,
                         credentials: credentials.alpaca,
                         riskFraction: config.riskFraction,
-                        kellyDivisor: config.kellyDivisor
+                        atr: atr,
+                        maxOpenPositions: config.maxOpenPositions,
+                        alreadyCommittedThisCycle: cycleCommittedSymbols,
+                        constraints: .alpacaStock,
+                        freshPrice: { [weak self] in
+                            if let streamed = await self?.freshStreamPrice(for: symbol) {
+                                return streamed
+                            }
+                            return try? await AlpacaService(credentials: credentials.alpaca)
+                                .latestTradePrice(symbol: symbol)
+                        }
                     ) {
+                        cycleCommittedSymbols.insert(symbol)
                         sample.orderID = receipt.orderID
                         sample.executed = true
                         try persist(receipt: receipt, atr: atr)
@@ -878,6 +1064,13 @@ final class QuantSwarmEngine: ObservableObject {
                     return
                 } catch QuantSwarmError.riskRejected(let reason) {
                     log("\(symbol): ordine annullato — \(reason).", agent: .risk)
+                    // Notifica throttled: i rifiuti del risk manager sono
+                    // importanti ma non devono tempestare l'utente a ogni ciclo.
+                    let now = Date()
+                    if now.timeIntervalSince(lastRiskRejectedNotice[symbol] ?? .distantPast) > 600 {
+                        lastRiskRejectedNotice[symbol] = now
+                        NotificationManager.shared.notify("ORDINE BLOCCATO", body: "\(symbol): \(reason)")
+                    }
                 } catch {
                     log("\(symbol): \(error.localizedDescription)", agent: .brain)
                 }
@@ -890,11 +1083,12 @@ final class QuantSwarmEngine: ObservableObject {
         }
     }
 
-    private func performBackgroundRefresh() async {
-        guard credentials != nil else { return }
-        await refreshTradeRecords()
-        await refreshPortfolio()
-        log("Refresh BGTask completato nei limiti concessi da iOS.")
+    /// Rilettura post-Kimi dallo stream: prezzo fresco (≤ 10 s) già in memoria,
+    /// senza un giro REST extra. Se lo stream tace, il risk agent usa il REST.
+    private func freshStreamPrice(for symbol: String) -> Double? {
+        guard let snapshot = snapshots[symbol],
+              Date().timeIntervalSince(snapshot.receivedAt) <= 10 else { return nil }
+        return snapshot.lastPrice
     }
 
     private func persist(receipt: ExecutionReceipt, atr: Double) throws {
@@ -1064,7 +1258,8 @@ final class QuantSwarmEngine: ObservableObject {
     }
 
     /// Circuit breaker giornaliero: P&L oltre la soglia impostata = nuovi
-    /// segnali sospesi fino al giorno successivo. Le posizioni aperte restano
+    /// segnali sospesi fino alla mezzanotte UTC. Persistito su disco: un
+    /// riavvio dell'app non azzera il blocco. Le posizioni aperte restano
     /// protette dalle gambe del bracket.
     private func checkDailyLoss(_ snapshot: AccountSnapshot) {
         guard let lastEquity = snapshot.lastEquityValue, lastEquity > 0 else { return }
@@ -1072,16 +1267,42 @@ final class QuantSwarmEngine: ObservableObject {
         let dayPnL = snapshot.equityValue - lastEquity
         let limit = config.dailyStopFraction * lastEquity
         guard dayPnL <= -limit, !dailyStopActive else { return }
-        dailyStopDay = Self.dayStamp()
+        guardState.dailyStopDayUTC = Self.dayStampUTC()
+        RiskGuardStore.save(guardState)
+        dailyStopOn = true
         let percent = format(config.dailyStopPercent)
         log(
             "STOP GIORNALIERO: P&L \(format(dayPnL)) USD oltre il -\(percent)% di equity; "
-                + "nuovi segnali sospesi fino a domani.",
+                + "nuovi segnali sospesi fino alla mezzanotte UTC.",
             agent: .risk
         )
         NotificationManager.shared.notify(
             "STOP GIORNALIERO -\(percent)%",
-            body: "P&L \(format(dayPnL)) USD; nuovi segnali sospesi fino a domani."
+            body: "P&L \(format(dayPnL)) USD; nuovi segnali sospesi fino alla mezzanotte UTC."
+        )
+    }
+
+    /// Stop drawdown: equity oltre il -10% dal picco storico = nuovi ordini
+    /// bloccati finché l'utente non sblocca manualmente. Persistito su disco.
+    private func updateDrawdownGuard(equity: Double) {
+        guard equity > 0 else { return }
+        if equity > guardState.peakEquity {
+            guardState.peakEquity = equity
+            RiskGuardStore.save(guardState)
+        }
+        let floor = guardState.peakEquity * (1 - SystemLimits.maxDrawdownFraction)
+        guard guardState.peakEquity > 0, equity <= floor, !guardState.drawdownLocked else { return }
+        guardState.drawdownLocked = true
+        RiskGuardStore.save(guardState)
+        drawdownLocked = true
+        log(
+            "STOP DRAWDOWN: equity \(format(equity)) USD sotto il -10% dal picco "
+                + "\(format(guardState.peakEquity)) USD; nuovi ordini bloccati fino a sblocco manuale.",
+            agent: .risk
+        )
+        NotificationManager.shared.notify(
+            "STOP DRAWDOWN -10%",
+            body: "Equity \(format(equity)) USD dal picco \(format(guardState.peakEquity)) USD; sblocco manuale in OPERATIVO."
         )
     }
 
@@ -1092,6 +1313,7 @@ final class QuantSwarmEngine: ObservableObject {
             let snapshot = try await service.account()
             account = snapshot
             checkDailyLoss(snapshot)
+            updateDrawdownGuard(equity: snapshot.equityValue)
             if baselineEquity == nil { baselineEquity = snapshot.equityValue }
             let edge = snapshot.equityValue - (baselineEquity ?? snapshot.equityValue)
             edgeHistory.append(EdgePoint(timestamp: Date(), value: edge))
@@ -1140,6 +1362,7 @@ final class QuantSwarmEngine: ObservableObject {
             let snapshot = try await service.account()
             account = snapshot
             checkDailyLoss(snapshot)
+            updateDrawdownGuard(equity: snapshot.equityValue)
             if baselineEquity == nil { baselineEquity = snapshot.equityValue }
             let edge = snapshot.equityValue - (baselineEquity ?? snapshot.equityValue)
             edgeHistory.append(EdgePoint(timestamp: Date(), value: edge))

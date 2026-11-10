@@ -128,11 +128,16 @@ actor KimiService {
         return balance
     }
 
+    /// Decisione operativa. Oltre a prezzo/ATR/news/performance, Kimi riceve
+    /// il contesto candele: ultime 100 candele CHIUSE e indicatori calcolati
+    /// in codice (RSI, EMA 12/26, SMA 50/200, ATR, massimi/minimi, volumi)
+    /// su due timeframe (1m e 15m). Nessun indicatore stimato dal modello.
     func decide(
         snapshot: MarketSnapshot,
         news: String,
         performance: PerformanceMatrix,
-        calibration: CalibrationStats? = nil
+        calibration: CalibrationStats? = nil,
+        marketContext: MarketContext? = nil
     ) async throws -> KimiDecision {
         let systemPrompt = """
         Sei il modulo decisionale di un sistema di trading. Non fornire consulenza finanziaria \
@@ -140,10 +145,13 @@ actor KimiService {
         sono insufficienti, incoerenti o il rapporto rischio/rendimento non è favorevole. Per buy \
         vale stop_loss < entry_price < take_profit; per sell vale take_profit < entry_price < \
         stop_loss. entry_price deve essere il prezzo corrente fornito. win_probability è una stima \
-        soggettiva in (0,1), payoff_ratio è il rapporto reward/risk positivo. Se è presente \
-        calibration_feedback, usalo per correggere la tua win_probability: se in passato una fascia \
-        di confidenza ha vinto meno del dichiarato, abbassa la stima; se ha vinto di più, puoi \
-        alzarla con prudenza. Non usare Markdown.
+        soggettiva in (0,1), payoff_ratio è il rapporto reward/risk positivo. Il campo \
+        candles_two_timeframes contiene le ultime candele CHIUSE (t = secondi unix di inizio \
+        candela, o/h/l/c/v) e gli indicatori calcolati in codice sui timeframe 1m e 15m: usali \
+        per il giudizio e non inventare dati assenti. Se è presente calibration_feedback, usalo \
+        per correggere la tua win_probability: se in passato una fascia di confidenza ha vinto \
+        meno del dichiarato, abbassa la stima; se ha vinto di più, puoi alzarla con prudenza. \
+        Non usare Markdown.
         """
         var payload: [String: Any] = [
             "market": [
@@ -163,6 +171,7 @@ actor KimiService {
                 "recent_outcomes": performance.recentOutcomes
             ]
         ]
+        payload["candles_two_timeframes"] = marketContext.map(Self.contextPayload) ?? NSNull()
         // Apprendimento in-context: la calibrazione misurata sui trade passati
         // rientra nel prompt, così Kimi corregge da solo l'over/under-confidence.
         if let calibration {
@@ -220,6 +229,55 @@ actor KimiService {
             throw QuantSwarmError.invalidDecision("Campi o livelli di prezzo incoerenti")
         }
         return decision
+    }
+
+    /// Serializzazione compatta del contesto candele: numeri a 4 decimali e
+    /// timestamp in secondi unix per contenere i token spesi a ogni chiamata.
+    private static func contextPayload(_ context: MarketContext) -> [String: Any] {
+        [
+            "timeframe_1m": timeframePayload(context.oneMinuteCandles, context.oneMinuteIndicators),
+            "timeframe_15m": timeframePayload(context.fifteenMinuteCandles, context.fifteenMinuteIndicators)
+        ]
+    }
+
+    private static func timeframePayload(
+        _ candles: [Candle],
+        _ indicators: IndicatorSnapshot
+    ) -> [String: Any] {
+        [
+            "closed_candles": candles.count,
+            "indicators": indicatorsPayload(indicators),
+            "last_candles": candles.map(candlePayload)
+        ]
+    }
+
+    private static func candlePayload(_ candle: Candle) -> [String: Any] {
+        [
+            "t": Int(candle.timestamp.timeIntervalSince1970),
+            "o": round4(candle.open),
+            "h": round4(candle.high),
+            "l": round4(candle.low),
+            "c": round4(candle.close),
+            "v": round4(candle.volume)
+        ]
+    }
+
+    private static func indicatorsPayload(_ snapshot: IndicatorSnapshot) -> [String: Any] {
+        [
+            "rsi_14": snapshot.rsi14.map { round4($0) as Any } ?? NSNull(),
+            "ema_12": snapshot.ema12.map { round4($0) as Any } ?? NSNull(),
+            "ema_26": snapshot.ema26.map { round4($0) as Any } ?? NSNull(),
+            "sma_50": snapshot.sma50.map { round4($0) as Any } ?? NSNull(),
+            "sma_200": snapshot.sma200.map { round4($0) as Any } ?? NSNull(),
+            "atr_14": snapshot.atr14.map { round4($0) as Any } ?? NSNull(),
+            "high_20": snapshot.high20.map { round4($0) as Any } ?? NSNull(),
+            "low_20": snapshot.low20.map { round4($0) as Any } ?? NSNull(),
+            "avg_volume_20": snapshot.avgVolume20.map { round4($0) as Any } ?? NSNull()
+        ]
+    }
+
+    private static func round4(_ value: Double) -> Double {
+        (value * 10_000).rounded() / 10_000
     }
 
     /// Lettura qualitativa del mercato: regime, volatilità e bias sui simboli
