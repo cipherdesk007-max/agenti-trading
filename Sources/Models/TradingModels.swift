@@ -23,7 +23,7 @@ enum SystemLimits {
 /// UserDefaults come JSON: nessuna ricompilazione per cambiare strategia.
 /// Il motore legge questi valori a ogni ciclo, quindi le modifiche sono attive
 /// dal ciclo di decisioni successivo.
-struct StrategyConfig: Codable, Sendable {
+struct StrategyConfig: Codable, Sendable, Equatable {
     /// Rischio massimo per singolo trade, in % di equity (0,25 – 2).
     var riskPerTradePercent: Double
     /// Tetto di posizioni aperte simultanee (1 – 5).
