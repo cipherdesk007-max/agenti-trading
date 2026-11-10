@@ -242,7 +242,13 @@ actor AlpacaService {
         guard let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
             throw QuantSwarmError.invalidServerResponse("Order ID non codificabile")
         }
-        let data = try await send(path: "/v2/orders/\(escaped)", method: "GET")
+        // nested=true: senza, Alpaca non restituisce le gambe stop/target e
+        // l'esito dei trade chiusi da stop o target non verrebbe mai registrato.
+        let data = try await send(
+            path: "/v2/orders/\(escaped)",
+            method: "GET",
+            query: [URLQueryItem(name: "nested", value: "true")]
+        )
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
     }
 
