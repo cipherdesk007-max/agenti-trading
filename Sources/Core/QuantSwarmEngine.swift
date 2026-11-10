@@ -1,5 +1,8 @@
 import Foundation
 import SwiftData
+#if canImport(UIKit)
+import UIKit
+#endif
 
 enum AgentKind: String, Sendable {
     case scout = "SCOUT"
@@ -26,6 +29,7 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var edgeHistory: [EdgePoint] = []
     @Published private(set) var account: AccountSnapshot?
     @Published private(set) var positions: [AlpacaPosition] = []
+    @Published private(set) var openOrders: [AlpacaOrder] = []
     @Published private(set) var recentOrders: [AlpacaOrder] = []
     @Published private(set) var decisions: [DecisionEntry] = []
     @Published private(set) var marketClock: AlpacaClock?
@@ -38,6 +42,9 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var datasetExportURL: URL?
     @Published private(set) var lastLoopBeat: Date?
     @Published private(set) var performanceStats: PerformanceStats?
+    @Published var strategyConfig = StrategyConfigStore.load()
+    @Published private(set) var availableKimiModels: [String] = []
+    @Published private(set) var modelListError: String?
 
     private let keychain: KeychainManager
     private let background: BackgroundPersistenceManager
@@ -68,6 +75,10 @@ final class QuantSwarmEngine: ObservableObject {
     private var heartbeatTask: Task<Void, Never>?
     private var heartbeatAlerted = false
 
+    private let backgroundReminderIdentifier = "quantswarm.background.reminder"
+    private let lastSymbolsKey = "com.quantswarm.alphazero.lastSymbols"
+    private let lastNewsKey = "com.quantswarm.alphazero.lastNews"
+
     init(
         keychain: KeychainManager,
         background: BackgroundPersistenceManager,
@@ -92,6 +103,7 @@ final class QuantSwarmEngine: ObservableObject {
             let stored = try JSONDecoder().decode(StoredCredentials.self, from: data)
             apply(stored: stored)
             log("Credenziali sbloccate; ambiente \(stored.paperTrading ? "paper" : "live").")
+            await resumeSavedSessionIfNeeded()
         } catch QuantSwarmError.credentialsMissing {
             isConfigured = false
             statusMessage = "Credenziali richieste"
@@ -185,6 +197,7 @@ final class QuantSwarmEngine: ObservableObject {
         edgeHistory = []
         account = nil
         positions = []
+        openOrders = []
         recentOrders = []
         decisions = []
         marketClock = nil
@@ -192,8 +205,87 @@ final class QuantSwarmEngine: ObservableObject {
         sessionStartedAt = nil
         latestAnalysis = nil
         lastAnalysisAt = nil
+        availableKimiModels = []
+        modelListError = nil
         statusMessage = "Credenziali richieste"
     }
+
+    // MARK: - Impostazioni live
+
+    /// Aggiorna la strategia senza ricompilare: salva in UserDefaults, applica
+    /// subito il modello Kimi e lascia che il ciclo successivo usi i nuovi limiti.
+    func updateStrategyConfig(_ config: StrategyConfig) {
+        let sanitized = config.sanitized
+        strategyConfig = sanitized
+        StrategyConfigStore.save(sanitized)
+        kimiService?.setModel(sanitized.kimiModel)
+        applyIdleTimer()
+        if isRunning {
+            scheduleBackgroundReminder()
+        } else {
+            NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
+        }
+        log(
+            "Impostazioni aggiornate: rischio \(format(sanitized.riskPerTradePercent))%, "
+                + "max posizioni \(sanitized.maxOpenPositions), Kelly /\(format(sanitized.kellyDivisor, fractionDigits: 0)), "
+                + "stop giorno \(format(sanitized.dailyStopPercent))%, ciclo \(sanitized.decisionIntervalSeconds)s, "
+                + "analisi \(format(sanitized.analysisIntervalMinutes, fractionDigits: 1)) min, modello \(sanitized.kimiModel)."
+        )
+    }
+
+    /// Carica dall'API Kimi la lista reale dei modelli disponibili per la
+    /// chiave configurata: il picker SISTEMA parla da solo con Moonshot.
+    func loadAvailableKimiModels() async {
+        guard let kimiService else {
+            modelListError = "Credenziali Kimi mancanti."
+            return
+        }
+        do {
+            let models = try await kimiService.listModels()
+            availableKimiModels = models
+            modelListError = nil
+            log("Lista modelli Kimi aggiornata: \(models.count) disponibili.", agent: .brain)
+        } catch {
+            modelListError = error.localizedDescription
+            log("Lista modelli Kimi fallita: \(error.localizedDescription)", agent: .brain)
+        }
+    }
+
+    // MARK: - Controllo broker manuale
+
+    func cancelOrder(id: String) async {
+        guard let credentials else {
+            statusMessage = "Credenziali mancanti"
+            return
+        }
+        do {
+            try await AlpacaService(credentials: credentials.alpaca).cancelOrder(id: id)
+            log("Ordine \(id) cancellato manualmente dal pannello broker.", agent: .risk)
+            NotificationManager.shared.notify("ORDINE CANCELLATO", body: id)
+            await refreshPortfolio()
+        } catch {
+            log("Cancellazione ordine \(id) fallita: \(error.localizedDescription)", agent: .risk)
+            statusMessage = "Cancellazione ordine fallita"
+        }
+    }
+
+    func closePosition(symbol: String) async {
+        guard let credentials else {
+            statusMessage = "Credenziali mancanti"
+            return
+        }
+        do {
+            try await AlpacaService(credentials: credentials.alpaca).closePosition(symbol: symbol)
+            log("Chiusura a mercato richiesta per \(symbol) dal pannello broker.", agent: .risk)
+            NotificationManager.shared.notify("CHIUSURA POSIZIONE", body: symbol)
+            await refreshPortfolio()
+        } catch {
+            log("Chiusura \(symbol) fallita: \(error.localizedDescription)", agent: .risk)
+            statusMessage = "Chiusura posizione fallita"
+        }
+    }
+
+    // MARK: - Sessione
 
     func start(symbolsText: String, news: String) async {
         guard let credentials, let kimiService else {
@@ -218,8 +310,11 @@ final class QuantSwarmEngine: ObservableObject {
             return
         }
 
+        let config = strategyConfig.sanitized
         configuredSymbols = parsedSymbols
         configuredNews = news.trimmingCharacters(in: .whitespacesAndNewlines)
+        UserDefaults.standard.set(symbolsText, forKey: lastSymbolsKey)
+        UserDefaults.standard.set(configuredNews, forKey: lastNewsKey)
         snapshots = [:]
         waitingLogEmitted = []
         staleLogEmitted = []
@@ -232,6 +327,8 @@ final class QuantSwarmEngine: ObservableObject {
         lastAnalysisAt = nil
         NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
+        applyIdleTimer()
+        scheduleBackgroundReminder()
         sessionStartedAt = Date()
         statusMessage = "Sessione \(credentials.paperTrading ? "paper" : "live") attiva"
         background.start()
@@ -270,7 +367,36 @@ final class QuantSwarmEngine: ObservableObject {
         }
     }
 
-    /// Heartbeat monitor: il ciclo di analisi batte ogni ~60 s. Se il battito
+    /// Ripresa automatica opzionale: se l'app è stata chiusa col motore attivo,
+    /// al prossimo sblocco Face ID riparte la sessione sugli stessi simboli.
+    private func resumeSavedSessionIfNeeded() async {
+        guard strategyConfig.autoResumeOnLaunch, !isRunning else { return }
+        guard let symbolsText = UserDefaults.standard.string(forKey: lastSymbolsKey),
+              !symbolsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let news = UserDefaults.standard.string(forKey: lastNewsKey) ?? ""
+        log("Ripresa automatica della sessione salvata su \(symbolsText).")
+        await start(symbolsText: symbolsText, news: news)
+    }
+
+    private func applyIdleTimer() {
+        #if canImport(UIKit)
+        UIApplication.shared.isIdleTimerDisabled = isRunning && strategyConfig.keepScreenAwake
+        #endif
+    }
+
+    /// Promemoria locale: se iOS sospende l'app in background, l'utente viene
+    /// richiamato. Non è un WebSocket permanente: è il massimo consentito da iOS.
+    private func scheduleBackgroundReminder() {
+        NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
+        NotificationManager.shared.schedule(
+            identifier: backgroundReminderIdentifier,
+            title: "MOTORE IN BACKGROUND",
+            body: "iOS può sospendere stream e cicli: riapri QuantSwarm per verificare che sia ancora attivo.",
+            after: 20 * 60
+        )
+    }
+
+    /// Heartbeat monitor: il ciclo di analisi batte a ogni giro. Se il battito
     /// si ferma oltre 150 s a motore attivo (ciclo appeso), avvisa subito:
     /// l'app sembrerebbe viva ma non starebbe più operando.
     private func heartbeatMonitor() async {
@@ -300,6 +426,8 @@ final class QuantSwarmEngine: ObservableObject {
     func stop(reason: String = "STOP manuale") async {
         guard isRunning || analysisTask != nil || marketTask != nil else { return }
         isRunning = false
+        applyIdleTimer()
+        NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
         analysisTask?.cancel()
         marketTask?.cancel()
         heartbeatTask?.cancel()
@@ -392,12 +520,13 @@ final class QuantSwarmEngine: ObservableObject {
         await performAnalysis(kimi: kimiService, manual: true)
     }
 
-    /// Analisi automatica: una chiamata ogni 5 minuti, solo con dati freschi.
+    /// Analisi automatica: cadenza presa dalle impostazioni live.
     private func runScheduledAnalysis(kimi: KimiService) async {
         guard isRunning, !Task.isCancelled else { return }
         let now = Date()
+        let interval = strategyConfig.analysisInterval
         let due = lastAnalysisAt.map {
-            now.timeIntervalSince($0) >= SystemLimits.analysisIntervalSeconds
+            now.timeIntervalSince($0) >= interval
         } ?? true
         guard due else { return }
         await performAnalysis(kimi: kimi, manual: false)
@@ -522,7 +651,9 @@ final class QuantSwarmEngine: ObservableObject {
 
     private func apply(stored: StoredCredentials) {
         credentials = stored
-        kimiService = KimiService(apiKey: stored.moonshotAPIKey)
+        let service = KimiService(apiKey: stored.moonshotAPIKey)
+        service.setModel(strategyConfig.kimiModel)
+        kimiService = service
         paperTrading = stored.paperTrading
         isConfigured = true
         statusMessage = "Pronto in modalità \(stored.paperTrading ? "paper" : "live")"
@@ -557,6 +688,7 @@ final class QuantSwarmEngine: ObservableObject {
 
     private func analysisLoop(kimi: KimiService, credentials: StoredCredentials) async {
         while isRunning && !Task.isCancelled {
+            let config = strategyConfig.sanitized
             // Battito cardiaco del motore: monitorato da heartbeatMonitor().
             lastLoopBeat = Date()
             heartbeatAlerted = false
@@ -591,7 +723,7 @@ final class QuantSwarmEngine: ObservableObject {
             }
             if dailyStopActive {
                 do {
-                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                    try await Task.sleep(nanoseconds: UInt64(config.decisionInterval * 1_000_000_000))
                 } catch {
                     return
                 }
@@ -622,11 +754,11 @@ final class QuantSwarmEngine: ObservableObject {
                 staleLogEmitted.remove(symbol)
                 // Tetto di portafoglio: oltre N posizioni aperte niente nuovi segnali,
                 // il rischio per-simbolo altrimenti si somma oltre il previsto.
-                if positions.count >= SystemLimits.maxConcurrentPositions {
+                if positions.count >= config.maxOpenPositions {
                     if !maxPositionsLogged {
                         maxPositionsLogged = true
                         log(
-                            "Tetto di \(SystemLimits.maxConcurrentPositions) posizioni aperte "
+                            "Tetto di \(config.maxOpenPositions) posizioni aperte "
                                 + "raggiunto; nuovi segnali sospesi.",
                             agent: .risk
                         )
@@ -728,7 +860,9 @@ final class QuantSwarmEngine: ObservableObject {
                     if let receipt = try await riskAgent.execute(
                         decision: decision,
                         snapshot: snapshot,
-                        credentials: credentials.alpaca
+                        credentials: credentials.alpaca,
+                        riskFraction: config.riskFraction,
+                        kellyDivisor: config.kellyDivisor
                     ) {
                         sample.orderID = receipt.orderID
                         sample.executed = true
@@ -749,7 +883,7 @@ final class QuantSwarmEngine: ObservableObject {
                 }
             }
             do {
-                try await Task.sleep(nanoseconds: 60_000_000_000)
+                try await Task.sleep(nanoseconds: UInt64(config.decisionInterval * 1_000_000_000))
             } catch {
                 return
             }
@@ -929,16 +1063,17 @@ final class QuantSwarmEngine: ObservableObject {
         )
     }
 
-    /// Circuit breaker giornaliero: P&L oltre -2% di equity = nuovi segnali
-    /// sospesi fino al giorno successivo. Le posizioni aperte restano
+    /// Circuit breaker giornaliero: P&L oltre la soglia impostata = nuovi
+    /// segnali sospesi fino al giorno successivo. Le posizioni aperte restano
     /// protette dalle gambe del bracket.
     private func checkDailyLoss(_ snapshot: AccountSnapshot) {
         guard let lastEquity = snapshot.lastEquityValue, lastEquity > 0 else { return }
+        let config = strategyConfig.sanitized
         let dayPnL = snapshot.equityValue - lastEquity
-        let limit = SystemLimits.maxDailyLossFraction * lastEquity
+        let limit = config.dailyStopFraction * lastEquity
         guard dayPnL <= -limit, !dailyStopActive else { return }
         dailyStopDay = Self.dayStamp()
-        let percent = Int(SystemLimits.maxDailyLossFraction * 100)
+        let percent = format(config.dailyStopPercent)
         log(
             "STOP GIORNALIERO: P&L \(format(dayPnL)) USD oltre il -\(percent)% di equity; "
                 + "nuovi segnali sospesi fino a domani.",
@@ -969,6 +1104,11 @@ final class QuantSwarmEngine: ObservableObject {
             positions = try await service.positions()
         } catch {
             logUnlessCancelled("Posizioni", error)
+        }
+        do {
+            openOrders = try await service.openOrders()
+        } catch {
+            logUnlessCancelled("Ordini aperti", error)
         }
         do {
             recentOrders = try await service.recentOrders()
@@ -1011,6 +1151,11 @@ final class QuantSwarmEngine: ObservableObject {
             positions = try await service.positions()
         } catch {
             logUnlessCancelled("Posizioni", error)
+        }
+        do {
+            openOrders = try await service.openOrders()
+        } catch {
+            logUnlessCancelled("Ordini aperti", error)
         }
         do {
             recentOrders = try await service.recentOrders()
