@@ -44,17 +44,42 @@ private struct ModelsListResponse: Decodable {
     let data: [ModelEntry]
 }
 
+/// Box thread-safe per il modello Kimi: il tab SISTEMA può cambiarlo senza
+/// attendere l'actor, mentre chat() legge sempre il valore corrente.
+private final class KimiModelBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value: String
+
+    init(_ value: String) {
+        self.value = value
+    }
+
+    func get() -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func set(_ newValue: String) {
+        let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        lock.lock()
+        value = trimmed
+        lock.unlock()
+    }
+}
+
 actor KimiService {
     private let apiKey: String
     /// Modello usato per decisioni e analisi; configurabile dalle impostazioni
     /// dell'app (tab SISTEMA) senza ricompilare.
-    private var model: String
+    private let modelBox: KimiModelBox
     private let endpoint = URL(string: "https://api.moonshot.ai/v1/chat/completions")!
     private let session: URLSession
 
     init(apiKey: String, model: String = SystemLimits.kimiModel) {
         self.apiKey = apiKey
-        self.model = model
+        self.modelBox = KimiModelBox(model)
         let configuration = URLSessionConfiguration.default
         configuration.timeoutIntervalForRequest = 90
         configuration.timeoutIntervalForResource = 120
@@ -63,10 +88,8 @@ actor KimiService {
         session = URLSession(configuration: configuration)
     }
 
-    func setModel(_ newModel: String) {
-        let trimmed = newModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        model = trimmed
+    nonisolated func setModel(_ newModel: String) {
+        modelBox.set(newModel)
     }
 
     func validateCredentials() async throws {
@@ -306,7 +329,7 @@ actor KimiService {
         maxTokens: Int
     ) async throws -> String {
         let body: [String: Any] = [
-            "model": model,
+            "model": modelBox.get(),
             "messages": messages,
             "reasoning_effort": "low",
             "max_completion_tokens": maxTokens,
