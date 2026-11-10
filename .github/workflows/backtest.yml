@@ -2,25 +2,34 @@ name: Backtest filtro
 
 on:
   workflow_dispatch:
+    inputs:
+      quale:
+        description: "tutti | intraday15 | giornaliero | veloce5m"
+        default: "tutti"
 
 jobs:
   backtest:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
+    env:
+      Q: ${{ github.event.inputs.quale || 'tutti' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: pip install yfinance pandas
-      - name: Backtest (costi realistici 0,03% per lato)
-        run: python tools/backtest.py | tee backtest.md
-      - name: Backtest (costi quasi nulli 0,005% per lato)
-        run: BT_COST=0.00005 python tools/backtest.py | tee -a backtest.md
-      - name: Backtest giornaliero ETF 2006-oggi
+      - name: Filtro app 15m (costi 0,03% e 0,005%)
+        if: env.Q == 'tutti' || env.Q == 'intraday15'
+        run: |
+          python tools/backtest.py | tee -a backtest.md
+          BT_COST=0.00005 python tools/backtest.py | tee -a backtest.md
+      - name: Giornaliero ETF 2006-oggi
+        if: env.Q == 'tutti' || env.Q == 'giornaliero'
         run: python tools/backtest_daily.py | tee -a backtest.md
-      - name: Backtest veloce 5m (ORB, VWAP) costi 0,02%
-        run: python tools/backtest_intraday.py | tee -a backtest.md
-      - name: Backtest veloce 5m (ORB, VWAP) costi 0,005%
-        run: BT_COST=0.00005 python tools/backtest_intraday.py | tee -a backtest.md
+      - name: Veloce 5m ORB/VWAP (costi 0,02% e 0,005%)
+        if: env.Q == 'tutti' || env.Q == 'veloce5m'
+        run: |
+          python tools/backtest_intraday.py | tee -a backtest.md
+          BT_COST=0.00005 python tools/backtest_intraday.py | tee -a backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"

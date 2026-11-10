@@ -84,6 +84,51 @@ def random_machine(enter, exit_, max_days, rng):
     return state_machine(rand_enter, exit_.fillna(False), max_days)
 
 
+def pullback_with_stop(o, h, l, c, stop_atr):
+    """Variante C con stop protettivo sul broker (come nell'app): ingresso
+    all'apertura dopo il segnale, stop = ingresso - stop_atr * ATR14 giornaliero
+    (eseguito al prezzo di stop o all'apertura se c'è un gap), uscita
+    all'apertura dopo chiusura > SMA5 o dopo 10 giorni."""
+    sma200, sma5 = c.rolling(200).mean(), c.rolling(5).mean()
+    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()]).groupby(level=0).max()
+    atr14 = tr.ewm(alpha=1 / 14, adjust=False).mean()
+    r2 = rsi(c, 2)
+    out = pd.DataFrame(0.0, index=c.index, columns=c.columns)
+    exposure = pd.DataFrame(0.0, index=c.index, columns=c.columns)
+    for col in c.columns:
+        O, H, L, C = o[col].values, h[col].values, l[col].values, c[col].values
+        S200, S5, A, R = sma200[col].values, sma5[col].values, atr14[col].values, r2[col].values
+        res, expo = np.zeros(len(C)), np.zeros(len(C))
+        i, n = 0, len(C)
+        while i < n - 1:
+            if not (C[i] > S200[i] and R[i] < 10) or np.isnan(S200[i]):
+                i += 1
+                continue
+            j = i + 1
+            entry = O[j] * (1 + COST)
+            stop = entry - stop_atr * A[i]
+            prev = entry
+            k = j
+            while k < n:
+                expo[k] = 1
+                if L[k] <= stop:
+                    px = min(stop, O[k]) * (1 - COST)
+                    res[k] = px / prev - 1
+                    break
+                exit_next = C[k] > S5[k] or (k - j + 1) >= 10
+                if exit_next and k + 1 < n:
+                    res[k] = C[k] / prev - 1
+                    res[k + 1] += (O[k + 1] * (1 - COST)) / C[k] - 1
+                    k += 1
+                    break
+                res[k] = C[k] / prev - 1
+                prev = C[k]
+                k += 1
+            i = k + 1
+        out[col], exposure[col] = res, expo
+    return out.mean(axis=1), exposure.mean(axis=1).loc["2006":].mean()
+
+
 def metrics(r):
     r = r.dropna()
     if len(r) < 50:
@@ -155,6 +200,9 @@ def main():
         rows.append((name, r, exposure, trades_year, sorted(rand_cagrs)))
     for name, r in bench.items():
         rows.append((name, r, 1.0, 0, []))
+    for k in (2.0, 2.5, 3.0):
+        r, expo = pullback_with_stop(o, h, l, c, k)
+        rows.append((f"C Pullback RSI2 + stop {k} ATR", r, expo, 0, []))
 
     print(f"ETF: {', '.join(ETFS)} · costo {COST:.2%} per lato · esecuzione all'apertura del giorno dopo\n")
     for start, end, label in PERIODS:
