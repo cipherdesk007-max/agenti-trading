@@ -1,44 +1,115 @@
 import SwiftUI
 
+private enum DashboardSection: String, CaseIterable, Identifiable, Hashable {
+    case operations = "OPERATIVO"
+    case agents = "AGENTI"
+    case broker = "BROKER"
+    case system = "SISTEMA"
+
+    var id: String { rawValue }
+}
+
+private enum DashboardPalette {
+    static let green = Color(red: 0.1, green: 1.0, blue: 0.55)
+    static let cyan = Color(red: 0.35, green: 0.85, blue: 1.0)
+}
+
+private enum Formatters {
+    static func money(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "it_IT")
+        formatter.numberStyle = .decimal
+        formatter.usesGroupingSeparator = true
+        formatter.minimumFractionDigits = 2
+        formatter.maximumFractionDigits = 2
+        return formatter.string(from: NSNumber(value: value))
+            ?? String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    static func signedMoney(_ value: Double) -> String {
+        (value >= 0 ? "+" : "-") + money(abs(value))
+    }
+
+    static func percent(_ value: Double?) -> String {
+        guard let value else { return "—" }
+        return String(format: "%.1f%%", locale: Locale(identifier: "en_US_POSIX"), value * 100)
+    }
+
+    static func trimmed(_ raw: String) -> String {
+        guard let value = Double(raw) else { return raw }
+        return value == value.rounded()
+            ? String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), value)
+            : String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
+    }
+
+    static func time(_ date: Date?) -> String {
+        guard let date else { return "n/d" }
+        return date.formatted(date: .omitted, time: .standard)
+    }
+
+    static func dateTime(_ date: Date?) -> String {
+        guard let date else { return "n/d" }
+        return date.formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
 struct TerminalDashboardView: View {
     @EnvironmentObject private var engine: QuantSwarmEngine
     @Environment(\.scenePhase) private var scenePhase
+    @State private var selectedSection: DashboardSection = .operations
     @State private var symbols = "SPY"
     @State private var news = ""
     @State private var showKillConfirmation = false
     @State private var showLogoutConfirmation = false
     @State private var pulse = false
 
-    private let terminalGreen = Color(red: 0.1, green: 1.0, blue: 0.55)
+    private let terminalGreen = DashboardPalette.green
 
     var body: some View {
         NavigationStack {
             ZStack {
                 Color.black.ignoresSafeArea()
-                ScrollView {
-                    VStack(spacing: 16) {
-                        statusPanel
-                        controlPanel
-                        reportPanel
-                        positionsPanel
-                        portfolioPanel
-                        decisionsPanel
-                        analysisPanel
-                        ordersPanel
-                        edgePanel
-                        kimiPanel
-                        calibrationPanel
-                        metricsPanel
-                        datasetPanel
-                        settingsPanel
-                        linksPanel
-                        logPanel
-                        killButton
+                VStack(spacing: 0) {
+                    statusHeader
+                    Picker("Sezione", selection: $selectedSection) {
+                        ForEach(DashboardSection.allCases) { section in
+                            Text(section.rawValue).tag(section)
+                        }
                     }
-                    .padding()
-                }
-                .refreshable {
-                    await engine.refreshPortfolio()
+                    .pickerStyle(.segmented)
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+                    ScrollView {
+                        VStack(spacing: 14) {
+                            switch selectedSection {
+                            case .operations:
+                                controlPanel
+                                reportPanel
+                                positionsPanel
+                                portfolioPanel
+                                edgePanel
+                                killButton
+                            case .agents:
+                                analysisPanel
+                                decisionsPanel
+                                calibrationPanel
+                                metricsPanel
+                                datasetPanel
+                                logPanel
+                            case .broker:
+                                BrokerControlView()
+                                ordersPanel
+                                linksPanel
+                            case .system:
+                                SystemSettingsView()
+                            }
+                        }
+                        .padding()
+                    }
+                    .refreshable {
+                        await engine.refreshPortfolio()
+                    }
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
@@ -85,11 +156,18 @@ struct TerminalDashboardView: View {
                     )
                 }
             }
+            .onAppear {
+                if let saved = UserDefaults.standard.string(forKey: "com.quantswarm.alphazero.lastSymbols"),
+                   !saved.isEmpty {
+                    symbols = saved
+                }
+                news = UserDefaults.standard.string(forKey: "com.quantswarm.alphazero.lastNews") ?? ""
+            }
         }
     }
 
-    private var statusPanel: some View {
-        HStack {
+    private var statusHeader: some View {
+        HStack(spacing: 10) {
             Circle()
                 .fill(engine.isRunning ? terminalGreen : .gray)
                 .frame(width: 10, height: 10)
@@ -101,49 +179,47 @@ struct TerminalDashboardView: View {
                     value: pulse
                 )
                 .onAppear { pulse = true }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(engine.paperTrading ? "PAPER ENVIRONMENT" : "LIVE CAPITAL")
-                    .font(.system(.caption, design: .monospaced, weight: .bold))
-                    .foregroundStyle(engine.paperTrading ? terminalGreen : .red)
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(engine.paperTrading ? "PAPER" : "LIVE")
+                        .font(.system(.caption2, design: .monospaced, weight: .black))
+                        .foregroundStyle(engine.paperTrading ? terminalGreen : .red)
+                    if let clock = engine.marketClock {
+                        Text(clock.isOpen ? "MERCATO APERTO" : "MERCATO CHIUSO")
+                            .font(.system(.caption2, design: .monospaced, weight: .bold))
+                            .foregroundStyle(clock.isOpen ? terminalGreen : .orange)
+                    }
+                    if engine.isRunning, let beat = engine.lastLoopBeat {
+                        TimelineView(.periodic(from: .now, by: 1)) { context in
+                            let lag = max(0, Int(context.date.timeIntervalSince(beat)))
+                            Text("HB \(lag)s")
+                                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                                .foregroundStyle(lag > 120 ? .red : .gray)
+                        }
+                    }
+                }
                 Text(engine.statusMessage)
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
-                if engine.isRunning, let startedAt = engine.sessionStartedAt {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        Text(
-                            "AVVIATA \(startedAt.formatted(date: .omitted, time: .standard)) "
-                                + "· ATTIVA DA \(elapsed(from: startedAt, to: context.date))"
-                        )
-                        .font(.system(.caption2, design: .monospaced, weight: .bold))
-                        .foregroundStyle(terminalGreen)
-                    }
-                }
-                if engine.isRunning, let beat = engine.lastLoopBeat {
-                    TimelineView(.periodic(from: .now, by: 1)) { context in
-                        let lag = max(0, Int(context.date.timeIntervalSince(beat)))
-                        Text("HEARTBEAT · CICLO \(lag)s FA")
-                            .font(.system(.caption2, design: .monospaced))
-                            .foregroundStyle(lag > 120 ? .red : .gray)
-                    }
-                }
-                if let clock = engine.marketClock {
-                    Text(
-                        clock.isOpen
-                            ? "MERCATO APERTO · chiude \(formatDate(clock.nextCloseDate))"
-                            : "MERCATO CHIUSO · apre \(formatDate(clock.nextOpenDate))"
-                    )
-                    .font(.system(.caption2, design: .monospaced, weight: .bold))
-                    .foregroundStyle(clock.isOpen ? terminalGreen : .orange)
-                }
+                    .lineLimit(2)
             }
             Spacer()
+            if let account = engine.account {
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text(Formatters.money(account.equityValue))
+                        .font(.system(.callout, design: .monospaced, weight: .black))
+                        .foregroundStyle(.white)
+                    if let dayPnL = account.dayPnL {
+                        Text(Formatters.signedMoney(dayPnL))
+                            .font(.system(.caption2, design: .monospaced, weight: .bold))
+                            .foregroundStyle(dayPnL >= 0 ? terminalGreen : .red)
+                    }
+                }
+            }
         }
-        .panelStyle(terminalGreen)
-    }
-
-    private func formatDate(_ date: Date?) -> String {
-        guard let date else { return "n/d" }
-        return date.formatted(date: .abbreviated, time: .shortened)
+        .padding(.horizontal)
+        .padding(.vertical, 10)
+        .background(Color(white: 0.05))
     }
 
     private func elapsed(from start: Date, to end: Date) -> String {
@@ -158,13 +234,14 @@ struct TerminalDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("EDGE · EQUITY DELTA USD", color: terminalGreen)
             EdgeChart(points: engine.edgeHistory, color: terminalGreen)
-                .frame(height: 180)
+                .frame(height: 170)
         }
         .panelStyle(terminalGreen)
     }
 
     private var controlPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
+            panelHeader("CONTROLLO SESSIONE", color: terminalGreen)
             Text("SYMBOLS · COMMA SEPARATED")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.gray)
@@ -184,7 +261,7 @@ struct TerminalDashboardView: View {
                     .font(.system(.caption, design: .monospaced))
                     .scrollContentBackground(.hidden)
                     .background(Color(white: 0.08))
-                    .frame(height: 80)
+                    .frame(height: 78)
                     .disabled(engine.isRunning)
                 if news.isEmpty {
                     Text("Incolla notizie con data e fonte; nessun feed news automatico.")
@@ -207,6 +284,15 @@ struct TerminalDashboardView: View {
                 }
                 .buttonStyle(TerminalButtonStyle(color: .orange))
                 .disabled(!engine.isRunning || engine.isKillInProgress)
+            }
+            if engine.isRunning, let startedAt = engine.sessionStartedAt {
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(
+                        "AVVIATA \(Formatters.time(startedAt)) · ATTIVA DA \(elapsed(from: startedAt, to: context.date))"
+                    )
+                    .font(.system(.caption2, design: .monospaced, weight: .bold))
+                    .foregroundStyle(terminalGreen)
+                }
             }
         }
         .panelStyle(terminalGreen)
@@ -238,10 +324,6 @@ struct TerminalDashboardView: View {
                         }
                         .buttonStyle(TerminalButtonStyle(color: .red))
                     }
-                    Text("Inviami il file dove preferisci, poi tocca ELIMINA: resta sempre un solo report, niente spazio sprecato.")
-                        .font(.system(.caption2, design: .monospaced))
-                        .foregroundStyle(.gray)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .panelStyle(terminalGreen)
             }
@@ -261,13 +343,13 @@ struct TerminalDashboardView: View {
                 .disabled(engine.isKillInProgress)
             }
             if let account = engine.account {
-                portfolioRow("EQUITY", money(account.equityValue), color: .white)
-                portfolioRow("CASH", money(account.cashValue), color: .white)
-                portfolioRow("BUYING POWER", money(account.buyingPowerValue), color: .white)
+                portfolioRow("EQUITY", Formatters.money(account.equityValue), color: .white)
+                portfolioRow("CASH", Formatters.money(account.cashValue), color: .white)
+                portfolioRow("BUYING POWER", Formatters.money(account.buyingPowerValue), color: .white)
                 if let dayPnL = account.dayPnL {
                     portfolioRow(
                         "P&L OGGI",
-                        signedMoney(dayPnL),
+                        Formatters.signedMoney(dayPnL),
                         color: dayPnL >= 0 ? terminalGreen : .red
                     )
                 }
@@ -297,13 +379,13 @@ struct TerminalDashboardView: View {
 
     private var kimiPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("KIMI ACCOUNT · CREDITI USD", color: brainColor)
+            panelHeader("KIMI ACCOUNT · CREDITI USD", color: DashboardPalette.cyan)
             if let balance = engine.kimiBalance {
-                portfolioRow("DISPONIBILE", money(balance.availableBalance), color: .white)
-                portfolioRow("VOUCHER", money(balance.voucherBalance), color: .white)
+                portfolioRow("DISPONIBILE", Formatters.money(balance.availableBalance), color: .white)
+                portfolioRow("VOUCHER", Formatters.money(balance.voucherBalance), color: .white)
                 portfolioRow(
                     "CASH",
-                    money(balance.cashBalance),
+                    Formatters.money(balance.cashBalance),
                     color: (balance.cashBalance ?? 0) < 0 ? .red : .white
                 )
             } else {
@@ -312,29 +394,28 @@ struct TerminalDashboardView: View {
                     .foregroundStyle(.gray)
             }
         }
-        .panelStyle(brainColor)
+        .panelStyle(DashboardPalette.cyan)
     }
 
-    /// Kimi Analyst: lettura qualitativa del mercato ogni 5 minuti a motore
-    /// attivo (solo con dati freschi), oppure su richiesta con ANALIZZA ORA.
-    /// Non opera: commenta regime, volatilità e bias.
+    /// Kimi Analyst: lettura qualitativa del mercato con cadenza configurabile
+    /// (solo con dati freschi), oppure su richiesta con ANALIZZA ORA.
     private var analysisPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                panelHeader("KIMI ANALYST · LETTURA MERCATO", color: brainColor)
+                panelHeader("KIMI ANALYST · LETTURA MERCATO", color: DashboardPalette.cyan)
                 Spacer()
                 Button("ANALIZZA ORA") {
                     Task { await engine.requestAnalysisNow() }
                 }
                 .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(brainColor)
+                .foregroundStyle(DashboardPalette.cyan)
                 .disabled(engine.isKillInProgress)
             }
             if let entry = engine.latestAnalysis {
                 HStack(spacing: 6) {
                     analysisChip(
                         entry.analysis.regime.replacingOccurrences(of: "_", with: " ").uppercased(),
-                        color: brainColor
+                        color: DashboardPalette.cyan
                     )
                     analysisChip("VOL \(entry.analysis.volatility.uppercased())", color: .orange)
                     analysisChip(
@@ -344,23 +425,23 @@ struct TerminalDashboardView: View {
                     Spacer()
                     Text("\(Int(entry.analysis.confidence * 100))%")
                         .font(.system(.caption2, design: .monospaced, weight: .bold))
-                        .foregroundStyle(brainColor)
+                        .foregroundStyle(DashboardPalette.cyan)
                 }
                 Text(entry.analysis.comment)
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.white.opacity(0.85))
                     .fixedSize(horizontal: false, vertical: true)
-                Text("\(entry.timestamp.formatted(date: .omitted, time: .standard)) · automatica ogni 5 min a mercato aperto")
+                Text("\(Formatters.time(entry.timestamp)) · cadenza \(Int(engine.strategyConfig.analysisIntervalMinutes)) min")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
             } else {
-                Text("Nessuna analisi ancora: con il motore avviato e dati freschi, Kimi commenta il mercato ogni 5 minuti. Puoi forzarla con ANALIZZA ORA.")
+                Text("Nessuna analisi ancora: con il motore avviato e dati freschi, Kimi commenta il mercato alla cadenza impostata. Puoi forzarla con ANALIZZA ORA.")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .panelStyle(brainColor)
+        .panelStyle(DashboardPalette.cyan)
     }
 
     private func analysisChip(_ title: String, color: Color) -> some View {
@@ -374,16 +455,15 @@ struct TerminalDashboardView: View {
 
     /// Dataset di training: ogni decisione di Kimi (anche gli HOLD) viene
     /// salvata in SwiftData con prezzo, ATR, livelli ed esito misurato.
-    /// ESPORTA genera un file JSONL da inviare per allenare/calibrare il modello.
     private var datasetPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            panelHeader("TRAINING KIMI · DATASET", color: brainColor)
+            panelHeader("TRAINING KIMI · DATASET", color: DashboardPalette.cyan)
             portfolioRow("CAMPIONI RACCOLTI", "\(engine.datasetStats.total)", color: .white)
             portfolioRow("CON ESITO VALUTATO", "\(engine.datasetStats.completed)", color: .white)
             Button("ESPORTA DATASET JSONL") {
                 engine.exportTrainingDataset()
             }
-            .buttonStyle(TerminalButtonStyle(color: brainColor))
+            .buttonStyle(TerminalButtonStyle(color: DashboardPalette.cyan))
             .disabled(engine.datasetStats.total == 0)
             if let url = engine.datasetExportURL {
                 Text(url.lastPathComponent)
@@ -395,9 +475,9 @@ struct TerminalDashboardView: View {
                             .font(.system(.body, design: .monospaced, weight: .bold))
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(brainColor.opacity(0.18))
-                            .foregroundStyle(brainColor)
-                            .overlay(Rectangle().stroke(brainColor, lineWidth: 1))
+                            .background(DashboardPalette.cyan.opacity(0.18))
+                            .foregroundStyle(DashboardPalette.cyan)
+                            .overlay(Rectangle().stroke(DashboardPalette.cyan, lineWidth: 1))
                     }
                     Button("ELIMINA") {
                         engine.deleteDatasetExport()
@@ -405,80 +485,12 @@ struct TerminalDashboardView: View {
                     .buttonStyle(TerminalButtonStyle(color: .red))
                 }
             }
-            Text("Ogni decisione (anche gli HOLD) è registrata con prezzo, ATR, livelli ed esito: win/loss per i trade eseguiti, movimento del prezzo a 30 min per gli HOLD. Inviami il JSONL: è la base per allenare e calibrare Kimi.")
+            Text("Ogni decisione (anche gli HOLD) è registrata con prezzo, ATR, livelli ed esito: win/loss per i trade eseguiti, movimento del prezzo a 30 min per gli HOLD.")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .panelStyle(brainColor)
-    }
-
-    private var settingsPanel: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            panelHeader("CONFIG SISTEMA", color: terminalGreen)
-            settingRow("MODELLO KIMI", SystemLimits.kimiModel)
-            settingRow("API KIMI", SystemLimits.kimiAPIHost)
-            settingRow(
-                "BROKER",
-                engine.paperTrading ? "paper-api.alpaca.markets" : "api.alpaca.markets"
-            )
-            settingRow("STREAM DATI", SystemLimits.marketStreamHost)
-            settingRow("RISCHIO MAX / TRADE", "1% equity")
-            settingRow("KELLY", "frazionato /4")
-            settingRow("LATENZA MAX ORDINI", "\(Int(SystemLimits.maximumLatencyMilliseconds)) ms")
-            settingRow("DEVIAZIONE MAX PREZZO", "0,05%")
-            settingRow("ATR", "\(SystemLimits.atrPeriod) barre da 1 min")
-            settingRow("CICLO DECISIONI", "\(SystemLimits.decisionIntervalSeconds) s")
-            settingRow("ANALISI MERCATO", "Kimi ogni 5 min con dati freschi")
-            settingRow("DATASET TRAINING", "ogni decisione salvata con esito")
-            settingRow("VALUTAZIONE HOLD", "movimento prezzo dopo 30 min")
-            settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
-            settingRow("FLAT BY CLOSE", "chiusura totale a T-10 min")
-            settingRow("STOP GIORNALIERO", "-2% equity = pausa fino a domani (ora New York)")
-            settingRow("MAX POSIZIONI", "\(SystemLimits.maxConcurrentPositions) simultanee")
-            settingRow("FILTRO REGIME", "ATR oltre 2σ = pausa")
-        }
-        .panelStyle(terminalGreen)
-    }
-
-    private func settingRow(_ label: String, _ value: String) -> some View {
-        HStack(alignment: .top) {
-            Text(label)
-                .foregroundStyle(.gray)
-            Spacer()
-            Text(value)
-                .foregroundStyle(.white)
-                .multilineTextAlignment(.trailing)
-        }
-        .font(.system(.caption2, design: .monospaced))
-    }
-
-    private var linksPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            panelHeader("LINK RAPIDI", color: terminalGreen)
-            Link(destination: URL(string: "https://app.alpaca.markets")!) {
-                linkRow("ALPACA DASHBOARD · ordini e posizioni", color: terminalGreen)
-            }
-            Link(destination: URL(string: "https://platform.kimi.ai")!) {
-                linkRow("KIMI CONSOLE · crediti e API key", color: brainColor)
-            }
-        }
-        .panelStyle(terminalGreen)
-    }
-
-    private func linkRow(_ title: String, color: Color) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(color)
-            Spacer()
-            Text("↗ SAFARI")
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.gray)
-        }
-        .padding(10)
-        .background(Color(white: 0.04))
-        .overlay(Rectangle().stroke(color.opacity(0.35), lineWidth: 1))
+        .panelStyle(DashboardPalette.cyan)
     }
 
     private func panelHeader(_ title: String, color: Color) -> some View {
@@ -510,18 +522,18 @@ struct TerminalDashboardView: View {
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundStyle(position.side == "short" ? .red : terminalGreen)
                             Spacer()
-                            Text("qty \(trimmed(position.quantity))")
+                            Text("qty \(Formatters.trimmed(position.quantity))")
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundStyle(.gray)
                         }
                         HStack {
                             Text(
-                                "entry \(money(position.averageEntryPriceValue)) → ora \(money(position.currentPriceValue))"
+                                "entry \(Formatters.money(position.averageEntryPriceValue)) → ora \(Formatters.money(position.currentPriceValue))"
                             )
                             .font(.system(.caption2, design: .monospaced))
                             .foregroundStyle(.gray)
                             Spacer()
-                            Text(signedMoney(position.unrealizedPLValue))
+                            Text(Formatters.signedMoney(position.unrealizedPLValue))
                                 .font(.system(.caption, design: .monospaced, weight: .bold))
                                 .foregroundStyle(position.unrealizedPLValue >= 0 ? terminalGreen : .red)
                         }
@@ -537,7 +549,7 @@ struct TerminalDashboardView: View {
 
     private var decisionsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("KIMI BRAIN · ULTIME DECISIONI", color: brainColor)
+            panelHeader("KIMI BRAIN · ULTIME DECISIONI", color: DashboardPalette.cyan)
             if engine.decisions.isEmpty {
                 Text("Nessuna decisione ancora: servono 14 barre e motore avviato.")
                     .font(.system(.caption2, design: .monospaced))
@@ -546,7 +558,7 @@ struct TerminalDashboardView: View {
                 ForEach(engine.decisions.suffix(5).reversed()) { entry in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text(entry.timestamp.formatted(date: .omitted, time: .standard))
+                            Text(Formatters.time(entry.timestamp))
                                 .font(.system(.caption2, design: .monospaced))
                                 .foregroundStyle(.gray)
                             Text(entry.decision.symbol)
@@ -558,7 +570,7 @@ struct TerminalDashboardView: View {
                             Spacer()
                             Text("\(Int(entry.decision.confidence * 100))%")
                                 .font(.system(.caption2, design: .monospaced))
-                                .foregroundStyle(brainColor)
+                                .foregroundStyle(DashboardPalette.cyan)
                         }
                         Text(entry.decision.rationale)
                             .font(.system(.caption2, design: .monospaced))
@@ -566,7 +578,7 @@ struct TerminalDashboardView: View {
                             .fixedSize(horizontal: false, vertical: true)
                         if entry.decision.action != .hold {
                             Text(
-                                "entry \(money(entry.decision.entryPrice)) · stop \(money(entry.decision.stopLoss)) · target \(money(entry.decision.takeProfit))"
+                                "entry \(Formatters.money(entry.decision.entryPrice)) · stop \(Formatters.money(entry.decision.stopLoss)) · target \(Formatters.money(entry.decision.takeProfit))"
                             )
                             .font(.system(.caption2, design: .monospaced))
                             .foregroundStyle(.gray)
@@ -574,16 +586,16 @@ struct TerminalDashboardView: View {
                     }
                     .padding(8)
                     .background(Color(white: 0.04))
-                    .overlay(Rectangle().stroke(brainColor.opacity(0.25), lineWidth: 1))
+                    .overlay(Rectangle().stroke(DashboardPalette.cyan.opacity(0.25), lineWidth: 1))
                 }
             }
         }
-        .panelStyle(brainColor)
+        .panelStyle(DashboardPalette.cyan)
     }
 
     private var calibrationPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("CALIBRAZIONE KIMI · AFFIDABILITÀ", color: brainColor)
+            panelHeader("CALIBRAZIONE KIMI · AFFIDABILITÀ", color: DashboardPalette.cyan)
             if let calibration = engine.calibration {
                 portfolioRow("TRADE MISURATI", "\(calibration.samples)", color: .white)
                 portfolioRow(
@@ -602,21 +614,15 @@ struct TerminalDashboardView: View {
                         color: .white
                     )
                 }
-                Text("Brier: 0 = previsione perfetta; 0,25 = come lanciare una moneta. Questi numeri rientrano automaticamente nel prompt di Kimi per correggere la sua confidenza.")
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.gray)
-                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Nessun trade completato con esito: la calibrazione apparirà dopo i primi bracket chiusi.")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
             }
         }
-        .panelStyle(brainColor)
+        .panelStyle(DashboardPalette.cyan)
     }
 
-    /// Metriche sui trade chiusi: i numeri che dicono se il sistema sta
-    /// davvero funzionando (non basta il win rate: serve il profit factor).
     private var metricsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("METRICHE PERFORMANCE", color: terminalGreen)
@@ -624,7 +630,7 @@ struct TerminalDashboardView: View {
                 portfolioRow("TRADE CHIUSI", "\(stats.completedTrades)", color: .white)
                 portfolioRow(
                     "WIN RATE",
-                    percent(stats.winRate),
+                    Formatters.percent(stats.winRate),
                     color: (stats.winRate ?? 0) >= 0.5 ? terminalGreen : .orange
                 )
                 let factorText = stats.profitFactor.map {
@@ -637,18 +643,14 @@ struct TerminalDashboardView: View {
                 )
                 portfolioRow(
                     "EXPECTANCY / TRADE",
-                    signedMoney(stats.expectancy ?? 0),
+                    Formatters.signedMoney(stats.expectancy ?? 0),
                     color: (stats.expectancy ?? 0) >= 0 ? terminalGreen : .red
                 )
                 portfolioRow(
                     "MAX DRAWDOWN",
-                    money(stats.maxDrawdown),
+                    Formatters.money(stats.maxDrawdown),
                     color: .red
                 )
-                Text("Profit factor = profitti lordi / perdite lorde: sopra 1 il sistema guadagna più di quanto perde (∞ = nessuna perdita finora). Max drawdown = peggior discesa picco → valle del P&L cumulato.")
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.gray)
-                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Nessun trade chiuso: le metriche appariranno dopo i primi esiti registrati.")
                     .font(.system(.caption2, design: .monospaced))
@@ -656,15 +658,6 @@ struct TerminalDashboardView: View {
             }
         }
         .panelStyle(terminalGreen)
-    }
-
-    private func percent(_ value: Double?) -> String {
-        guard let value else { return "—" }
-        return String(
-            format: "%.1f%%",
-            locale: Locale(identifier: "en_US_POSIX"),
-            value * 100
-        )
     }
 
     private var ordersPanel: some View {
@@ -677,15 +670,15 @@ struct TerminalDashboardView: View {
             } else {
                 ForEach(engine.recentOrders.prefix(8)) { order in
                     HStack(spacing: 6) {
-                        Text(order.submittedDate?.formatted(date: .omitted, time: .standard) ?? "--:--")
+                        Text(Formatters.time(order.submittedDate))
                             .foregroundStyle(.gray)
                         Text(order.side.uppercased())
                             .foregroundStyle(order.side == "buy" ? terminalGreen : .red)
-                        Text("\(order.symbol) x\(trimmed(order.filledQuantity ?? order.quantity ?? "0"))")
+                        Text("\(order.symbol) x\(Formatters.trimmed(order.filledQuantity ?? order.quantity ?? "0"))")
                             .foregroundStyle(.white)
                         Spacer()
                         if let price = order.filledAveragePriceValue {
-                            Text("@ \(money(price))")
+                            Text("@ \(Formatters.money(price))")
                                 .foregroundStyle(.gray)
                         }
                         Text(order.status.uppercased())
@@ -706,7 +699,7 @@ struct TerminalDashboardView: View {
                     LazyVStack(alignment: .leading, spacing: 6) {
                         ForEach(engine.logs) { entry in
                             HStack(alignment: .top, spacing: 6) {
-                                Text(entry.timestamp.formatted(date: .omitted, time: .standard))
+                                Text(Formatters.time(entry.timestamp))
                                     .foregroundStyle(.gray)
                                 Text(entry.agent.rawValue)
                                     .foregroundStyle(agentColor(entry.agent))
@@ -720,7 +713,7 @@ struct TerminalDashboardView: View {
                         }
                     }
                 }
-                .frame(height: 260)
+                .frame(height: 280)
                 .onChange(of: engine.logs.count) { _, _ in
                     if let id = engine.logs.last?.id {
                         withAnimation { proxy.scrollTo(id, anchor: .bottom) }
@@ -731,14 +724,38 @@ struct TerminalDashboardView: View {
         .panelStyle(terminalGreen)
     }
 
-    private var brainColor: Color {
-        Color(red: 0.35, green: 0.85, blue: 1.0)
+    private var linksPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            panelHeader("LINK RAPIDI", color: terminalGreen)
+            Link(destination: URL(string: "https://app.alpaca.markets")!) {
+                linkRow("ALPACA DASHBOARD · ordini e posizioni", color: terminalGreen)
+            }
+            Link(destination: URL(string: "https://platform.kimi.ai")!) {
+                linkRow("KIMI CONSOLE · crediti e API key", color: DashboardPalette.cyan)
+            }
+        }
+        .panelStyle(terminalGreen)
+    }
+
+    private func linkRow(_ title: String, color: Color) -> some View {
+        HStack {
+            Text(title)
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .foregroundStyle(color)
+            Spacer()
+            Text("↗ SAFARI")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+        }
+        .padding(10)
+        .background(Color(white: 0.04))
+        .overlay(Rectangle().stroke(color.opacity(0.35), lineWidth: 1))
     }
 
     private func agentColor(_ agent: AgentKind) -> Color {
         switch agent {
         case .scout: return terminalGreen
-        case .brain: return brainColor
+        case .brain: return DashboardPalette.cyan
         case .risk: return .orange
         case .system: return .gray
         }
@@ -760,29 +777,6 @@ struct TerminalDashboardView: View {
         }
     }
 
-    private func money(_ value: Double?) -> String {
-        guard let value else { return "—" }
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 2
-        formatter.maximumFractionDigits = 2
-        return formatter.string(from: NSNumber(value: value))
-            ?? String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
-    }
-
-    private func signedMoney(_ value: Double) -> String {
-        let sign = value >= 0 ? "+" : "-"
-        return sign + money(abs(value))
-    }
-
-    private func trimmed(_ raw: String) -> String {
-        guard let value = Double(raw) else { return raw }
-        return value == value.rounded()
-            ? String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), value)
-            : String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
-    }
-
     private var killButton: some View {
         Button {
             showKillConfirmation = true
@@ -797,6 +791,235 @@ struct TerminalDashboardView: View {
         }
         .disabled(engine.isKillInProgress)
         .accessibilityHint("Richiede conferma prima di liquidare tutte le posizioni")
+    }
+}
+
+/// Controllo manuale del broker: ordini aperti cancellabili e posizioni
+/// chiudibili a mercato, con refresh immediato dopo ogni azione.
+private struct BrokerControlView: View {
+    @EnvironmentObject private var engine: QuantSwarmEngine
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                panelHeader("CONTROLLO BROKER · ALPACA", color: DashboardPalette.green)
+                Spacer()
+                Button("REFRESH") {
+                    Task { await engine.refreshPortfolio() }
+                }
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .foregroundStyle(DashboardPalette.green)
+            }
+
+            Text("ORDINI APERTI: \(engine.openOrders.count)")
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .foregroundStyle(.gray)
+            if engine.openOrders.isEmpty {
+                Text("Nessun ordine aperto.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+            } else {
+                ForEach(engine.openOrders) { order in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(order.side.uppercased()) \(order.symbol) x\(Formatters.trimmed(order.quantity ?? "0"))")
+                                .font(.system(.caption, design: .monospaced, weight: .bold))
+                                .foregroundStyle(.white)
+                            Text("\(order.status.uppercased()) · \(Formatters.time(order.submittedDate))")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(.gray)
+                        }
+                        Spacer()
+                        Button("ANNULLA") {
+                            Task { await engine.cancelOrder(id: order.id) }
+                        }
+                        .font(.system(.caption2, design: .monospaced, weight: .bold))
+                        .foregroundStyle(.red)
+                        .disabled(engine.isKillInProgress)
+                    }
+                    .padding(8)
+                    .background(Color(white: 0.04))
+                    .overlay(Rectangle().stroke(Color.orange.opacity(0.35), lineWidth: 1))
+                }
+            }
+
+            Text("POSIZIONI: \(engine.positions.count)")
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .foregroundStyle(.gray)
+            if engine.positions.isEmpty {
+                Text("Nessuna posizione.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+            } else {
+                ForEach(engine.positions) { position in
+                    HStack(spacing: 8) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("\(position.symbol) · qty \(Formatters.trimmed(position.quantity))")
+                                .font(.system(.caption, design: .monospaced, weight: .bold))
+                                .foregroundStyle(.white)
+                            Text("P&L \(Formatters.signedMoney(position.unrealizedPLValue)) USD")
+                                .font(.system(.caption2, design: .monospaced))
+                                .foregroundStyle(position.unrealizedPLValue >= 0 ? DashboardPalette.green : .red)
+                        }
+                        Spacer()
+                        Button("CHIUDI") {
+                            Task { await engine.closePosition(symbol: position.symbol) }
+                        }
+                        .font(.system(.caption2, design: .monospaced, weight: .bold))
+                        .foregroundStyle(.red)
+                        .disabled(engine.isKillInProgress)
+                    }
+                    .padding(8)
+                    .background(Color(white: 0.04))
+                    .overlay(Rectangle().stroke(Color.red.opacity(0.3), lineWidth: 1))
+                }
+            }
+            Text("CHIUDI chiede ad Alpaca una chiusura a mercato della singola posizione; ANNULLA cancella il singolo ordine aperto. Per emergenza globale usa HARD KILL in OPERATIVO.")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .panelStyle(DashboardPalette.green)
+    }
+
+    private func panelHeader(_ title: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Rectangle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(title)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(color)
+        }
+    }
+}
+
+/// Impostazioni vere: persistite in UserDefaults e lette dal motore a ogni
+/// ciclo. Il modello Kimi può essere scritto a mano o scelto dalla lista API.
+private struct SystemSettingsView: View {
+    @EnvironmentObject private var engine: QuantSwarmEngine
+    @State private var draft = StrategyConfig()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                panelHeader("CONFIG SISTEMA · LIVE", color: DashboardPalette.green)
+                Spacer()
+                Button("CARICA MODELLI") {
+                    Task { await engine.loadAvailableKimiModels() }
+                }
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .foregroundStyle(DashboardPalette.cyan)
+            }
+
+            Group {
+                Stepper(
+                    "Rischio per trade: \(String(format: "%.2f", draft.riskPerTradePercent))% equity",
+                    value: $draft.riskPerTradePercent,
+                    in: 0.25...2.0,
+                    step: 0.25
+                )
+                Stepper("Max posizioni aperte: \(draft.maxOpenPositions)", value: $draft.maxOpenPositions, in: 1...5)
+                Stepper("Kelly frazionato: 1/\(Int(draft.kellyDivisor))", value: $draft.kellyDivisor, in: 2...8, step: 1)
+                Stepper(
+                    "Stop giornaliero: \(String(format: "%.1f", draft.dailyStopPercent))% equity",
+                    value: $draft.dailyStopPercent,
+                    in: 0.5...5.0,
+                    step: 0.5
+                )
+                Stepper("Ciclo decisioni: \(draft.decisionIntervalSeconds)s", value: $draft.decisionIntervalSeconds, in: 30...120, step: 5)
+                Stepper(
+                    "Kimi Analyst ogni: \(String(format: "%.1f", draft.analysisIntervalMinutes)) min",
+                    value: $draft.analysisIntervalMinutes,
+                    in: 2...15,
+                    step: 1
+                )
+            }
+            .font(.system(.caption, design: .monospaced, weight: .bold))
+            .foregroundStyle(.white)
+
+            Text("MODELLO KIMI")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+            TextField("kimi-k3.1-pro-highspeed", text: $draft.kimiModel)
+                .font(.system(.caption, design: .monospaced))
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .padding(10)
+                .background(Color(white: 0.08))
+            if !engine.availableKimiModels.isEmpty {
+                Picker("Modelli disponibili", selection: $draft.kimiModel) {
+                    if !engine.availableKimiModels.contains(draft.kimiModel) {
+                        Text(draft.kimiModel).tag(draft.kimiModel)
+                    }
+                    ForEach(engine.availableKimiModels, id: \.self) { model in
+                        Text(model).tag(model)
+                    }
+                }
+                .pickerStyle(.menu)
+                .font(.system(.caption, design: .monospaced))
+            }
+            if let error = engine.modelListError {
+                Text(error)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.red)
+            }
+
+            Toggle("MANTIENI SCHERMO ACCESO", isOn: $draft.keepScreenAwake)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .tint(DashboardPalette.green)
+            Toggle("RIPRENDI SESSIONE AL RIAVVIO", isOn: $draft.autoResumeOnLaunch)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .tint(DashboardPalette.green)
+
+            Button("APPLICA IMPOSTAZIONI") {
+                engine.updateStrategyConfig(draft)
+            }
+            .buttonStyle(TerminalButtonStyle(color: DashboardPalette.green))
+
+            VStack(alignment: .leading, spacing: 6) {
+                settingRow("STATO APPLICATO", "rischio \(String(format: "%.2f", engine.strategyConfig.riskPerTradePercent))% · max \(engine.strategyConfig.maxOpenPositions) · Kelly 1/\(Int(engine.strategyConfig.kellyDivisor))")
+                settingRow("MODELLO ATTIVO", engine.strategyConfig.kimiModel)
+                settingRow("STREAM DATI", SystemLimits.marketStreamHost)
+                settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
+                settingRow("FLAT BY CLOSE", "chiusura totale a T-10 min")
+                settingRow("BACKGROUND", "BGTask + location + notifica: iOS decide quando eseguire")
+            }
+            Text("Verità tecnica: nessuna app iOS può garantire un WebSocket attivo 24/7 se chiusa o sospesa. Per operatività continua usa MANTIENI SCHERMO ACCESO con l'app in foreground; per 24/7 reale serve un servizio server-side.")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .panelStyle(DashboardPalette.green)
+        .onAppear {
+            draft = engine.strategyConfig
+        }
+        .onChange(of: engine.strategyConfig) { _, newValue in
+            draft = newValue
+        }
+    }
+
+    private func panelHeader(_ title: String, color: Color) -> some View {
+        HStack(spacing: 6) {
+            Rectangle()
+                .fill(color)
+                .frame(width: 8, height: 8)
+            Text(title)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(color)
+        }
+    }
+
+    private func settingRow(_ label: String, _ value: String) -> some View {
+        HStack(alignment: .top) {
+            Text(label)
+                .foregroundStyle(.gray)
+            Spacer()
+            Text(value)
+                .foregroundStyle(.white)
+                .multilineTextAlignment(.trailing)
+        }
+        .font(.system(.caption2, design: .monospaced))
     }
 }
 
