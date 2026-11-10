@@ -317,6 +317,8 @@ actor AlpacaService {
         quantity: Double,
         quantityFractionDigits: Int,
         limitPrice: Double,
+        stopPrice: Double,
+        takeProfitPrice: Double,
         clientOrderId: String
     ) async throws -> AlpacaOrder {
         let body: [String: Any] = [
@@ -331,14 +333,14 @@ actor AlpacaService {
             "extended_hours": false,
             "take_profit": [
                 "limit_price": decimalString(
-                    decision.takeProfit,
-                    fractionDigits: priceFractionDigits(decision.takeProfit)
+                    takeProfitPrice,
+                    fractionDigits: priceFractionDigits(takeProfitPrice)
                 )
             ],
             "stop_loss": [
                 "stop_price": decimalString(
-                    decision.stopLoss,
-                    fractionDigits: priceFractionDigits(decision.stopLoss)
+                    stopPrice,
+                    fractionDigits: priceFractionDigits(stopPrice)
                 )
             ]
         ]

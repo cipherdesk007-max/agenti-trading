@@ -55,29 +55,21 @@ actor RiskExecutionAgent {
                 "Feed oltre \(format(maximumLatencyMilliseconds, fractionDigits: 0)) ms"
             )
         }
-        let riskBudgetFraction = min(max(riskFraction, 0.000_1), 0.05)
-
-        // Sanity anchor: Kimi deve aver ancorato l'entry al prezzo visto
-        // (soglia larga, 2×ATR); la verifica fine avviene sulla rilettura.
-        let anchorLimit = max(atr * SystemLimits.maximumEntryAnchorATR, constraints.tickSize * 2)
-        let anchorDrift = abs(snapshot.lastPrice - decision.entryPrice)
-        guard anchorDrift <= anchorLimit else {
-            throw QuantSwarmError.riskRejected(
-                "Entry scollegato dal prezzo visto (\(format(anchorDrift)) oltre \(format(anchorLimit)))"
-            )
+        let proposal = RiskRules.Proposal(
+            action: decision.action,
+            entry: decision.entryPrice,
+            stopLoss: decision.stopLoss,
+            takeProfit: decision.takeProfit
+        )
+        // Controlli economici (short vietati, stop in ATR, R/R, ancoraggio)
+        // prima di qualsiasi chiamata al broker.
+        if let reason = RiskRules.precheck(proposal, lastPrice: snapshot.lastPrice, atr: atr) {
+            throw QuantSwarmError.riskRejected(reason)
         }
 
-        // Bug 3: rilettura del prezzo DOPO la risposta di Kimi. Se nel
-        // frattempo si è mosso oltre 0,5×ATR, i livelli proposti non valgono più.
+        // Rilettura del prezzo DOPO la risposta di Kimi.
         guard let currentPrice = await freshPrice(), currentPrice > 0 else {
             throw QuantSwarmError.riskRejected("Rilettura del prezzo fallita: ordine annullato")
-        }
-        let retestLimit = max(atr * SystemLimits.priceRetestATRFraction, constraints.tickSize)
-        let drift = abs(currentPrice - decision.entryPrice)
-        guard drift <= retestLimit else {
-            throw QuantSwarmError.riskRejected(
-                "Prezzo mosso di \(format(drift)) oltre \(format(retestLimit)) (0,5×ATR) dopo Kimi: ordine annullato"
-            )
         }
 
         let service = AlpacaService(credentials: credentials)
@@ -121,48 +113,32 @@ actor RiskExecutionAgent {
         }
         emit("Controlli OK: latenza REST \(format(latency, fractionDigits: 0)) ms, equity \(format(account.equityValue)) USD.")
 
-        // Bug 2: R/R calcolato in codice dai livelli (minimo 1,5).
-        let stopDistance = abs(decision.entryPrice - decision.stopLoss)
-        let rewardDistance = abs(decision.takeProfit - decision.entryPrice)
-        guard stopDistance > 0 else {
-            throw QuantSwarmError.riskRejected("Distanza stop nulla")
+        // Dimensionamento sul prezzo reale d'ingresso, stop/target al tick,
+        // rischio ≤ equity × rischio%, posizione ≤ 25% del capitale.
+        let sizing: RiskRules.Sizing
+        switch RiskRules.size(
+            proposal,
+            currentPrice: currentPrice,
+            atr: atr,
+            account: RiskRules.Account(
+                equity: account.equityValue,
+                cash: account.cashValue,
+                buyingPower: account.buyingPowerValue
+            ),
+            riskFraction: riskFraction,
+            constraints: constraints
+        ) {
+        case .success(let value):
+            sizing = value
+        case .failure(let rejection):
+            throw QuantSwarmError.riskRejected(rejection.reason)
         }
-        let riskReward = rewardDistance / stopDistance
-        guard riskReward >= SystemLimits.minimumRiskReward else {
-            throw QuantSwarmError.riskRejected(
-                "R/R \(format(riskReward)) sotto il minimo \(format(SystemLimits.minimumRiskReward))"
-            )
-        }
-
-        let limitPrice = decision.action == .buy
-            ? currentPrice * 1.0005
-            : currentPrice * 0.9995
-        let riskBudget = account.equityValue * riskBudgetFraction
-        let riskQuantity = riskBudget / stopDistance
-        let availableCapital = decision.action == .buy
-            ? min(account.cashValue, account.buyingPowerValue)
-            : account.buyingPowerValue
-        let capitalQuantity = availableCapital / limitPrice
-        let rawQuantity = min(riskQuantity, capitalQuantity)
-
-        // Arrotondamento ai vincoli dello strumento, sempre per difetto.
-        let quantity = (rawQuantity / constraints.lotSize).rounded(.down) * constraints.lotSize
-        guard quantity >= constraints.lotSize else {
-            throw QuantSwarmError.riskRejected(
-                "Quantità sotto il lotto minimo \(format(constraints.lotSize, fractionDigits: constraints.quantityFractionDigits))"
-            )
-        }
-        guard quantity * limitPrice >= constraints.minNotional else {
-            throw QuantSwarmError.riskRejected("Nozionale sotto il minimo dell'exchange")
-        }
-        guard quantity * stopDistance <= riskBudget + 0.000_001 else {
-            throw QuantSwarmError.riskRejected(
-                "Rischio calcolato oltre il \(format(riskBudgetFraction * 100))%"
-            )
-        }
+        let quantity = sizing.quantity
+        let limitPrice = sizing.limitPrice
         emit(
-            "R/R \(format(riskReward)) · stop \(format(stopDistance)) · qty \(format(quantity, fractionDigits: constraints.quantityFractionDigits)) "
-                + "entro il \(format(riskBudgetFraction * 100))% di equity. Invio bracket."
+            "R/R \(format(sizing.riskReward)) · rischio \(format(sizing.riskAmount)) USD · "
+                + "qty \(format(quantity, fractionDigits: constraints.quantityFractionDigits)) · "
+                + "limite \(format(limitPrice)) stop \(format(sizing.stopPrice)) target \(format(sizing.takeProfitPrice)). Invio bracket."
         )
 
         // Bug 5: client_order_id deterministico per la decisione. Se l'invio
@@ -176,6 +152,8 @@ actor RiskExecutionAgent {
                 quantity: quantity,
                 quantityFractionDigits: constraints.quantityFractionDigits,
                 limitPrice: limitPrice,
+                stopPrice: sizing.stopPrice,
+                takeProfitPrice: sizing.takeProfitPrice,
                 clientOrderId: clientOrderId
             )
             return ExecutionReceipt(

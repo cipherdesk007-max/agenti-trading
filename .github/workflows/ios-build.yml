@@ -40,6 +40,27 @@ jobs:
       - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
 
+      # Test automatici delle regole di rischio: se falliscono, niente IPA.
+      - name: Run risk tests (simulatore)
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in data if "iOS" in k), reverse=True)
+          for runtime in ios:
+              for d in data[runtime]:
+                  if d.get("isAvailable") and d["name"].startswith("iPhone"):
+                      print(d["udid"]); sys.exit(0)
+          sys.exit(1)')
+          echo "Simulatore: $UDID"
+          xcodebuild \
+            -project QuantSwarmAlphaZero.xcodeproj \
+            -scheme QuantSwarmAlphaZero \
+            -destination "id=$UDID" \
+            -derivedDataPath "$PWD/DerivedDataTests" \
+            CODE_SIGNING_ALLOWED=NO \
+            test
+
       - name: Build unsigned Release app
         run: |
           xcodebuild \

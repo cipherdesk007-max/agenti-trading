@@ -88,6 +88,19 @@ targets:
         CFBundleDisplayName: QuantSwarm Status
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
+  QuantSwarmTests:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: QuantSwarmAlphaZero
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quantswarm.alphazero.tests
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "6.0"
 schemes:
   QuantSwarmAlphaZero:
     build:
@@ -96,6 +109,10 @@ schemes:
         QuantSwarmWidgetExtension: all
     run:
       config: Debug
+    test:
+      config: Debug
+      targets:
+        - QuantSwarmTests
     profile:
       config: Release
     analyze:

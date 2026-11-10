@@ -142,9 +142,12 @@ actor KimiService {
         let systemPrompt = """
         Sei il modulo decisionale di un sistema di trading. Non fornire consulenza finanziaria \
         e non affermare certezze. Valuta esclusivamente i dati forniti. Restituisci hold se i dati \
-        sono insufficienti, incoerenti o il rapporto rischio/rendimento non è favorevole. Per buy \
-        vale stop_loss < entry_price < take_profit; per sell vale take_profit < entry_price < \
-        stop_loss. entry_price deve essere il prezzo corrente fornito. win_probability è una stima \
+        sono insufficienti, incoerenti o il rapporto rischio/rendimento non è favorevole. Il conto \
+        opera SOLO in acquisto: le vendite allo scoperto non sono permesse, quindi le uniche \
+        azioni valide sono buy o hold (in un quadro ribassista rispondi hold). Per buy vale \
+        stop_loss < entry_price < take_profit, con stop tra 0,5 e 5 volte atr_14 sotto \
+        l'ingresso e (take_profit - entry_price) almeno 1,5 volte (entry_price - stop_loss). \
+        entry_price deve essere il prezzo corrente fornito. win_probability è una stima \
         soggettiva in (0,1), payoff_ratio è il rapporto reward/risk positivo. Il campo \
         candles_two_timeframes contiene le ultime candele CHIUSE (t = secondi unix di inizio \
         candela, o/h/l/c/v) e gli indicatori calcolati in codice sui timeframe 1m e 15m: usali \
@@ -199,7 +202,7 @@ actor KimiService {
             "type": "object",
             "properties": [
                 "symbol": ["type": "string"],
-                "action": ["type": "string", "enum": ["buy", "sell", "hold"]],
+                "action": ["type": "string", "enum": ["buy", "hold"]],
                 "confidence": ["type": "number", "minimum": 0, "maximum": 1],
                 "entry_price": ["type": "number", "exclusiveMinimum": 0],
                 "stop_loss": ["type": "number", "minimum": 0],

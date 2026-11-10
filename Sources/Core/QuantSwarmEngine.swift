@@ -1168,6 +1168,23 @@ final class QuantSwarmEngine: ObservableObject {
                         log("\(symbol): segnale scartato, motore non più operativo.", agent: .risk)
                         continue
                     }
+                    // Controlli a regole fisse PRIMA del reviewer: una proposta
+                    // che il rischio boccerebbe comunque (short, stop fuori ATR,
+                    // R/R basso) non deve costare una seconda chiamata Kimi.
+                    if decision.action != .hold,
+                       let reason = RiskRules.precheck(
+                           RiskRules.Proposal(
+                               action: decision.action,
+                               entry: decision.entryPrice,
+                               stopLoss: decision.stopLoss,
+                               takeProfit: decision.takeProfit
+                           ),
+                           lastPrice: snapshot.lastPrice,
+                           atr: atr
+                       ) {
+                        log("\(symbol): proposta scartata dalle regole — \(reason).", agent: .risk)
+                        continue
+                    }
                     // Kimi Reviewer avversario: gira solo sui trade proposti e
                     // parte dal presupposto che la decisione sia sbagliata.
                     // Errore del reviewer = nessun ordine (fail-closed).
