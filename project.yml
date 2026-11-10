@@ -59,6 +59,8 @@ targets:
         ITSAppUsesNonExemptEncryption: false
     scheme:
       gatherCoverageData: false
+      testTargets:
+        - QuantSwarmTests
   QuantSwarmWidgetExtension:
     type: app-extension
     platform: iOS
