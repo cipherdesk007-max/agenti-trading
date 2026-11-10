@@ -1,8 +1,8 @@
 import SwiftUI
 
 private enum DashboardSection: String, CaseIterable, Identifiable, Hashable {
-    case operations = "OPERATIVO"
-    case agents = "AGENTI"
+    case operations = "CRUSCOTTO"
+    case agents = "DETTAGLI"
     case broker = "BROKER"
     case system = "SISTEMA"
 
@@ -85,17 +85,20 @@ struct TerminalDashboardView: View {
                         VStack(spacing: 14) {
                             switch selectedSection {
                             case .operations:
-                                controlPanel
                                 guardPanel
-                                reportPanel
+                                heroPanel
+                                todayPanel
+                                pipelinePanel
                                 positionsPanel
+                                recentLogPanel
+                                reportPanel
+                                killButton
+                            case .agents:
+                                decisionsPanel
+                                analysisPanel
                                 portfolioPanel
                                 kimiPanel
                                 edgePanel
-                                killButton
-                            case .agents:
-                                analysisPanel
-                                decisionsPanel
                                 calibrationPanel
                                 metricsPanel
                                 datasetPanel
@@ -301,39 +304,59 @@ struct TerminalDashboardView: View {
         }
     }
 
-    private var controlPanel: some View {
+    // MARK: - Cruscotto
+
+    private var displayedMode: TradingMode {
+        engine.activeMode ?? engine.strategyConfig.tradingMode
+    }
+
+    private var engineStateColor: Color {
+        if !engine.isRunning { return .gray }
+        if engine.pauseReason != nil || engine.dailyStopOn || engine.drawdownLocked { return .orange }
+        return terminalGreen
+    }
+
+    private var engineStateText: String {
+        if !engine.isRunning { return "FERMO" }
+        if engine.pauseReason != nil { return "IN PAUSA" }
+        if engine.drawdownLocked || engine.dailyStopOn { return "PROTEZIONE ATTIVA" }
+        return "IN FUNZIONE"
+    }
+
+    /// Stato, cosa sta facendo adesso, START/STOP: tutto in un colpo d'occhio.
+    private var heroPanel: some View {
         VStack(alignment: .leading, spacing: 12) {
-            panelHeader("CONTROLLO SESSIONE", color: terminalGreen)
-            Text("SYMBOLS · COMMA SEPARATED")
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.gray)
-            TextField("SPY,QQQ", text: $symbols)
-                .font(.system(.body, design: .monospaced))
-                .textInputAutocapitalization(.characters)
-                .autocorrectionDisabled()
-                .padding(10)
-                .background(Color(white: 0.08))
-                .disabled(engine.isRunning)
-
-            Text("NEWS / SENTIMENT INPUT")
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.gray)
-            ZStack(alignment: .topLeading) {
-                TextEditor(text: $news)
-                    .font(.system(.caption, design: .monospaced))
-                    .scrollContentBackground(.hidden)
-                    .background(Color(white: 0.08))
-                    .frame(height: 78)
-                    .disabled(engine.isRunning)
-                if news.isEmpty {
-                    Text("Incolla notizie con data e fonte; nessun feed news automatico.")
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.gray)
-                        .padding(8)
-                        .allowsHitTesting(false)
-                }
+            HStack(alignment: .firstTextBaseline) {
+                Text(engineStateText)
+                    .font(.system(.title2, design: .monospaced, weight: .black))
+                    .foregroundStyle(engineStateColor)
+                Spacer()
+                Text(displayedMode.label)
+                    .font(.system(.caption2, design: .monospaced, weight: .black))
+                    .foregroundStyle(displayedMode == .daily ? terminalGreen : .orange)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .overlay(Rectangle().stroke(displayedMode == .daily ? terminalGreen : .orange, lineWidth: 1))
             }
-
+            Text(engine.isRunning ? engine.currentActivity : idleHint)
+                .font(.system(.callout, design: .monospaced))
+                .foregroundStyle(.white)
+                .fixedSize(horizontal: false, vertical: true)
+            if engine.isRunning, let next = engine.nextCheckAt {
+                Text("Prossimo controllo alle \(next.formatted(date: .omitted, time: .shortened)) · lascia l'app aperta o chiudila: gli stop restano sul broker")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if displayedMode == .intraday, !engine.isRunning {
+                intradayInputs
+            }
+            if engine.isRunning, engine.activeMode == .daily {
+                Button("CONTROLLA ORA") {
+                    engine.requestDailyCheck()
+                }
+                .buttonStyle(TerminalButtonStyle(color: DashboardPalette.cyan))
+            }
             HStack(spacing: 12) {
                 Button("START") {
                     Task { await engine.start(symbolsText: symbols, news: news) }
@@ -349,12 +372,195 @@ struct TerminalDashboardView: View {
             }
             if engine.isRunning, let startedAt = engine.sessionStartedAt {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text(
-                        "AVVIATA \(Formatters.time(startedAt)) · ATTIVA DA \(elapsed(from: startedAt, to: context.date))"
-                    )
+                    Text("AVVIATA \(Formatters.time(startedAt)) · ATTIVA DA \(elapsed(from: startedAt, to: context.date))")
+                        .font(.system(.caption2, design: .monospaced, weight: .bold))
+                        .foregroundStyle(engineStateColor)
+                }
+            }
+        }
+        .panelStyle(engineStateColor)
+    }
+
+    private var idleHint: String {
+        displayedMode == .daily
+            ? "Premi START: controlla i \(DailyStrategy.basket.count) ETF, chiama Kimi solo se c'è un segnale e mette gli ordini con lo stop sul broker. Poi puoi chiudere l'app."
+            : "Modalità veloce SPERIMENTALE: nei test perde. Tieni l'app aperta: chiude tutto prima della chiusura del mercato."
+    }
+
+    private var intradayInputs: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("SIMBOLI · SEPARATI DA VIRGOLA")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+            TextField("SPY,QQQ", text: $symbols)
+                .font(.system(.body, design: .monospaced))
+                .textInputAutocapitalization(.characters)
+                .autocorrectionDisabled()
+                .padding(10)
+                .background(Color(white: 0.08))
+            Text("NOTIZIE (FACOLTATIVE, CON DATA E FONTE)")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+            TextEditor(text: $news)
+                .font(.system(.caption, design: .monospaced))
+                .scrollContentBackground(.hidden)
+                .background(Color(white: 0.08))
+                .frame(height: 60)
+        }
+    }
+
+    private var ordersToday: Int {
+        let calendar = Calendar.current
+        return engine.recentOrders.filter { order in
+            order.parentOrderId == nil && (order.submittedDate.map { calendar.isDateInToday($0) } ?? false)
+        }.count
+    }
+
+    /// Quattro numeri: quanto consuma, quanto compra, cosa ha in mano, come va.
+    private var todayPanel: some View {
+        let unrealized = engine.positions.reduce(0) { $0 + $1.unrealizedPLValue }
+        let spent = engine.creditsSpentToday
+        let limit = engine.strategyConfig.creditLimitEnabled ? engine.strategyConfig.dailyCreditLimitUSD : nil
+        return VStack(alignment: .leading, spacing: 10) {
+            panelHeader("OGGI", color: terminalGreen)
+            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
+                statTile(
+                    "KIMI",
+                    "\(engine.kimiCallsToday) chiamate",
+                    spent.map { s in "\(String(format: "%.2f", s)) USD" + (limit.map { " / \(String(format: "%.2f", $0))" } ?? "") } ?? "spesa n/d",
+                    engine.creditLimitHit ? .red : DashboardPalette.cyan
+                )
+                statTile("ORDINI", "\(ordersToday) inviati", "\(engine.openOrders.count) aperti sul broker", terminalGreen)
+                statTile(
+                    "POSIZIONI",
+                    "\(engine.positions.count) aperte",
+                    engine.positions.isEmpty ? "nessuna" : Formatters.signedMoney(unrealized) + " non realizzati",
+                    unrealized >= 0 ? terminalGreen : .red
+                )
+                statTile(
+                    "P&L GIORNATA",
+                    engine.account?.dayPnL.map(Formatters.signedMoney) ?? "—",
+                    "equity " + Formatters.money(engine.account?.equityValue),
+                    (engine.account?.dayPnL ?? 0) >= 0 ? terminalGreen : .red
+                )
+            }
+        }
+        .panelStyle(terminalGreen)
+    }
+
+    private func statTile(_ title: String, _ value: String, _ detail: String, _ color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .foregroundStyle(.gray)
+            Text(value)
+                .font(.system(.headline, design: .monospaced, weight: .black))
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(detail)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.7))
+                .lineLimit(2)
+                .minimumScaleFactor(0.7)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(10)
+        .background(Color(white: 0.04))
+        .overlay(Rectangle().stroke(color.opacity(0.3), lineWidth: 1))
+    }
+
+    /// La catena degli agenti: chi sta lavorando, cosa ha deciso, cosa passa avanti.
+    private var pipelinePanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            panelHeader("CATENA AGENTI · ULTIMO CICLO", color: DashboardPalette.cyan)
+            ForEach(engine.pipeline) { stage in
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: stageIcon(stage.state))
+                        .foregroundStyle(stageColor(stage.state))
+                        .frame(width: 18)
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack(spacing: 6) {
+                            Text(stage.id.title)
+                                .font(.system(.caption, design: .monospaced, weight: .black))
+                                .foregroundStyle(stageColor(stage.state))
+                            if stage.id.usesKimi {
+                                Text("KIMI")
+                                    .font(.system(.caption2, design: .monospaced, weight: .bold))
+                                    .foregroundStyle(DashboardPalette.cyan)
+                            }
+                            Spacer()
+                            if let at = stage.updatedAt {
+                                Text(Formatters.time(at))
+                                    .font(.system(.caption2, design: .monospaced))
+                                    .foregroundStyle(.gray)
+                            }
+                        }
+                        Text(stage.detail)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.9))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(stage.id.role)
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.gray)
+                    }
+                }
+            }
+            if displayedMode == .daily, !engine.dailyCandidates.isEmpty {
+                Text("Segnali di oggi: " + engine.dailyCandidates.map { "\($0.symbol) RSI2 \(String(format: "%.1f", $0.snapshot.rsi2))" }.joined(separator: " · "))
                     .font(.system(.caption2, design: .monospaced, weight: .bold))
                     .foregroundStyle(terminalGreen)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .panelStyle(DashboardPalette.cyan)
+    }
+
+    private func stageIcon(_ state: PipelineState) -> String {
+        switch state {
+        case .idle: return "circle"
+        case .working: return "arrow.triangle.2.circlepath"
+        case .done: return "checkmark.circle.fill"
+        case .skipped: return "minus.circle"
+        case .blocked: return "hand.raised.fill"
+        case .failed: return "xmark.octagon.fill"
+        }
+    }
+
+    private func stageColor(_ state: PipelineState) -> Color {
+        switch state {
+        case .idle: return .gray
+        case .working: return DashboardPalette.cyan
+        case .done: return terminalGreen
+        case .skipped: return .gray
+        case .blocked: return .orange
+        case .failed: return .red
+        }
+    }
+
+    /// Ultime righe del registro, la più recente in alto; il registro completo
+    /// è in DETTAGLI.
+    private var recentLogPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            panelHeader("ULTIMI EVENTI", color: terminalGreen)
+            if engine.logs.isEmpty {
+                Text("Nessun evento: premi START.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+            }
+            ForEach(Array(engine.logs.suffix(8).reversed())) { entry in
+                HStack(alignment: .top, spacing: 6) {
+                    Text(entry.timestamp.formatted(date: .omitted, time: .shortened))
+                        .foregroundStyle(.gray)
+                    Text(entry.agent.rawValue)
+                        .foregroundStyle(agentColor(entry.agent))
+                        .frame(width: 40, alignment: .leading)
+                    Text(entry.message)
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .lineLimit(3)
                 }
+                .font(.system(.caption2, design: .monospaced))
             }
         }
         .panelStyle(terminalGreen)
@@ -958,7 +1164,7 @@ private struct BrokerControlView: View {
                     .overlay(Rectangle().stroke(Color.red.opacity(0.3), lineWidth: 1))
                 }
             }
-            Text("CHIUDI chiede ad Alpaca una chiusura a mercato della singola posizione; ANNULLA cancella il singolo ordine aperto. Per emergenza globale usa HARD KILL in OPERATIVO.")
+            Text("CHIUDI chiede ad Alpaca una chiusura a mercato della singola posizione; ANNULLA cancella il singolo ordine aperto. Per emergenza globale usa HARD KILL nel CRUSCOTTO.")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)

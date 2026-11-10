@@ -115,6 +115,9 @@ final class QuantSwarmEngine: ObservableObject {
     /// Foreground-only: in background nessun nuovo ordine né chiamata Kimi;
     /// al rientro riconciliazione completa col broker.
     private var acceptsNewOrders = true
+    /// Modalità giornaliera: controllo immediato richiesto (rientro in
+    /// foreground o pulsante CONTROLLA ORA).
+    private var dailyCheckNow = false
     private var networkSatisfied = true
     private var lastRiskRejectedNotice: [String: Date] = [:]
     private let pathMonitor = NWPathMonitor()
@@ -412,7 +415,7 @@ final class QuantSwarmEngine: ObservableObject {
         let tf = strategyConfig.sanitized.decisionTimeframeMinutes
         log("Motore avviato su \(parsedSymbols.joined(separator: ", ")); Kimi alla chiusura della candela \(tf)m, solo se il filtro gratuito scatta.")
         if drawdownLocked {
-            log("ATTENZIONE: stop drawdown attivo da una sessione precedente; sblocco manuale in OPERATIVO.", agent: .risk)
+            log("ATTENZIONE: stop drawdown attivo da una sessione precedente; sblocco manuale nel CRUSCOTTO.", agent: .risk)
         }
         if let clock = try? await AlpacaService(credentials: credentials.alpaca).clock() {
             marketClock = clock
@@ -641,8 +644,11 @@ final class QuantSwarmEngine: ObservableObject {
         acceptsNewOrders = false
         if isRunning {
             log("App in background: nuovi ordini e chiamate Kimi sospesi; posizioni protette sul broker.", agent: .system)
-            // Solo ora, ad app davvero in background, parte il promemoria.
-            scheduleBackgroundReminder()
+            // In giornaliera chiudere l'app è previsto (stop GTC sul broker):
+            // nessun promemoria. In veloce invece serve l'app aperta.
+            if activeMode != .daily {
+                scheduleBackgroundReminder()
+            }
         }
     }
 
@@ -659,6 +665,8 @@ final class QuantSwarmEngine: ObservableObject {
             log("Riconciliazione completata: nuovi ordini riabilitati.", agent: .system)
         }
         acceptsNewOrders = true
+        // Giornaliera: riaprire l'app fa partire subito un controllo.
+        if activeMode == .daily, isRunning { dailyCheckNow = true }
     }
 
     /// Sblocco manuale dello stop drawdown: il picco viene riallineato
@@ -1539,7 +1547,7 @@ final class QuantSwarmEngine: ObservableObject {
         )
         NotificationManager.shared.notify(
             "STOP DRAWDOWN -10%",
-            body: "Equity \(format(equity)) USD dal picco \(format(guardState.peakEquity)) USD; sblocco manuale in OPERATIVO."
+            body: "Equity \(format(equity)) USD dal picco \(format(guardState.peakEquity)) USD; sblocco manuale nel CRUSCOTTO."
         )
     }
 
@@ -1673,6 +1681,13 @@ final class QuantSwarmEngine: ObservableObject {
 // MARK: - Modalità giornaliera (Trend + Pullback ETF)
 
 extension QuantSwarmEngine {
+    /// Pulsante CONTROLLA ORA della modalità giornaliera.
+    func requestDailyCheck() {
+        guard activeMode == .daily, isRunning else { return }
+        dailyCheckNow = true
+        currentActivity = "Controllo richiesto: parte entro pochi secondi"
+    }
+
     /// Aggiorna lo stato di un agente della catena (e la frase "cosa sta facendo").
     func setStage(_ id: PipelineStageID, _ state: PipelineState, _ detail: String) {
         guard let index = pipeline.firstIndex(where: { $0.id == id }) else { return }
@@ -1719,7 +1734,7 @@ extension QuantSwarmEngine {
                 + "uscita a chiusura > SMA5 o dopo \(DailyStrategy.maxHoldingDays) giorni. Kimi solo se c'è un segnale."
         )
         if drawdownLocked {
-            log("ATTENZIONE: stop drawdown attivo da una sessione precedente; sblocco manuale in OPERATIVO.", agent: .risk)
+            log("ATTENZIONE: stop drawdown attivo da una sessione precedente; sblocco manuale nel CRUSCOTTO.", agent: .risk)
         }
         analysisTask = Task { [weak self] in
             await self?.dailyLoop(kimi: kimi, credentials: credentials)
@@ -1741,14 +1756,15 @@ extension QuantSwarmEngine {
             if isRunning {
                 currentActivity = "In attesa · prossimo controllo alle \(next.formatted(date: .omitted, time: .shortened))"
             }
-            while isRunning, !Task.isCancelled, Date() < next {
+            while isRunning, !Task.isCancelled, Date() < next, !dailyCheckNow {
                 lastLoopBeat = Date()
                 do {
-                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                    try await Task.sleep(nanoseconds: 5_000_000_000)
                 } catch {
                     return
                 }
             }
+            dailyCheckNow = false
         }
     }
 
