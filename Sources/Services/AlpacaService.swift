@@ -292,6 +292,33 @@ actor AlpacaService {
             .sorted { $0.timestamp < $1.timestamp }
     }
 
+    /// Barre GIORNALIERE per la modalità swing: ~420 giorni di calendario
+    /// (oltre 260 sedute) per avere SMA200 + RSI + ATR. Rettificate per
+    /// dividendi e split, come nel backtest.
+    func dailyBars(symbol: String, limit: Int = 300) async throws -> [Candle] {
+        guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
+        }
+        let start = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-420 * 86_400))
+        let data = try await send(
+            baseURL: credentials.marketDataBaseURL,
+            path: "/v2/stocks/\(escaped)/bars",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "timeframe", value: "1Day"),
+                URLQueryItem(name: "start", value: start),
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "feed", value: "iex"),
+                URLQueryItem(name: "adjustment", value: "all"),
+                URLQueryItem(name: "sort", value: "desc")
+            ]
+        )
+        let response = try JSONDecoder().decode(BarsResponse.self, from: data)
+        return (response.bars ?? [])
+            .compactMap(\.candle)
+            .sorted { $0.timestamp < $1.timestamp }
+    }
+
     /// Ultimo prezzo scambiato (feed IEX): rilettura DOPO la risposta di Kimi,
     /// prima dell'invio dell'ordine. Se il prezzo si è mosso oltre 0,5×ATR
     /// il risk manager annulla: i livelli proposti non valgono più.
@@ -346,6 +373,50 @@ actor AlpacaService {
         ]
         let data = try await send(path: "/v2/orders", method: "POST", body: body)
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
+    }
+
+    /// Ingresso della modalità giornaliera: ordine limite d'acquisto con stop
+    /// protettivo agganciato (OTO), validi finché non annullati (GTC). Lo stop
+    /// vive sul server Alpaca: resta attivo anche con l'app chiusa.
+    func submitEntryWithStop(
+        symbol: String,
+        quantity: Double,
+        limitPrice: Double,
+        stopPrice: Double,
+        clientOrderId: String
+    ) async throws -> AlpacaOrder {
+        let body: [String: Any] = [
+            "symbol": symbol.uppercased(),
+            "qty": decimalString(quantity, fractionDigits: 0),
+            "side": "buy",
+            "type": "limit",
+            "time_in_force": "gtc",
+            "limit_price": decimalString(limitPrice, fractionDigits: priceFractionDigits(limitPrice)),
+            "order_class": "oto",
+            "client_order_id": clientOrderId,
+            "stop_loss": [
+                "stop_price": decimalString(stopPrice, fractionDigits: priceFractionDigits(stopPrice))
+            ]
+        ]
+        let data = try await send(path: "/v2/orders", method: "POST", body: body)
+        return try JSONDecoder().decode(AlpacaOrder.self, from: data)
+    }
+
+    /// Uscita a regole: prima annulla gli ordini aperti del simbolo (lo stop
+    /// GTC tiene impegnate le azioni e bloccherebbe la vendita), poi chiude
+    /// la posizione a mercato.
+    func exitPosition(symbol: String) async throws {
+        let upper = symbol.uppercased()
+        for order in try await openOrders() where order.symbol.uppercased() == upper {
+            try? await cancelOrder(id: order.id)
+        }
+        // Alpaca libera le azioni appena la cancellazione è confermata.
+        for _ in 0..<5 {
+            let still = try await openOrders().contains { $0.symbol.uppercased() == upper }
+            if !still { break }
+            try await Task.sleep(nanoseconds: 600_000_000)
+        }
+        try await closePosition(symbol: upper)
     }
 
     /// Chiude a mercato una singola posizione (controllo manuale dal broker panel).

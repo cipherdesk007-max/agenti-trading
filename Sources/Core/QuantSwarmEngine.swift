@@ -58,6 +58,16 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var kimiCallsToday = 0
     @Published private(set) var creditsSpentToday: Double?
     @Published private(set) var creditLimitHit = false
+    /// Catena agenti: stato di ogni agente, per la schermata principale.
+    @Published private(set) var pipeline: [PipelineStage] = PipelineStage.initial()
+    /// Frase unica "cosa sta facendo adesso" mostrata in cima al cruscotto.
+    @Published private(set) var currentActivity = "Motore fermo"
+    /// Prossimo controllo della modalità giornaliera.
+    @Published private(set) var nextCheckAt: Date?
+    /// Candidati di oggi (modalità giornaliera) per la UI.
+    @Published private(set) var dailyCandidates: [DailyStrategy.Candidate] = []
+    /// Modalità attiva della sessione in corso.
+    @Published private(set) var activeMode: TradingMode?
 
     private let keychain: KeychainManager
     private let modelContext: ModelContext
@@ -342,6 +352,11 @@ final class QuantSwarmEngine: ObservableObject {
             return
         }
         guard !isRunning else { return }
+        if strategyConfig.sanitized.tradingMode == .daily {
+            await startDaily(credentials: credentials, kimi: kimiService)
+            return
+        }
+        activeMode = .intraday
         let parsedSymbols = Array(Set(
             symbolsText
                 .uppercased()
@@ -471,6 +486,11 @@ final class QuantSwarmEngine: ObservableObject {
     /// al prossimo sblocco Face ID riparte la sessione sugli stessi simboli.
     private func resumeSavedSessionIfNeeded() async {
         guard strategyConfig.autoResumeOnLaunch, !isRunning else { return }
+        if strategyConfig.sanitized.tradingMode == .daily {
+            log("Ripresa automatica della modalità giornaliera sul paniere ETF.")
+            await start(symbolsText: "", news: "")
+            return
+        }
         guard let symbolsText = UserDefaults.standard.string(forKey: lastSymbolsKey),
               !symbolsText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let news = UserDefaults.standard.string(forKey: lastNewsKey) ?? ""
@@ -543,6 +563,10 @@ final class QuantSwarmEngine: ObservableObject {
         acceptsNewOrders = true
         await marketScout.stop()
         statusMessage = "Motore fermo; posizioni invariate"
+        currentActivity = "Motore fermo"
+        nextCheckAt = nil
+        activeMode = nil
+        pipeline = PipelineStage.initial()
         log("Motore fermato. Usa HARD KILL SWITCH per liquidare le posizioni.")
         log("════════ SESSIONE CHIUSA · ORE \(Date().formatted(date: .omitted, time: .standard)) · \(reason) ════════")
         exportSessionReport(reason: reason)
@@ -1096,7 +1120,10 @@ final class QuantSwarmEngine: ObservableObject {
                 // Filtro gratuito in codice: EMA cross, rottura high/low 20 o
                 // RSI estremo. Nessun trigger = Kimi non chiamato, zero crediti.
                 if config.kimiFilterEnabled {
+                    setStage(.scout, .done, "\(symbol): candela \(config.decisionTimeframeMinutes)m chiusa, prezzo \(format(snapshot.lastPrice))")
                     guard let trigger = FilterTrigger.evaluate(candles: decisionCandles) else {
+                        setStage(.strategy, .done, "\(symbol): nessun segnale")
+                        skipStages(after: .strategy, "nessun segnale · 0 crediti")
                         if !filterSkipLogged.contains(symbol) {
                             filterSkipLogged.insert(symbol)
                             log(
@@ -1119,6 +1146,7 @@ final class QuantSwarmEngine: ObservableObject {
                         agent: .scout
                     )
                 }
+                setStage(.strategy, .done, "\(symbol): segnale")
                 let context = candleStores[symbol]?.context()
                 // Catena agenti: se la lettura dell'Analyst è più vecchia di
                 // "validità analisi" (impostazioni), viene aggiornata PRIMA del
@@ -1131,6 +1159,8 @@ final class QuantSwarmEngine: ObservableObject {
                 let analystView = latestAnalysis.flatMap {
                     Date().timeIntervalSince($0.timestamp) <= analysisValidity ? $0.analysis : nil
                 }
+                setStage(.analyst, .done, latestAnalysis.map { "\($0.analysis.regime) · bias \($0.analysis.bias)" } ?? "nessuna lettura")
+                setStage(.brain, .working, "Kimi decide su \(symbol)")
                 do {
                     let decision = try await kimi.decide(
                         snapshot: snapshot,
@@ -1141,6 +1171,8 @@ final class QuantSwarmEngine: ObservableObject {
                         analystView: analystView
                     )
                     registerKimiCall()
+                    setStage(.brain, .done, "\(symbol): \(decision.action.rawValue.uppercased()) \(Int(decision.confidence * 100))%")
+                    if decision.action == .hold { skipStages(after: .brain, "Brain: hold") }
                     decisions.append(DecisionEntry(timestamp: Date(), decision: decision))
                     if decisions.count > 500 { decisions.removeFirst(decisions.count - 500) }
                     log(
@@ -1225,9 +1257,13 @@ final class QuantSwarmEngine: ObservableObject {
                             continue
                         }
                         guard review.approved else {
+                            setStage(.reviewer, .done, "\(symbol) bocciato")
+                            skipStages(after: .reviewer, "bocciato dal Reviewer")
                             log("\(symbol): REVIEWER respinge — \(review.reason)", agent: .brain)
                             continue
                         }
+                        setStage(.reviewer, .done, "\(symbol) approvato")
+                        setStage(.risk, .working, "dimensiono \(symbol)")
                         log("\(symbol): reviewer approva — \(review.reason)", agent: .brain)
                     }
                     if let receipt = try await riskAgent.execute(
@@ -1248,6 +1284,8 @@ final class QuantSwarmEngine: ObservableObject {
                         }
                     ) {
                         cycleCommittedSymbols.insert(symbol)
+                        setStage(.risk, .done, "\(symbol): \(Int(receipt.quantity)) az.")
+                        setStage(.executor, .done, "\(symbol): bracket inviato")
                         sample.orderID = receipt.orderID
                         sample.executed = true
                         try persist(receipt: receipt, atr: atr)
@@ -1261,6 +1299,7 @@ final class QuantSwarmEngine: ObservableObject {
                 } catch is CancellationError {
                     return
                 } catch QuantSwarmError.riskRejected(let reason) {
+                    setStage(.risk, .blocked, "\(symbol): \(reason)")
                     log("\(symbol): ordine annullato — \(reason).", agent: .risk)
                     // Notifica throttled: i rifiuti del risk manager sono
                     // importanti ma non devono tempestare l'utente a ogni ciclo.
@@ -1628,5 +1667,409 @@ final class QuantSwarmEngine: ObservableObject {
             locale: Locale(identifier: "en_US_POSIX"),
             value
         )
+    }
+}
+
+// MARK: - Modalità giornaliera (Trend + Pullback ETF)
+
+extension QuantSwarmEngine {
+    /// Aggiorna lo stato di un agente della catena (e la frase "cosa sta facendo").
+    func setStage(_ id: PipelineStageID, _ state: PipelineState, _ detail: String) {
+        guard let index = pipeline.firstIndex(where: { $0.id == id }) else { return }
+        pipeline[index].state = state
+        pipeline[index].detail = detail
+        pipeline[index].updatedAt = Date()
+        lastLoopBeat = Date()
+        if state == .working {
+            currentActivity = "\(id.title): \(detail)"
+        }
+    }
+
+    /// Mette in "saltato" gli agenti successivi quando la catena si ferma prima.
+    func skipStages(after id: PipelineStageID, _ detail: String) {
+        guard let start = PipelineStageID.allCases.firstIndex(of: id) else { return }
+        for stage in PipelineStageID.allCases.dropFirst(start + 1) {
+            setStage(stage, .skipped, detail)
+        }
+    }
+
+    fileprivate func startDaily(credentials: StoredCredentials, kimi: KimiService) async {
+        activeMode = .daily
+        configuredSymbols = DailyStrategy.basket
+        acceptsNewOrders = true
+        pauseReason = nil
+        maxPositionsLogged = false
+        creditLimitLogged = false
+        drawdownLocked = guardState.drawdownLocked
+        dailyStopOn = guardState.dailyStopDayUTC == Self.dayStampUTC()
+        rolloverCreditGuardIfNeeded()
+        kimiCallsToday = creditGuard.calls
+        pipeline = PipelineStage.initial()
+        dailyCandidates = []
+        NotificationManager.shared.requestAuthorizationIfNeeded()
+        isRunning = true
+        applyIdleTimer()
+        NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
+        sessionStartedAt = Date()
+        statusMessage = "Giornaliera \(credentials.paperTrading ? "paper" : "live") attiva"
+        log("════════ SESSIONE AVVIATA · ORE \(Date().formatted(date: .omitted, time: .standard)) ════════")
+        log(
+            "Modalità GIORNALIERA su \(DailyStrategy.basket.count) ETF: Trend (sopra SMA200) + Pullback (RSI2 < 10), "
+                + "stop \(DailyStrategy.stopATR) ATR sul broker (GTC, attivo anche ad app chiusa), "
+                + "uscita a chiusura > SMA5 o dopo \(DailyStrategy.maxHoldingDays) giorni. Kimi solo se c'è un segnale."
+        )
+        if drawdownLocked {
+            log("ATTENZIONE: stop drawdown attivo da una sessione precedente; sblocco manuale in OPERATIVO.", agent: .risk)
+        }
+        analysisTask = Task { [weak self] in
+            await self?.dailyLoop(kimi: kimi, credentials: credentials)
+        }
+        heartbeatTask = Task { [weak self] in
+            await self?.heartbeatMonitor()
+        }
+    }
+
+    /// Un ciclo completo subito, poi ogni 15 minuti finché l'app è aperta.
+    /// Il battito resta vivo ogni minuto (niente falsi allarmi heartbeat).
+    fileprivate func dailyLoop(kimi: KimiService, credentials: StoredCredentials) async {
+        while isRunning, !Task.isCancelled {
+            lastLoopBeat = Date()
+            heartbeatAlerted = false
+            await runDailyCycle(kimi: kimi, credentials: credentials)
+            let next = Date().addingTimeInterval(15 * 60)
+            nextCheckAt = next
+            if isRunning {
+                currentActivity = "In attesa · prossimo controllo alle \(next.formatted(date: .omitted, time: .shortened))"
+            }
+            while isRunning, !Task.isCancelled, Date() < next {
+                lastLoopBeat = Date()
+                do {
+                    try await Task.sleep(nanoseconds: 60_000_000_000)
+                } catch {
+                    return
+                }
+            }
+        }
+    }
+
+    fileprivate func runDailyCycle(kimi: KimiService, credentials: StoredCredentials) async {
+        let config = strategyConfig.sanitized
+        let alpaca = AlpacaService(credentials: credentials.alpaca)
+        pipeline = PipelineStage.initial()
+
+        // 1. SCOUT: conto, posizioni, ordini, orologio, barre giornaliere.
+        if let pause = computePauseReason() {
+            pauseReason = pause
+            setStage(.scout, .blocked, "motore in pausa: \(pause)")
+            skipStages(after: .scout, "pausa")
+            log("MOTORE IN PAUSA: \(pause). Nessun controllo finché non rientra.", agent: .system)
+            return
+        }
+        pauseReason = nil
+        setStage(.scout, .working, "leggo conto, posizioni e \(DailyStrategy.basket.count) ETF")
+        await refreshPortfolio()
+        await refreshTradeRecords()
+        let clock = try? await alpaca.clock()
+        if let clock { marketClock = clock }
+        let marketOpen = clock?.isOpen ?? false
+        var barsBySymbol: [String: [Candle]] = [:]
+        var failed: [String] = []
+        for symbol in DailyStrategy.basket {
+            guard isRunning, !Task.isCancelled else { return }
+            do {
+                let bars = try await alpaca.dailyBars(symbol: symbol)
+                barsBySymbol[symbol] = DailyStrategy.closedBars(bars, marketOpen: marketOpen)
+            } catch is CancellationError {
+                return
+            } catch {
+                failed.append(symbol)
+            }
+        }
+        guard !barsBySymbol.isEmpty else {
+            setStage(.scout, .failed, "nessuna barra ricevuta da Alpaca")
+            skipStages(after: .scout, "dati mancanti")
+            log("Scout: barre giornaliere non disponibili; ciclo annullato (nessun ordine).", agent: .scout)
+            return
+        }
+        setStage(
+            .scout, .done,
+            "\(barsBySymbol.count)/\(DailyStrategy.basket.count) ETF aggiornati"
+                + (failed.isEmpty ? "" : " · mancano \(failed.joined(separator: ", "))")
+                + " · mercato \(marketOpen ? "aperto" : "chiuso")"
+        )
+        var market: [String: DailyStrategy.Snapshot] = [:]
+        for symbol in ["SPY", "QQQ", "IWM", "TLT", "GLD"] {
+            if let bars = barsBySymbol[symbol], let snap = DailyStrategy.snapshot(of: bars) {
+                market[symbol] = snap
+            }
+        }
+
+        // 2. STRATEGIA: uscite a regole, poi segnali d'ingresso. Zero crediti.
+        setStage(.strategy, .working, "controllo uscite e segnali")
+        let today = DailyStrategy.tradingDay(Date())
+        var book = DailyBookStore.load()
+        let held = Set(positions.map { $0.symbol.uppercased() })
+        let entryOrders = openOrders.filter { $0.parentOrderId == nil && $0.side == "buy" }
+        let pendingEntry = Set(entryOrders.map { $0.symbol.uppercased() })
+
+        // Posizioni già chiuse dal broker (stop toccato): via dal registro.
+        for (symbol, _) in book.entries where !held.contains(symbol) && !pendingEntry.contains(symbol) {
+            book.entries.removeValue(forKey: symbol)
+            log("\(symbol): posizione non più presente sul broker (stop eseguito o chiusa a mano); registro aggiornato.", agent: .risk)
+        }
+        // Ordini d'ingresso dei giorni precedenti mai eseguiti: annullati.
+        for order in entryOrders where DailyStrategy.basket.contains(order.symbol.uppercased()) {
+            let symbol = order.symbol.uppercased()
+            guard let day = book.entries[symbol], day < today, !held.contains(symbol) else { continue }
+            do {
+                try await alpaca.cancelOrder(id: order.id)
+                book.entries.removeValue(forKey: symbol)
+                log("\(symbol): ordine d'ingresso del \(day) non eseguito; annullato.", agent: .risk)
+            } catch {
+                log("\(symbol): annullo ordine vecchio non riuscito: \(error.localizedDescription)", agent: .risk)
+            }
+        }
+        // Uscite a regole (anche con stop giornaliero attivo: proteggono il capitale).
+        var exited: [String] = []
+        for (symbol, day) in book.entries where held.contains(symbol) {
+            guard let bars = barsBySymbol[symbol],
+                  let reason = DailyStrategy.exitReason(bars: bars, entryDay: day) else { continue }
+            setStage(.executor, .working, "chiudo \(symbol): \(reason.rawValue)")
+            let position = positions.first { $0.symbol.uppercased() == symbol }
+            do {
+                try await alpaca.exitPosition(symbol: symbol)
+                exited.append(symbol)
+                book.entries.removeValue(forKey: symbol)
+                recordDailyExit(symbol: symbol, pnl: position?.unrealizedPLValue)
+                log("\(symbol): USCITA — \(reason.rawValue). Stop annullato e vendita a mercato inviata.", agent: .risk)
+                NotificationManager.shared.notify("USCITA \(symbol)", body: reason.rawValue)
+            } catch {
+                log("\(symbol): uscita non riuscita (\(error.localizedDescription)); lo stop sul broker resta la protezione.", agent: .risk)
+            }
+        }
+        DailyBookStore.save(book)
+
+        let candidates = DailyStrategy.basket.compactMap { symbol -> DailyStrategy.Candidate? in
+            guard !held.contains(symbol), !pendingEntry.contains(symbol), !exited.contains(symbol),
+                  let bars = barsBySymbol[symbol] else { return nil }
+            return DailyStrategy.entryCandidate(symbol: symbol, bars: bars)
+        }
+        dailyCandidates = candidates
+        let fresh = candidates.filter { !book.alreadyDecided($0.symbol, day: today) }
+        let exitText = exited.isEmpty ? "" : " · uscite: \(exited.joined(separator: ", "))"
+        guard !fresh.isEmpty else {
+            let text = candidates.isEmpty
+                ? "nessun segnale oggi\(exitText)"
+                : "segnali già valutati oggi: \(candidates.map(\.symbol).joined(separator: ", "))\(exitText)"
+            setStage(.strategy, .done, text)
+            skipStages(after: .strategy, "nessun segnale nuovo · 0 crediti")
+            log("Strategia: \(text). Kimi non chiamato.", agent: .scout)
+            return
+        }
+        let list = fresh.map { "\($0.symbol) (RSI2 \(format($0.snapshot.rsi2, fractionDigits: 1)))" }.joined(separator: ", ")
+        setStage(.strategy, .done, "segnali: \(list)\(exitText)")
+        log("Strategia: segnali Trend+Pullback su \(list).", agent: .scout)
+
+        // Guardrail prima di spendere crediti.
+        let slots = config.maxOpenPositions - held.subtracting(exited).count - pendingEntry.count
+        var blockReason: String?
+        if !acceptsNewOrders { blockReason = "app in background" }
+        else if drawdownLocked { blockReason = "stop drawdown attivo (sblocco manuale)" }
+        else if dailyStopActive { blockReason = "stop giornaliero attivo" }
+        else if creditLimitExceeded { blockReason = "limite crediti Kimi raggiunto" }
+        else if slots <= 0 { blockReason = "già \(config.maxOpenPositions) posizioni/ordini aperti" }
+        if let blockReason {
+            setStage(.analyst, .blocked, blockReason)
+            skipStages(after: .analyst, blockReason)
+            log("Segnali non operati: \(blockReason).", agent: .risk)
+            return
+        }
+
+        // 3. ANALYST: in giornaliera il quadro di mercato (SPY/QQQ/IWM/TLT/GLD)
+        //    è calcolato in codice e passato al Brain: nessun credito extra.
+        let marketText = market.keys.sorted().map { key -> String in
+            let m = market[key]!
+            return "\(key) \(m.close > m.sma200 ? "sopra" : "sotto") SMA200"
+        }.joined(separator: " · ")
+        setStage(.analyst, .done, marketText.isEmpty ? "quadro non disponibile" : marketText)
+
+        // 4. BRAIN (Kimi): sceglie fra i candidati.
+        setStage(.brain, .working, "Kimi valuta \(fresh.count) candidati, \(slots) posti liberi")
+        let verdicts: [DailyVerdict]
+        do {
+            registerKimiCall()
+            verdicts = try await kimi.dailyDecide(
+                candidates: fresh,
+                market: market,
+                openPositions: Array(held),
+                slotsAvailable: slots
+            )
+        } catch is CancellationError {
+            return
+        } catch {
+            setStage(.brain, .failed, "Kimi non ha risposto: nessun ordine")
+            skipStages(after: .brain, "Brain fallito")
+            log("Brain Kimi fallito (\(error.localizedDescription)): nessun ordine.", agent: .brain)
+            return
+        }
+        for candidate in fresh { book.markDecided(candidate.symbol, day: today) }
+        DailyBookStore.save(book)
+        for verdict in verdicts {
+            let decision = KimiDecision(
+                symbol: verdict.symbol.uppercased(),
+                action: verdict.wantsBuy ? .buy : .hold,
+                confidence: verdict.confidence,
+                entryPrice: fresh.first { $0.symbol == verdict.symbol.uppercased() }?.snapshot.close ?? 0,
+                stopLoss: 0,
+                takeProfit: 0,
+                winProbability: min(max(verdict.confidence, 0.01), 0.99),
+                payoffRatio: 1,
+                rationale: verdict.rationale
+            )
+            decisions.append(DecisionEntry(timestamp: Date(), decision: decision))
+            log("\(verdict.symbol): \(verdict.wantsBuy ? "BUY" : "SKIP") \(Int(verdict.confidence * 100))% — \(verdict.rationale)", agent: .brain)
+        }
+        if decisions.count > 500 { decisions.removeFirst(decisions.count - 500) }
+        let buys = verdicts.filter(\.wantsBuy).sorted { $0.confidence > $1.confidence }.prefix(slots)
+        guard !buys.isEmpty else {
+            setStage(.brain, .done, "nessun acquisto scelto")
+            skipStages(after: .brain, "Brain: nessun acquisto")
+            return
+        }
+        setStage(.brain, .done, "sceglie \(buys.map(\.symbol).joined(separator: ", "))")
+
+        var sent: [String] = []
+        for verdict in buys {
+            guard isRunning, !Task.isCancelled, acceptsNewOrders else { return }
+            let symbol = verdict.symbol.uppercased()
+            guard let candidate = fresh.first(where: { $0.symbol == symbol }) else { continue }
+
+            // 5. REVIEWER (Kimi): cerca motivi per bocciare.
+            setStage(.reviewer, .working, "contesta \(symbol)")
+            let review: KimiReview
+            do {
+                registerKimiCall()
+                review = try await kimi.dailyReview(candidate: candidate, verdict: verdict, market: market)
+            } catch is CancellationError {
+                return
+            } catch {
+                setStage(.reviewer, .failed, "\(symbol): revisore non raggiungibile, ordine annullato")
+                log("\(symbol): reviewer fallito (\(error.localizedDescription)); ordine annullato.", agent: .brain)
+                continue
+            }
+            guard review.approved else {
+                setStage(.reviewer, .done, "\(symbol) bocciato: \(review.reason)")
+                log("\(symbol): REVIEWER respinge — \(review.reason)", agent: .brain)
+                continue
+            }
+            setStage(.reviewer, .done, "\(symbol) approvato")
+            log("\(symbol): reviewer approva — \(review.reason)", agent: .brain)
+
+            // 6. RISCHIO (codice): prezzo riletto, quantità, stop.
+            setStage(.risk, .working, "dimensiono \(symbol)")
+            guard let price = try? await alpaca.latestTradePrice(symbol: symbol), price > 0 else {
+                setStage(.risk, .failed, "\(symbol): prezzo non disponibile")
+                log("\(symbol): prezzo attuale non disponibile; ordine annullato.", agent: .risk)
+                continue
+            }
+            let snap = candidate.snapshot
+            guard abs(price - snap.close) <= 3 * snap.atr14 else {
+                setStage(.risk, .blocked, "\(symbol): prezzo lontano dal segnale")
+                log("\(symbol): prezzo \(format(price)) a oltre 3 ATR dalla chiusura del segnale; ordine annullato.", agent: .risk)
+                continue
+            }
+            guard let account else {
+                setStage(.risk, .failed, "conto non disponibile")
+                continue
+            }
+            let sizing: RiskRules.StopSizing
+            switch RiskRules.sizeStopOnly(
+                currentPrice: price,
+                stopDistance: candidate.stopDistance,
+                account: RiskRules.Account(
+                    equity: account.equityValue,
+                    cash: account.cashValue,
+                    buyingPower: account.buyingPowerValue
+                ),
+                riskFraction: config.riskFraction,
+                constraints: .alpacaStock
+            ) {
+            case .success(let value):
+                sizing = value
+            case .failure(let rejection):
+                setStage(.risk, .blocked, "\(symbol): \(rejection.reason)")
+                log("\(symbol): ordine bloccato dal rischio — \(rejection.reason).", agent: .risk)
+                continue
+            }
+            setStage(
+                .risk, .done,
+                "\(symbol): \(Int(sizing.quantity)) az. · rischio \(format(sizing.riskAmount)) USD · stop \(format(sizing.stopPrice))"
+            )
+
+            // 7. ESECUTORE: ordine limite + stop GTC sul broker.
+            setStage(.executor, .working, "invio \(symbol)")
+            let clientOrderId = "qsd-\(symbol)-\(today)"
+            do {
+                let order: AlpacaOrder
+                do {
+                    order = try await alpaca.submitEntryWithStop(
+                        symbol: symbol,
+                        quantity: sizing.quantity,
+                        limitPrice: sizing.limitPrice,
+                        stopPrice: sizing.stopPrice,
+                        clientOrderId: clientOrderId
+                    )
+                } catch {
+                    // Timeout: l'ordine potrebbe essere comunque arrivato.
+                    guard let existing = try? await alpaca.order(byClientOrderId: clientOrderId) else { throw error }
+                    order = existing
+                }
+                book.entries[symbol] = today
+                DailyBookStore.save(book)
+                let decision = KimiDecision(
+                    symbol: symbol, action: .buy, confidence: verdict.confidence,
+                    entryPrice: sizing.limitPrice, stopLoss: sizing.stopPrice, takeProfit: 0,
+                    winProbability: min(max(verdict.confidence, 0.01), 0.99), payoffRatio: 1,
+                    rationale: verdict.rationale
+                )
+                try? persist(
+                    receipt: ExecutionReceipt(
+                        orderID: order.id, decision: decision, quantity: sizing.quantity,
+                        equity: account.equityValue, measuredLatencyMilliseconds: 0
+                    ),
+                    atr: snap.atr14
+                )
+                sent.append(symbol)
+                let text = "\(symbol) \(Int(sizing.quantity)) az. limite \(format(sizing.limitPrice)) · stop \(format(sizing.stopPrice)) (GTC)"
+                setStage(.executor, .done, "inviato \(text)")
+                log("ORDINE INVIATO: \(text)\(marketOpen ? "" : " · in coda per l'apertura").", agent: .risk)
+                NotificationManager.shared.notify("ORDINE INVIATO", body: text)
+            } catch {
+                setStage(.executor, .failed, "\(symbol): \(error.localizedDescription)")
+                log("\(symbol): invio ordine fallito: \(error.localizedDescription)", agent: .risk)
+            }
+        }
+        if sent.isEmpty, pipeline.first(where: { $0.id == .executor })?.state == .idle {
+            setStage(.executor, .skipped, "nessun ordine da inviare")
+        }
+        await refreshPortfolio()
+    }
+
+    /// Esito di una posizione chiusa dalla regola d'uscita: il P&L è quello
+    /// non realizzato al momento della chiusura (lo stop non è stato eseguito).
+    fileprivate func recordDailyExit(symbol: String, pnl: Double?) {
+        var descriptor = FetchDescriptor<TradeRecord>(
+            predicate: #Predicate<TradeRecord> { !$0.outcomeRecorded },
+            sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
+        )
+        descriptor.fetchLimit = 50
+        guard let records = try? modelContext.fetch(descriptor),
+              let record = records.first(where: { $0.symbol.uppercased() == symbol }) else { return }
+        record.netPnL = pnl ?? 0
+        record.outcomeRecorded = true
+        linkOutcomeToSample(record)
+        try? modelContext.save()
+        refreshDatasetStats()
+        computeCalibration()
     }
 }

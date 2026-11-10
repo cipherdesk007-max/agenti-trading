@@ -160,6 +160,60 @@ enum RiskRules {
         ))
     }
 
+    struct StopSizing: Sendable, Equatable {
+        let quantity: Double
+        let limitPrice: Double
+        let stopPrice: Double
+        let riskAmount: Double
+    }
+
+    /// Dimensionamento della modalità giornaliera: niente target fisso
+    /// (l'uscita è a regole), solo stop protettivo sul broker. Il rischio
+    /// reale (limite − stop) × quantità non supera equity × riskFraction e la
+    /// posizione non supera il 25% del capitale.
+    static func sizeStopOnly(
+        currentPrice: Double,
+        stopDistance: Double,
+        account: Account,
+        riskFraction: Double,
+        constraints: InstrumentConstraints,
+        maxPositionFraction: Double = maximumPositionFraction
+    ) -> Result<StopSizing, RiskRejection> {
+        guard currentPrice.isFinite, currentPrice > 0, stopDistance.isFinite, stopDistance > 0 else {
+            return .failure(RiskRejection("Prezzo o distanza stop non validi"))
+        }
+        guard account.equity > 0 else {
+            return .failure(RiskRejection("Patrimonio non positivo"))
+        }
+        let tick = constraints.tickSize
+        let limit = roundUp(currentPrice * (1 + entryLimitSlippage), tick: tick)
+        let stop = roundDown(limit - stopDistance, tick: tick)
+        guard stop > 0, stop < limit else {
+            return .failure(RiskRejection("Stop non valido rispetto al prezzo d'ingresso"))
+        }
+        let riskPerUnit = limit - stop
+        let budgetFraction = min(max(riskFraction, 0.000_1), 0.05)
+        let riskBudget = account.equity * budgetFraction
+        let raw = min(
+            riskBudget / riskPerUnit,
+            min(account.cash, account.buyingPower) / limit,
+            account.equity * maxPositionFraction / limit
+        )
+        let lot = constraints.lotSize
+        let quantity = (raw / lot + 1e-9).rounded(.down) * lot
+        guard quantity >= lot else {
+            return .failure(RiskRejection("Quantità sotto il lotto minimo"))
+        }
+        guard quantity * limit >= constraints.minNotional else {
+            return .failure(RiskRejection("Nozionale sotto il minimo dell'exchange"))
+        }
+        let riskAmount = quantity * riskPerUnit
+        guard riskAmount <= riskBudget + 1e-6 else {
+            return .failure(RiskRejection("Rischio oltre il \(fmt(budgetFraction * 100))% del capitale"))
+        }
+        return .success(StopSizing(quantity: quantity, limitPrice: limit, stopPrice: stop, riskAmount: riskAmount))
+    }
+
     static func roundUp(_ value: Double, tick: Double) -> Double {
         guard tick > 0 else { return value }
         return ((value / tick) - 1e-9).rounded(.up) * tick

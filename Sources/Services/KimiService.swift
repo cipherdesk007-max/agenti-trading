@@ -301,6 +301,136 @@ actor KimiService {
         return try JSONDecoder().decode(KimiReview.self, from: Data(json.utf8))
     }
 
+    // MARK: - Modalità giornaliera
+
+    /// Brain giornaliero: riceve SOLO i candidati già validati dalle regole
+    /// (trend + pullback) e il quadro di mercato, e sceglie quali comprare.
+    /// Non fissa livelli né quantità: quelli restano del codice.
+    func dailyDecide(
+        candidates: [DailyStrategy.Candidate],
+        market: [String: DailyStrategy.Snapshot],
+        openPositions: [String],
+        slotsAvailable: Int
+    ) async throws -> [DailyVerdict] {
+        let systemPrompt = """
+        Sei l'agente decisionale (Brain) della modalità giornaliera di un sistema di trading \
+        su ETF, solo in acquisto. Ricevi ETF che le regole in codice hanno già selezionato: \
+        chiusura sopra la SMA200 (trend rialzista) e RSI(2) sotto 10 (ribasso di breve). La \
+        strategia è testata dal 2006: compra il ribasso in trend, esce con chiusura sopra la \
+        SMA5 o dopo 10 giorni, stop a 2,5 ATR. Per ogni candidato rispondi buy o skip. Scegli \
+        al massimo slots_available buy, preferendo i pullback più profondi (RSI2 più basso) e \
+        la diversificazione: evita ETF quasi uguali tra loro o a quelli già in portafoglio \
+        (per esempio SPY, DIA e QQQ insieme). Usa market_overview per il contesto generale. \
+        Non inventare dati. Non usare Markdown.
+        """
+        func snap(_ s: DailyStrategy.Snapshot) -> [String: Any] {
+            [
+                "close": s.close,
+                "sma200": s.sma200,
+                "sma5": s.sma5,
+                "rsi2": s.rsi2,
+                "atr14": s.atr14,
+                "distance_from_sma200_pct": (s.close / s.sma200 - 1) * 100
+            ]
+        }
+        let payload: [String: Any] = [
+            "candidates": candidates.map { candidate -> [String: Any] in
+                ["symbol": candidate.symbol, "indicators": snap(candidate.snapshot)]
+            },
+            "market_overview": market.mapValues(snap),
+            "open_positions": openPositions,
+            "slots_available": slotsAvailable
+        ]
+        let payloadData = try JSONSerialization.data(withJSONObject: payload)
+        let messages: [[String: String]] = [
+            ["role": "system", "content": systemPrompt],
+            ["role": "user", "content": String(decoding: payloadData, as: UTF8.self)]
+        ]
+        let schema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "decisions": [
+                    "type": "array",
+                    "items": [
+                        "type": "object",
+                        "properties": [
+                            "symbol": ["type": "string"],
+                            "action": ["type": "string", "enum": ["buy", "skip"]],
+                            "confidence": ["type": "number", "minimum": 0, "maximum": 1],
+                            "rationale": ["type": "string"]
+                        ],
+                        "required": ["symbol", "action", "confidence", "rationale"],
+                        "additionalProperties": false
+                    ]
+                ]
+            ],
+            "required": ["decisions"],
+            "additionalProperties": false
+        ]
+        let content = try await chat(
+            messages: messages,
+            schema: schema,
+            schemaName: "daily_decisions",
+            maxTokens: 2048
+        )
+        let json = try extractJSONObject(from: content)
+        let decoded = try JSONDecoder().decode(DailyVerdictList.self, from: Data(json.utf8))
+        let allowed = Set(candidates.map(\.symbol))
+        // Solo simboli fra i candidati: un simbolo inventato viene scartato.
+        return decoded.decisions.filter { allowed.contains($0.symbol.uppercased()) }
+    }
+
+    /// Reviewer giornaliero: contesta UN acquisto scelto dal Brain.
+    func dailyReview(
+        candidate: DailyStrategy.Candidate,
+        verdict: DailyVerdict,
+        market: [String: DailyStrategy.Snapshot]
+    ) async throws -> KimiReview {
+        let systemPrompt = """
+        Sei il revisore avversario della modalità giornaliera. Assumi che l'acquisto proposto \
+        sia SBAGLIATO e cerca motivi concreti nei dati per respingerlo: trend debole (prezzo \
+        appena sopra la SMA200), volatilità (ATR) anomala, quadro di mercato in rottura, \
+        motivazione del Brain non coerente con gli indicatori. Approva solo se non trovi nulla \
+        di concreto. Non usare Markdown.
+        """
+        let s = candidate.snapshot
+        let payload: [String: Any] = [
+            "proposal": [
+                "symbol": candidate.symbol as Any,
+                "confidence": verdict.confidence,
+                "rationale": verdict.rationale,
+                "close": s.close, "sma200": s.sma200, "sma5": s.sma5,
+                "rsi2": s.rsi2, "atr14": s.atr14,
+                "stop_distance": candidate.stopDistance
+            ],
+            "market_overview": market.mapValues { m -> [String: Double] in
+                ["close": m.close, "sma200": m.sma200, "rsi2": m.rsi2, "atr14": m.atr14]
+            }
+        ]
+        let payloadData = try JSONSerialization.data(withJSONObject: payload)
+        let messages: [[String: String]] = [
+            ["role": "system", "content": systemPrompt],
+            ["role": "user", "content": String(decoding: payloadData, as: UTF8.self)]
+        ]
+        let schema: [String: Any] = [
+            "type": "object",
+            "properties": [
+                "verdict": ["type": "string", "enum": ["approve", "reject"]],
+                "reason": ["type": "string"]
+            ],
+            "required": ["verdict", "reason"],
+            "additionalProperties": false
+        ]
+        let content = try await chat(
+            messages: messages,
+            schema: schema,
+            schemaName: "daily_review",
+            maxTokens: 1024
+        )
+        let json = try extractJSONObject(from: content)
+        return try JSONDecoder().decode(KimiReview.self, from: Data(json.utf8))
+    }
+
     /// Serializzazione compatta del contesto candele: numeri a 4 decimali e
     /// timestamp in secondi unix per contenere i token spesi a ogni chiamata.
     private static func analysisPayload(_ analysis: KimiAnalysis) -> [String: Any] {

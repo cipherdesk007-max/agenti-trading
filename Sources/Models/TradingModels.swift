@@ -149,7 +149,26 @@ enum CreditGuardStore {
 /// UserDefaults come JSON: nessuna ricompilazione per cambiare strategia.
 /// Il motore legge questi valori a ogni ciclo, quindi le modifiche sono attive
 /// dal ciclo di decisioni successivo.
+/// Modalità operativa del motore.
+enum TradingMode: String, Codable, Sendable, CaseIterable {
+    /// Trend + Pullback su ETF, decisione su barre giornaliere, stop GTC sul
+    /// broker: l'unica validata dal backtest (batte il caso). Default.
+    case daily
+    /// Candele 15m in giornata: SPERIMENTALE, nei backtest perde e non batte
+    /// il caso. Richiede l'app aperta e chiude tutto prima della chiusura.
+    case intraday
+
+    var label: String {
+        switch self {
+        case .daily: return "GIORNALIERA · ETF"
+        case .intraday: return "VELOCE · SPERIMENTALE"
+        }
+    }
+}
+
 struct StrategyConfig: Codable, Sendable, Equatable {
+    /// Modalità operativa (default giornaliera, l'unica validata).
+    var tradingMode: TradingMode
     /// Rischio massimo per singolo trade, in % di equity (0,25 – 2).
     var riskPerTradePercent: Double
     /// Tetto di posizioni aperte simultanee (1 – 3).
@@ -176,6 +195,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     var dailyCreditLimitUSD: Double
 
     init(
+        tradingMode: TradingMode = .daily,
         riskPerTradePercent: Double = 1.0,
         maxOpenPositions: Int = 3,
         dailyStopPercent: Double = 2.0,
@@ -188,6 +208,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         creditLimitEnabled: Bool = true,
         dailyCreditLimitUSD: Double = 1.0
     ) {
+        self.tradingMode = tradingMode
         self.riskPerTradePercent = riskPerTradePercent
         self.maxOpenPositions = maxOpenPositions
         self.dailyStopPercent = dailyStopPercent
@@ -204,6 +225,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
+            tradingMode: try container.decodeIfPresent(TradingMode.self, forKey: .tradingMode) ?? .daily,
             riskPerTradePercent: try container.decodeIfPresent(Double.self, forKey: .riskPerTradePercent) ?? 1.0,
             maxOpenPositions: try container.decodeIfPresent(Int.self, forKey: .maxOpenPositions) ?? 3,
             dailyStopPercent: try container.decodeIfPresent(Double.self, forKey: .dailyStopPercent) ?? 2.0,
@@ -312,6 +334,20 @@ struct KimiDecision: Codable, Sendable {
         guard risk > 0 else { return nil }
         return abs(takeProfit - entryPrice) / risk
     }
+}
+
+/// Scelta del Brain giornaliero su un candidato.
+struct DailyVerdict: Codable, Sendable, Equatable {
+    let symbol: String
+    let action: String
+    let confidence: Double
+    let rationale: String
+
+    var wantsBuy: Bool { action == "buy" }
+}
+
+struct DailyVerdictList: Codable, Sendable {
+    let decisions: [DailyVerdict]
 }
 
 /// Verdetto del Kimi Reviewer avversario: parte dal presupposto che la
@@ -599,5 +635,58 @@ final class DecisionSample {
         netPnL = nil
         postHoldMovePct = nil
         evaluated = false
+    }
+}
+
+// MARK: - Catena agenti
+
+/// Gli agenti in ordine: ognuno riceve solo i dati che gli servono dal
+/// precedente e passa al successivo il suo risultato.
+enum PipelineStageID: String, CaseIterable, Sendable, Identifiable {
+    case scout, strategy, analyst, brain, reviewer, risk, executor
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .scout: return "SCOUT"
+        case .strategy: return "STRATEGIA"
+        case .analyst: return "ANALYST"
+        case .brain: return "BRAIN"
+        case .reviewer: return "REVIEWER"
+        case .risk: return "RISCHIO"
+        case .executor: return "ESECUTORE"
+        }
+    }
+
+    /// Cosa fa e cosa passa avanti (testo mostrato nell'app).
+    var role: String {
+        switch self {
+        case .scout: return "dati di mercato, conto e posizioni → Strategia"
+        case .strategy: return "segnali a regole fisse, zero crediti → Analyst/Brain"
+        case .analyst: return "lettura del mercato (Kimi) → Brain e Reviewer"
+        case .brain: return "sceglie cosa comprare (Kimi) → Reviewer"
+        case .reviewer: return "cerca motivi per bocciare (Kimi) → Rischio"
+        case .risk: return "quantità, stop e limiti in codice → Esecutore"
+        case .executor: return "invia l'ordine con stop sul broker"
+        }
+    }
+
+    /// Usa crediti Kimi?
+    var usesKimi: Bool { self == .analyst || self == .brain || self == .reviewer }
+}
+
+enum PipelineState: String, Sendable {
+    case idle, working, done, skipped, blocked, failed
+}
+
+struct PipelineStage: Identifiable, Sendable {
+    let id: PipelineStageID
+    var state: PipelineState
+    var detail: String
+    var updatedAt: Date?
+
+    static func initial() -> [PipelineStage] {
+        PipelineStageID.allCases.map { PipelineStage(id: $0, state: .idle, detail: "in attesa", updatedAt: nil) }
     }
 }

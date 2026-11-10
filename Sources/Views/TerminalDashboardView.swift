@@ -996,6 +996,21 @@ private struct SystemSettingsView: View {
                 .foregroundStyle(DashboardPalette.cyan)
             }
 
+            Picker("Modalità", selection: $draft.tradingMode) {
+                ForEach(TradingMode.allCases, id: \.self) { mode in
+                    Text(mode.label).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+            Text(draft.tradingMode == .daily
+                 ? "Validata dal backtest 2006–oggi: batte il caso. Stop sul broker attivo anche ad app chiusa: basta aprirla qualche minuto al giorno."
+                 : "SPERIMENTALE: nei backtest perde e non batte il caso. Richiede l'app sempre aperta; chiude tutto prima della chiusura.")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(draft.tradingMode == .daily ? DashboardPalette.green : .orange)
+            Text("La modalità cambia al prossimo START.")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+
             Group {
                 Stepper(
                     "Rischio per trade: \(String(format: "%.2f", draft.riskPerTradePercent))% equity",
