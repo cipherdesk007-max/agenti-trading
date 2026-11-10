@@ -353,8 +353,8 @@ struct TerminalDashboardView: View {
                 .font(.system(.callout, design: .monospaced))
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
-            if engine.isRunning, let next = engine.nextCheckAt {
-                Text("Prossimo controllo alle \(next.formatted(date: .omitted, time: .shortened)) · lascia l'app aperta o chiudila: gli stop restano sul broker")
+            if engine.isRunning, engine.activeMode == .daily {
+                Text("Puoi lasciare l'app aperta o chiuderla: gli stop restano attivi sul broker. Riaprendola parte subito un controllo.")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
@@ -362,24 +362,26 @@ struct TerminalDashboardView: View {
             if displayedMode == .intraday, !engine.isRunning {
                 intradayInputs
             }
-            if engine.isRunning, engine.activeMode == .daily {
-                Button("CONTROLLA ORA") {
-                    engine.requestDailyCheck()
-                }
-                .buttonStyle(TerminalButtonStyle(color: DashboardPalette.cyan))
-            }
             HStack(spacing: 12) {
-                Button("START") {
-                    Task { await engine.start(symbolsText: symbols, news: news) }
+                if engine.isRunning {
+                    if engine.activeMode == .daily {
+                        Button("CONTROLLA ORA") {
+                            engine.requestDailyCheck()
+                        }
+                        .buttonStyle(TerminalButtonStyle(color: DashboardPalette.cyan))
+                    }
+                    Button("STOP") {
+                        Task { await engine.stop() }
+                    }
+                    .buttonStyle(TerminalButtonStyle(color: .orange))
+                    .disabled(engine.isKillInProgress)
+                } else {
+                    Button("START") {
+                        Task { await engine.start(symbolsText: symbols, news: news) }
+                    }
+                    .buttonStyle(TerminalButtonStyle(color: terminalGreen))
+                    .disabled(engine.isKillInProgress)
                 }
-                .buttonStyle(TerminalButtonStyle(color: terminalGreen))
-                .disabled(engine.isRunning || engine.isKillInProgress)
-
-                Button("STOP") {
-                    Task { await engine.stop() }
-                }
-                .buttonStyle(TerminalButtonStyle(color: .orange))
-                .disabled(!engine.isRunning || engine.isKillInProgress)
             }
             if engine.isRunning, let startedAt = engine.sessionStartedAt {
                 TimelineView(.periodic(from: .now, by: 1)) { context in

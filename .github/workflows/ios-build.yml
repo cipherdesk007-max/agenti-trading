@@ -75,11 +75,23 @@ jobs:
           mkdir -p shots
           for TAB in CRUSCOTTO DETTAGLI BROKER SISTEMA; do
             xcrun simctl terminate "$SIM_UDID" com.quantswarm.alphazero 2>/dev/null || true
-            xcrun simctl launch "$SIM_UDID" com.quantswarm.alphazero -QSPreview -QSTab "$TAB"
+            sleep 3
+            xcrun simctl launch "$SIM_UDID" com.quantswarm.alphazero -QSPreview -QSTab "$TAB" || echo "LAUNCH FALLITO $TAB"
             sleep 10
             xcrun simctl io "$SIM_UDID" screenshot "shots/$TAB.png"
+            if ! xcrun simctl spawn "$SIM_UDID" launchctl list | grep -q quantswarm; then
+              echo "::warning::APP NON IN ESECUZIONE dopo l'apertura di $TAB (crash?)"
+            fi
           done
           ls -la shots
+          echo "===== CRASH REPORT ====="
+          find ~/Library/Logs/DiagnosticReports -name "QuantSwarm*" -mmin -30 2>/dev/null | while read f; do
+            echo "--- $f"; head -c 6000 "$f"; echo
+          done
+          echo "===== LOG APP (errori) ====="
+          xcrun simctl spawn "$SIM_UDID" log show --last 5m --style compact \
+            --predicate 'process == "QuantSwarmAlphaZero" AND (messageType == error OR messageType == fault OR eventMessage CONTAINS[c] "fatal")' \
+            2>/dev/null | grep -v CoreData | tail -60 || true
 
       - name: Pubblica screenshot (release "screenshot")
         continue-on-error: true
