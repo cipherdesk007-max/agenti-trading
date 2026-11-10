@@ -267,9 +267,9 @@ final class QuantSwarmEngine: ObservableObject {
         StrategyConfigStore.save(sanitized)
         kimiService?.setModel(sanitized.kimiModel)
         applyIdleTimer()
-        if isRunning {
-            scheduleBackgroundReminder()
-        } else {
+        // Il promemoria "motore in background" si programma solo quando l'app
+        // va davvero in background (handleEnteredBackground), mai ad app aperta.
+        if !isRunning {
             NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
         }
         log(
@@ -389,7 +389,8 @@ final class QuantSwarmEngine: ObservableObject {
         NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
         applyIdleTimer()
-        scheduleBackgroundReminder()
+        // App in primo piano: nessun promemoria, eventuali residui annullati.
+        NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
         sessionStartedAt = Date()
         statusMessage = "Sessione \(credentials.paperTrading ? "paper" : "live") attiva"
         log("════════ SESSIONE AVVIATA · ORE \(Date().formatted(date: .omitted, time: .standard)) ════════")
@@ -616,16 +617,16 @@ final class QuantSwarmEngine: ObservableObject {
         acceptsNewOrders = false
         if isRunning {
             log("App in background: nuovi ordini e chiamate Kimi sospesi; posizioni protette sul broker.", agent: .system)
+            // Solo ora, ad app davvero in background, parte il promemoria.
+            scheduleBackgroundReminder()
         }
     }
 
     /// Rientro in foreground: riconciliazione completa con il broker (esiti,
     /// posizioni, ordini, equity) PRIMA di riabilitare i nuovi ordini.
     func handleEnteredForeground() async {
+        // Di nuovo in primo piano: il promemoria non serve più.
         NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
-        if isRunning {
-            scheduleBackgroundReminder()
-        }
         let wasSuspended = !acceptsNewOrders
         if wasSuspended, credentials != nil {
             log("App di nuovo in foreground: riconciliazione col broker in corso…", agent: .system)
@@ -994,7 +995,10 @@ final class QuantSwarmEngine: ObservableObject {
                 guard let snapshot = snapshots[symbol], let atr = snapshot.atr14 else {
                     if !waitingLogEmitted.contains(symbol) {
                         waitingLogEmitted.insert(symbol)
-                        log("\(symbol): attesa di \(SystemLimits.atrPeriod) barre per ATR e prezzi correnti.", agent: .scout)
+                        let reason = snapshots[symbol] == nil
+                            ? "in attesa del primo prezzo dallo stream"
+                            : "in attesa di \(SystemLimits.atrPeriod) barre per l'ATR"
+                        log("\(symbol): \(reason).", agent: .scout)
                     }
                     continue
                 }
