@@ -53,6 +53,11 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var dailyStopOn = false
     /// Stop drawdown -10% dal picco: sblocco solo manuale.
     @Published private(set) var drawdownLocked = false
+    /// Contatore crediti Kimi del giorno UTC: chiamate effettuate e spesa
+    /// misurata dal saldo reale dell'account (baseline − saldo attuale).
+    @Published private(set) var kimiCallsToday = 0
+    @Published private(set) var creditsSpentToday: Double?
+    @Published private(set) var creditLimitHit = false
 
     private let keychain: KeychainManager
     private let modelContext: ModelContext
@@ -71,10 +76,12 @@ final class QuantSwarmEngine: ObservableObject {
     private var closeGuardLogged: Set<String> = []
     private var regimeLogged: Set<String> = []
     private var waitingCandlesLogged: Set<String> = []
+    private var filterSkipLogged: Set<String> = []
     private var atrHistory: [String: [Double]] = [:]
     private var lastHoldPrice: [String: (price: Double, at: Date)] = [:]
     private var flatByCloseTriggered = false
     private var maxPositionsLogged = false
+    private var creditLimitLogged = false
     private var lastClockRefresh: Date?
     private var lastBalanceRefresh: Date?
     private var lastAnalysisAt: Date?
@@ -90,6 +97,11 @@ final class QuantSwarmEngine: ObservableObject {
     /// Simboli per cui un ordine è già partito in questo ciclo: contano
     /// nell'esposizione complessiva anche prima della conferma del broker.
     private var cycleCommittedSymbols: Set<String> = []
+    /// Ultima candela del timeframe decisionale già valutata da Kimi:
+    /// Kimi viene chiamato solo alla chiusura di una candela nuova.
+    private var lastDecisionBucket: [String: Date] = [:]
+    /// Contatore crediti persistito sul giorno UTC.
+    private var creditGuard: CreditGuardState
     /// Foreground-only: in background nessun nuovo ordine né chiamata Kimi;
     /// al rientro riconciliazione completa col broker.
     private var acceptsNewOrders = true
@@ -108,6 +120,7 @@ final class QuantSwarmEngine: ObservableObject {
     ) {
         self.keychain = keychain
         modelContext = ModelContext(container)
+        creditGuard = CreditGuardStore.load() ?? .empty(day: Self.dayStampUTC())
         #if canImport(UIKit)
         UIDevice.current.isBatteryMonitoringEnabled = true
         #endif
@@ -120,6 +133,8 @@ final class QuantSwarmEngine: ObservableObject {
         pathMonitor.start(queue: monitorQueue)
         drawdownLocked = guardState.drawdownLocked
         dailyStopOn = guardState.dailyStopDayUTC == Self.dayStampUTC()
+        rolloverCreditGuardIfNeeded()
+        kimiCallsToday = creditGuard.calls
         // Report .txt di un'eventuale sessione precedente (es. generato alla
         // chiusura dell'app): riappare in dashboard per export/eliminazione.
         sessionReportURL = SessionReportBuilder.existingReportURL()
@@ -261,6 +276,8 @@ final class QuantSwarmEngine: ObservableObject {
             "Impostazioni aggiornate: rischio \(format(sanitized.riskPerTradePercent))%, "
                 + "max posizioni \(sanitized.maxOpenPositions), stop giorno \(format(sanitized.dailyStopPercent))%, "
                 + "ciclo \(sanitized.decisionIntervalSeconds)s, analisi \(format(sanitized.analysisIntervalMinutes, fractionDigits: 1)) min, "
+                + "timeframe \(sanitized.decisionTimeframeMinutes)m, filtro \(sanitized.kimiFilterEnabled ? "ON" : "OFF"), "
+                + "limite crediti \(sanitized.creditLimitEnabled ? format(sanitized.dailyCreditLimitUSD) + " USD" : "OFF"), "
                 + "modello \(sanitized.kimiModel)."
         )
     }
@@ -352,18 +369,23 @@ final class QuantSwarmEngine: ObservableObject {
         closeGuardLogged = []
         regimeLogged = []
         waitingCandlesLogged = []
+        filterSkipLogged = []
         atrHistory = [:]
         lastHoldPrice = [:]
         flatByCloseTriggered = false
         maxPositionsLogged = false
+        creditLimitLogged = false
         lastAnalysisAt = nil
         acceptsNewOrders = true
         pauseReason = nil
         cycleCommittedSymbols = []
         lastRiskRejectedNotice = [:]
+        lastDecisionBucket = [:]
         candleStores = Dictionary(uniqueKeysWithValues: parsedSymbols.map { ($0, CandleStore()) })
         drawdownLocked = guardState.drawdownLocked
         dailyStopOn = guardState.dailyStopDayUTC == Self.dayStampUTC()
+        rolloverCreditGuardIfNeeded()
+        kimiCallsToday = creditGuard.calls
         NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
         applyIdleTimer()
@@ -371,7 +393,8 @@ final class QuantSwarmEngine: ObservableObject {
         sessionStartedAt = Date()
         statusMessage = "Sessione \(credentials.paperTrading ? "paper" : "live") attiva"
         log("════════ SESSIONE AVVIATA · ORE \(Date().formatted(date: .omitted, time: .standard)) ════════")
-        log("Motore avviato su \(parsedSymbols.joined(separator: ", ")); ATR richiesto prima dei segnali.")
+        let tf = strategyConfig.sanitized.decisionTimeframeMinutes
+        log("Motore avviato su \(parsedSymbols.joined(separator: ", ")); Kimi alla chiusura della candela \(tf)m, solo se il filtro gratuito scatta.")
         if drawdownLocked {
             log("ATTENZIONE: stop drawdown attivo da una sessione precedente; sblocco manuale in OPERATIVO.", agent: .risk)
         }
@@ -633,6 +656,51 @@ final class QuantSwarmEngine: ObservableObject {
         return nil
     }
 
+    // MARK: - Contatore crediti Kimi
+
+    /// A mezzanotte UTC il contatore riparte: nuovo giorno, nuova baseline
+    /// di saldo (letta al primo refresh utile), chiamate azzerate.
+    private func rolloverCreditGuardIfNeeded() {
+        let today = Self.dayStampUTC()
+        guard creditGuard.dayUTC != today else { return }
+        creditGuard = .empty(day: today)
+        CreditGuardStore.save(creditGuard)
+        creditsSpentToday = nil
+        creditLimitHit = false
+        creditLimitLogged = false
+    }
+
+    /// Ogni chiamata Kimi (decisione, review, analisi) viene conteggiata.
+    private func registerKimiCall() {
+        rolloverCreditGuardIfNeeded()
+        creditGuard.calls += 1
+        kimiCallsToday = creditGuard.calls
+        CreditGuardStore.save(creditGuard)
+    }
+
+    /// Spesa reale del giorno: baseline del saldo a inizio giornata meno il
+    /// saldo attuale. Niente stime sui token: è il numero dell'account Kimi.
+    private func trackCredits(balance: KimiBalance) {
+        rolloverCreditGuardIfNeeded()
+        guard let available = balance.availableBalance else { return }
+        if creditGuard.baselineBalance == nil {
+            creditGuard.baselineBalance = available
+            CreditGuardStore.save(creditGuard)
+        }
+        if let baseline = creditGuard.baselineBalance {
+            creditsSpentToday = max(0, baseline - available)
+        }
+    }
+
+    /// Limite di spesa giornaliera: misurato sul saldo reale. Se il saldo non
+    /// è ancora stato letto non si blocca (la prima lettura fissa la baseline).
+    private var creditLimitExceeded: Bool {
+        let config = strategyConfig.sanitized
+        guard config.creditLimitEnabled else { return false }
+        guard let spent = creditsSpentToday else { return false }
+        return spent >= config.dailyCreditLimitUSD
+    }
+
     // MARK: - Kimi Analyst
 
     /// Analisi manuale dal pulsante ANALIZZA ORA. Throttle di 60 s per non
@@ -649,9 +717,11 @@ final class QuantSwarmEngine: ObservableObject {
         await performAnalysis(kimi: kimiService, manual: true)
     }
 
-    /// Analisi automatica: cadenza presa dalle impostazioni live.
+    /// Analisi automatica: cadenza presa dalle impostazioni live. Sospesa se
+    /// il limite crediti giornaliero è stato raggiunto.
     private func runScheduledAnalysis(kimi: KimiService) async {
         guard isRunning, !Task.isCancelled else { return }
+        guard !creditLimitExceeded else { return }
         let now = Date()
         let interval = strategyConfig.analysisInterval
         let due = lastAnalysisAt.map {
@@ -675,6 +745,7 @@ final class QuantSwarmEngine: ObservableObject {
         }
         analysisInFlight = true
         defer { analysisInFlight = false }
+        registerKimiCall()
         do {
             let analysis = try await kimi.analyze(
                 snapshots: fresh,
@@ -807,8 +878,8 @@ final class QuantSwarmEngine: ObservableObject {
         return day == Self.dayStampUTC()
     }
 
-    /// Lo stop giornaliero segue il giorno UTC ed è persistito su disco:
-    /// chiudere e riaprire l'app non azzera il circuit breaker.
+    /// Lo stop giornaliero e il contatore crediti seguono il giorno UTC:
+    /// chiudere e riaprire l'app non azzera circuit breaker né spesa.
     private static func dayStampUTC() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
@@ -839,6 +910,8 @@ final class QuantSwarmEngine: ObservableObject {
                 }
             }
             if dailyStopOn != dailyStopActive { dailyStopOn = dailyStopActive }
+            rolloverCreditGuardIfNeeded()
+            if creditLimitHit != creditLimitExceeded { creditLimitHit = creditLimitExceeded }
             cycleCommittedSymbols = []
 
             await refreshTradeRecords()
@@ -873,8 +946,9 @@ final class QuantSwarmEngine: ObservableObject {
                     }
                 }
             }
-            // Gate globale: pausa, background, stop giornaliero o drawdown
-            // bloccano nuovi segnali e ordini; il monitoraggio continua.
+            // Gate globale: pausa, background, stop giornaliero, drawdown o
+            // limite crediti bloccano nuovi segnali e ordini; il monitoraggio
+            // continua (posizioni sempre riconciliate col broker).
             guard pauseReason == nil, acceptsNewOrders, !dailyStopActive, !drawdownLocked else {
                 do {
                     try await Task.sleep(nanoseconds: UInt64(config.decisionInterval * 1_000_000_000))
@@ -883,6 +957,27 @@ final class QuantSwarmEngine: ObservableObject {
                 }
                 continue
             }
+            if creditLimitExceeded {
+                if !creditLimitLogged {
+                    creditLimitLogged = true
+                    log(
+                        "LIMITE CREDITI raggiunto: spesi \(format(creditsSpentToday ?? 0)) USD su "
+                            + "limite \(format(config.dailyCreditLimitUSD)) USD; Kimi sospeso fino a mezzanotte UTC.",
+                        agent: .brain
+                    )
+                    NotificationManager.shared.notify(
+                        "LIMITE CREDITI KIMI",
+                        body: "Spesa giornaliera oltre \(format(config.dailyCreditLimitUSD)) USD; nuovi segnali sospesi."
+                    )
+                }
+                do {
+                    try await Task.sleep(nanoseconds: UInt64(config.decisionInterval * 1_000_000_000))
+                } catch {
+                    return
+                }
+                continue
+            }
+            creditLimitLogged = false
             for symbol in configuredSymbols {
                 guard isRunning && !Task.isCancelled else { break }
                 guard let snapshot = snapshots[symbol], let atr = snapshot.atr14 else {
@@ -961,25 +1056,50 @@ final class QuantSwarmEngine: ObservableObject {
                 history.append(atr)
                 if history.count > 240 { history.removeFirst(history.count - 240) }
                 atrHistory[symbol] = history
-                // Candele: Kimi ragiona solo su storico CHIUSO; sotto il minimo
-                // non si chiama (dati insufficienti = crediti sprecati).
-                let context = candleStores[symbol]?.context()
-                guard (context?.oneMinuteCandles.count ?? 0) >= SystemLimits.minimumCandlesForKimi else {
+                // Kimi solo alla CHIUSURA di una candela nuova del timeframe
+                // decisionale (default 15m): niente chiamate a ogni ciclo.
+                let decisionCandles = candleStores[symbol]?.decisionCandles(frameSeconds: config.decisionFrameSeconds) ?? []
+                guard decisionCandles.count >= SystemLimits.minimumCandlesForKimi,
+                      let lastClosed = decisionCandles.last else {
                     if !waitingCandlesLogged.contains(symbol) {
                         waitingCandlesLogged.insert(symbol)
                         log(
-                            "\(symbol): attesa candele chiuse (\(context?.oneMinuteCandles.count ?? 0)/\(SystemLimits.minimumCandlesForKimi)).",
+                            "\(symbol): attesa candele \(config.decisionTimeframeMinutes)m chiuse (\(decisionCandles.count)/\(SystemLimits.minimumCandlesForKimi)).",
                             agent: .scout
                         )
                     }
                     continue
                 }
                 waitingCandlesLogged.remove(symbol)
-                log(
-                    "\(symbol): prezzo \(format(snapshot.lastPrice)), ATR \(format(atr)), "
-                        + "candele 1m \(context?.oneMinuteCandles.count ?? 0) → dati inviati a Kimi.",
-                    agent: .scout
-                )
+                guard lastDecisionBucket[symbol] != lastClosed.timestamp else { continue }
+                lastDecisionBucket[symbol] = lastClosed.timestamp
+                // Filtro gratuito in codice: EMA cross, rottura high/low 20 o
+                // RSI estremo. Nessun trigger = Kimi non chiamato, zero crediti.
+                if config.kimiFilterEnabled {
+                    guard let trigger = FilterTrigger.evaluate(candles: decisionCandles) else {
+                        if !filterSkipLogged.contains(symbol) {
+                            filterSkipLogged.insert(symbol)
+                            log(
+                                "\(symbol): filtro gratuito senza trigger a chiusura candela; Kimi non chiamato, crediti risparmiati.",
+                                agent: .scout
+                            )
+                        }
+                        continue
+                    }
+                    filterSkipLogged.remove(symbol)
+                    log(
+                        "\(symbol): trigger \(trigger) sulla candela \(config.decisionTimeframeMinutes)m "
+                            + "→ dati inviati a Kimi (prezzo \(format(snapshot.lastPrice)), ATR \(format(atr))).",
+                        agent: .scout
+                    )
+                } else {
+                    log(
+                        "\(symbol): chiusura candela \(config.decisionTimeframeMinutes)m → dati inviati a Kimi "
+                            + "(prezzo \(format(snapshot.lastPrice)), ATR \(format(atr))).",
+                        agent: .scout
+                    )
+                }
+                let context = candleStores[symbol]?.context()
                 do {
                     let decision = try await kimi.decide(
                         snapshot: snapshot,
@@ -988,6 +1108,7 @@ final class QuantSwarmEngine: ObservableObject {
                         calibration: calibration,
                         marketContext: context
                     )
+                    registerKimiCall()
                     decisions.append(DecisionEntry(timestamp: Date(), decision: decision))
                     if decisions.count > 500 { decisions.removeFirst(decisions.count - 500) }
                     log(
@@ -1031,6 +1152,33 @@ final class QuantSwarmEngine: ObservableObject {
                     guard acceptsNewOrders, pauseReason == nil, !dailyStopActive, !drawdownLocked else {
                         log("\(symbol): segnale scartato, motore non più operativo.", agent: .risk)
                         continue
+                    }
+                    // Kimi Reviewer avversario: gira solo sui trade proposti e
+                    // parte dal presupposto che la decisione sia sbagliata.
+                    // Errore del reviewer = nessun ordine (fail-closed).
+                    if decision.action != .hold {
+                        let review: KimiReview
+                        do {
+                            review = try await kimi.review(
+                                decision: decision,
+                                snapshot: snapshot,
+                                marketContext: context
+                            )
+                            registerKimiCall()
+                        } catch is CancellationError {
+                            return
+                        } catch {
+                            log(
+                                "\(symbol): reviewer Kimi fallito (\(error.localizedDescription)); ordine annullato.",
+                                agent: .brain
+                            )
+                            continue
+                        }
+                        guard review.approved else {
+                            log("\(symbol): REVIEWER respinge — \(review.reason)", agent: .brain)
+                            continue
+                        }
+                        log("\(symbol): reviewer approva — \(review.reason)", agent: .brain)
                     }
                     if let receipt = try await riskAgent.execute(
                         decision: decision,
@@ -1345,7 +1493,9 @@ final class QuantSwarmEngine: ObservableObject {
         }
         if let kimiService {
             do {
-                kimiBalance = try await kimiService.balance()
+                let balance = try await kimiService.balance()
+                kimiBalance = balance
+                trackCredits(balance: balance)
                 lastBalanceRefresh = Date()
             } catch {
                 logUnlessCancelled("Crediti Kimi", error)
@@ -1396,7 +1546,9 @@ final class QuantSwarmEngine: ObservableObject {
         }
         if let kimiService, lastBalanceRefresh.map({ now.timeIntervalSince($0) > 600 }) ?? true {
             do {
-                kimiBalance = try await kimiService.balance()
+                let balance = try await kimiService.balance()
+                kimiBalance = balance
+                trackCredits(balance: balance)
                 lastBalanceRefresh = now
             } catch {
                 logUnlessCancelled("Crediti Kimi", error)

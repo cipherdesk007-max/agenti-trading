@@ -439,6 +439,9 @@ struct TerminalDashboardView: View {
         }
     }
 
+    /// Crediti Kimi: saldo reale, chiamate del giorno e spesa misurata dal
+    /// saldo (baseline UTC − saldo attuale). Se il limite impostato in
+    /// SISTEMA viene raggiunto, Kimi si ferma fino a mezzanotte UTC.
     private var kimiPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("KIMI ACCOUNT · CREDITI USD", color: DashboardPalette.cyan)
@@ -454,6 +457,25 @@ struct TerminalDashboardView: View {
                 Text("Saldo non ancora letto: tocca AGGIORNA nel pannello portafoglio.")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(.gray)
+            }
+            portfolioRow("CHIAMATE OGGI", "\(engine.kimiCallsToday)", color: .white)
+            portfolioRow(
+                "SPESI OGGI (DA SALDO)",
+                engine.creditsSpentToday.map { Formatters.money($0) } ?? "—",
+                color: .white
+            )
+            if engine.strategyConfig.creditLimitEnabled {
+                portfolioRow(
+                    "LIMITE GIORNALIERO",
+                    Formatters.money(engine.strategyConfig.dailyCreditLimitUSD),
+                    color: engine.creditLimitHit ? .red : .gray
+                )
+            }
+            if engine.creditLimitHit {
+                Text("LIMITE RAGGIUNTO: Kimi fermo fino a mezzanotte UTC. Le posizioni restano protette dal broker.")
+                    .font(.system(.caption2, design: .monospaced, weight: .bold))
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .panelStyle(DashboardPalette.cyan)
@@ -999,6 +1021,37 @@ private struct SystemSettingsView: View {
             .font(.system(.caption, design: .monospaced, weight: .bold))
             .foregroundStyle(.white)
 
+            Text("KIMI DECIDE ALLA CHIUSURA DELLA CANDELA")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+            Picker("Timeframe decisione", selection: $draft.decisionTimeframeMinutes) {
+                Text("1 min").tag(1)
+                Text("5 min").tag(5)
+                Text("15 min").tag(15)
+            }
+            .pickerStyle(.segmented)
+
+            Toggle("FILTRO GRATUITO PRE-KIMI", isOn: $draft.kimiFilterEnabled)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .tint(DashboardPalette.green)
+            Text("Kimi viene chiamato solo se scatta un trigger in codice: incrocio EMA 12/26, rottura massimo/minimo a 20 candele o RSI estremo. Nessun trigger = zero crediti spesi.")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Toggle("LIMITE CREDITI GIORNALIERO", isOn: $draft.creditLimitEnabled)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .tint(DashboardPalette.green)
+            Stepper(
+                "Limite spesa: \(String(format: "%.2f", draft.dailyCreditLimitUSD)) USD/giorno",
+                value: $draft.dailyCreditLimitUSD,
+                in: 0.10...50.0,
+                step: 0.10
+            )
+            .font(.system(.caption, design: .monospaced, weight: .bold))
+            .foregroundStyle(.white)
+            .disabled(!draft.creditLimitEnabled)
+
             Text("MODELLO KIMI")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.gray)
@@ -1037,6 +1090,7 @@ private struct SystemSettingsView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 settingRow("STATO APPLICATO", "rischio \(String(format: "%.2f", engine.strategyConfig.riskPerTradePercent))% · max \(engine.strategyConfig.maxOpenPositions) · stop \(String(format: "%.1f", engine.strategyConfig.dailyStopPercent))%")
+                settingRow("DECISIONI KIMI", "chiusura candela \(engine.strategyConfig.decisionTimeframeMinutes)m · filtro \(engine.strategyConfig.kimiFilterEnabled ? "ON" : "OFF")")
                 settingRow("MODELLO ATTIVO", engine.strategyConfig.kimiModel)
                 settingRow("STREAM DATI", SystemLimits.marketStreamHost)
                 settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
