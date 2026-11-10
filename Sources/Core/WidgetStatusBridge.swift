@@ -21,6 +21,7 @@ enum WidgetStatusBridge {
     private static let suiteName = "group.com.quantswarm.alphazero"
     private static let statusKey = "widget_status_json"
     private static let widgetKind = "com.quantswarm.alphazero.widget"
+    private static let lastSymbolsKey = "com.quantswarm.alphazero.lastSymbols"
     private static var lastWriteAt: Date?
 
     @MainActor
@@ -39,7 +40,7 @@ enum WidgetStatusBridge {
             dayPnL: engine.account?.dayPnL,
             positionsCount: engine.positions.count,
             openOrdersCount: engine.openOrders.count,
-            symbols: engine.configuredSymbolsForWidget,
+            symbols: savedSymbols(),
             kimiModel: engine.strategyConfig.kimiModel,
             riskPerTradePercent: engine.strategyConfig.riskPerTradePercent
         )
@@ -51,5 +52,17 @@ enum WidgetStatusBridge {
     static func clear() {
         UserDefaults(suiteName: suiteName)?.removeObject(forKey: statusKey)
         WidgetCenter.shared.reloadTimelines(ofKind: widgetKind)
+    }
+
+    private static func savedSymbols() -> [String] {
+        guard let raw = UserDefaults.standard.string(forKey: lastSymbolsKey), !raw.isEmpty else {
+            return ["SPY"]
+        }
+        let parsed = raw
+            .uppercased()
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        return parsed.isEmpty ? ["SPY"] : Array(Set(parsed)).sorted()
     }
 }
