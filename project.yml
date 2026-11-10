@@ -40,7 +40,6 @@ targets:
         ENABLE_BITCODE: NO
         CODE_SIGN_ENTITLEMENTS: Sources/App/QuantSwarmAlphaZero.entitlements
     dependencies:
-      - sdk: AVFoundation.framework
       - sdk: Security.framework
       - sdk: SwiftUI.framework
       - sdk: SwiftData.framework

@@ -28,7 +28,13 @@ enum DatasetExporter {
         let url = directory.appendingPathComponent("\(filePrefix)\(fileStamp(Date())).jsonl")
         do {
             deleteAllExports(in: directory)
-            try lines.joined(separator: "\n").write(to: url, atomically: true, encoding: .utf8)
+            // Cifrato con il telefono bloccato ed escluso dai backup iCloud/PC:
+            // contiene equity, posizioni e decisioni.
+            try Data((lines.joined(separator: "\n")).utf8).write(to: url, options: [.atomic, .completeFileProtection])
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            var mutableURL = url
+            try? mutableURL.setResourceValues(values)
             return url
         } catch {
             return nil

@@ -3,7 +3,18 @@ name: Unsigned iOS IPA
 on:
   push:
     branches: [main]
+    # Solo quando cambia l'app: README, tools/ e backtest non consumano minuti Mac.
+    paths:
+      - "Sources/**"
+      - "Tests/**"
+      - "project.yml"
+      - ".github/workflows/ios-build.yml"
   workflow_dispatch:
+    inputs:
+      screenshot:
+        description: "Fai anche gli screenshot dell'interfaccia"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -65,6 +76,7 @@ jobs:
       # Screenshot reali dell'interfaccia (dati di esempio, -QSPreview, solo
       # build debug): servono a controllare la grafica prima di consegnarla.
       - name: Screenshot interfaccia
+        if: github.event_name == 'workflow_dispatch' && inputs.screenshot
         continue-on-error: true
         run: |
           xcrun simctl boot "$SIM_UDID" 2>/dev/null || true
@@ -94,6 +106,7 @@ jobs:
             2>/dev/null | grep -v CoreData | tail -60 || true
 
       - name: Pubblica screenshot (release "screenshot")
+        if: github.event_name == 'workflow_dispatch' && inputs.screenshot
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}

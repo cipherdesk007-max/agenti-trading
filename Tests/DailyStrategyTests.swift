@@ -121,5 +121,6 @@ final class DailyStrategyTests: XCTestCase {
         XCTAssertEqual(StrategyConfig().tradingMode, .daily)
         let legacy = try? JSONDecoder().decode(StrategyConfig.self, from: Data("{}".utf8))
         XCTAssertEqual(legacy?.tradingMode, .daily)
+        XCTAssertEqual(legacy?.widgetShowsAmounts, false, "Importi nel widget nascosti di default")
     }
 }

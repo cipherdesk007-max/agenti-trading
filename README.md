@@ -23,52 +23,48 @@ Rischio max 1% per trade (impostabile 0,25–2%, mai oltre 5%), posizione max 25
 - **Backtest**: Actions → "Backtest filtro" → Run workflow (`tutti`, `giornaliero`, `intraday15`, `veloce5m`). Codice in `tools/`. I risultati sono nel riepilogo del run.
 - **Broker**: confronta il registro dell'app con l'estratto conto Alpaca.
 
-## Build e artifact
+## Build e IPA
 
-1. Mantieni la struttura della repository e effettua il push sul branch `main`.
-2. GitHub Actions installa XcodeGen, genera il progetto e compila con `CODE_SIGNING_ALLOWED=NO`.
-3. Scarica l'artifact `QuantSwarm-Alpha-Zero-unsigned`, contenente `QuantSwarm-Alpha-Zero.ipa`.
-4. L'IPA è non firmato. AltStore e Sideloadly normalmente richiedono una fase di firma con un profilo valido; la compatibilità con TrollStore dipende da versione di iOS e metodo di installazione. Gli entitlement effettivi dipendono dal profilo usato per la firma finale.
+1. Push su `main` con modifiche a `Sources/`, `Tests/`, `project.yml` o al workflow: GitHub Actions genera il progetto con XcodeGen, esegue i test su simulatore e, solo se passano, compila l'IPA non firmata.
+2. L'IPA viene pubblicata nella release `ultima` (`QuantSwarm-Alpha-Zero.ipa`).
+3. Screenshot dell'interfaccia: Actions → "Unsigned iOS IPA" → Run workflow con "screenshot" attivo; finiscono nella release `screenshot`.
 
-Per una build locale su macOS:
+Build locale su macOS:
 
 ```sh
 brew install xcodegen
 xcodegen generate --spec project.yml
-xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build
+xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -destination 'platform=iOS Simulator,name=iPhone 16' test
 ```
 
 ## Avvio
 
-1. Crea una API key Moonshot/Kimi sulla stessa piattaforma regionale dell'endpoint globale `https://api.moonshot.ai/v1`.
-2. Usa inizialmente credenziali Alpaca paper. L'app convalida Kimi tramite `GET /v1/models` e Alpaca tramite `GET /v2/account` prima del salvataggio.
-3. Inserisci simboli e news datate con fonte. Non è presente un aggregatore news automatico.
-4. All'avvio l'app carica lo storico candele via REST (backfill 1m/15m) e poi le aggiorna dallo stream; Kimi viene chiamato solo con almeno 20 candele chiuse da 1 minuto.
-5. `STOP` ferma il motore senza chiudere posizioni. `HARD KILL SWITCH`, dopo conferma, cancella tutti gli ordini e richiede la chiusura a mercato di tutte le posizioni del conto configurato.
+1. Inserisci la chiave Kimi (`https://api.moonshot.ai/v1`) e le chiavi Alpaca, prima in **paper**. Il passaggio al live richiede di scrivere `LIVE`, e ogni START in live chiede conferma.
+2. Modalità GIORNALIERA: premi START. L'app controlla i 15 ETF, chiama Kimi solo se c'è un segnale, mette ordine limite + stop GTC. Poi puoi chiuderla: riaprendola parte subito un controllo (o usa CONTROLLA ORA).
+3. `STOP` ferma il motore senza toccare le posizioni. `HARD KILL SWITCH` annulla tutti gli ordini e chiude tutte le posizioni del conto.
 
-## Controlli implementati
+## Protezioni (in codice)
 
-- Keychain `kSecClassGenericPassword`, `kSecAccessControlBiometryAny`, `WhenUnlockedThisDeviceOnly`.
-- JSON Schema Kimi rigido, parsing del solo `message.content`, sanificazione Markdown e validazione locale del segnale. Errore di Kimi = nessun ordine (fail-closed).
-- Contesto per Kimi: ultime 100 candele chiuse e indicatori calcolati in codice (RSI 14, EMA 12/26, SMA 50/200, ATR 14, massimi/minimi 20, volumi) su due timeframe (1m e 15m).
-- WebSocket Alpaca con autenticazione, trade/barre, riconnessione con backoff e monitoraggio `NWPathMonitor`.
-- Sizing deterministico: quantità = (equity × rischio%) / distanza dallo stop, con rapporto rendimento/rischio minimo 1,5 calcolato in codice dai livelli e arrotondamento per difetto a lotto/nozionale minimo. Nessuna stima statistica (Kelly) sul sizing.
-- Rilettura del prezzo dopo la risposta di Kimi: se si è mosso oltre 0,5 × ATR l'ordine viene annullato.
-- Esposizione massima conteggiata su posizioni + ordini di ingresso pendenti + ordini già inviati nello stesso ciclo.
-- `client_order_id` deterministico per decisione: dopo un errore di invio si verifica l'esistenza dell'ordine sul broker prima di riprovare — niente duplicati.
-- Stop giornaliero su giorno UTC e stop drawdown -10% dal picco di equity, entrambi persistiti su disco; il drawdown richiede sblocco manuale.
-- Pausa automatica del motore (niente Kimi né ordini) se la rete è assente o la batteria è sotto il 20% e non in carica.
-- Ordine bracket `limit` con take-profit e stop-loss server-side. Il limite riduce lo slippage ma non garantisce l'esecuzione né il prezzo dello stop in gap di mercato.
-- Persistenza SwiftData degli ordini e aggiornamento degli esiti dai fill Alpaca. Il P&L calcolato non include commissioni o imposte non fornite dal broker.
-- Un solo ordine/posizione per simbolo; nessuna mediazione o apertura duplicata.
+- **Mai una posizione senza stop**: a ogni ciclo ogni posizione della giornaliera deve avere uno stop sul broker, altrimenti viene rimesso. Se un'uscita fallisce dopo aver annullato lo stop, lo stop viene ripristinato (solo se la posizione esiste ancora, per non aprire uno short).
+- Uscite a regole solo a mercato aperto: a mercato chiuso lo stop resta.
+- Ingressi eseguiti in parte: il giorno dopo il residuo viene annullato e lo stop copre solo la quantità comprata.
+- La chiusura di fine giornata della modalità veloce tocca solo le sue posizioni, mai quelle della giornaliera.
+- Rischio reale calcolato sul prezzo d'ingresso effettivo; posizione max 25% del capitale; max 3 posizioni; stop giornaliero e drawdown 10% (sblocco manuale); niente short.
+- Errore di Kimi o del broker = nessun ordine; timeout sull'invio = verifica sul broker, mai un secondo invio.
+- Barre giornaliere dal feed consolidato SIP (gratuito oltre i 15 minuti), con ripiego su IEX.
+- Esito delle uscite dal prezzo di esecuzione reale.
+
+## Sicurezza e privacy
+
+- Chiavi nel Keychain con Face ID (`biometryCurrentSet`, solo questo dispositivo): se cambiano i volti o le impronte registrati vanno reinserite.
+- Report e dataset cifrati (`completeFileProtection`) ed esclusi dai backup.
+- Il widget non mostra importi, salvo attivazione in SISTEMA.
+- Una chiave API dentro un'app resta una credenziale lato client: usa chiavi con privilegi minimi e ruotale.
 
 ## Limiti reali
 
-- Il motore gira solo con l'app in foreground. In background iOS sospende stream e cicli: nessun nuovo ordine parte, le posizioni restano protette dalle gambe stop/target già sul broker e al rientro l'app esegue una riconciliazione completa (esiti, posizioni, ordini, equity). Per trading continuo 24/7 serve un servizio server-side sempre attivo.
-- Kimi K3.1 Pro usa temperatura fissa e reasoning sempre attivo; il connettore omette `temperature`. Nessun modello garantisce assenza di errori o rendimenti superiori.
-- Il Keychain protegge i dati con le protezioni del dispositivo e Face ID, ma una generic password non diventa una chiave privata non esportabile nel Secure Enclave.
-- Una API key usata direttamente da un'app distribuita è una credenziale lato cliente: non equivale a un segreto server-side. Usa chiavi con privilegi minimi e rotazione.
-- La modalità live può causare perdite, inclusa perdita superiore al rischio teorico in caso di gap, rifiuti, liquidità insufficiente o indisponibilità del broker. Testare in paper trading non dimostra performance future.
+- Nessuna app iOS resta attiva 24/7: la giornaliera è pensata per questo (stop sul broker), la veloce richiede l'app aperta.
+- I backtest descrivono il passato; il paper trading non dimostra rendimenti futuri. Il live può perdere più del rischio teorico in caso di gap o rifiuti del broker.
 
 ## Riferimenti ufficiali
 

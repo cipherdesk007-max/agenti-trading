@@ -74,6 +74,7 @@ struct TerminalDashboardView: View {
     @State private var showKillConfirmation = false
     @State private var showLogoutConfirmation = false
     @State private var showUnlockConfirmation = false
+    @State private var showLiveStartConfirmation = false
     @State private var pulse = false
 
     private let terminalGreen = DashboardPalette.green
@@ -96,6 +97,7 @@ struct TerminalDashboardView: View {
                         VStack(spacing: 14) {
                             switch selectedSection {
                             case .operations:
+                                if !engine.paperTrading { liveBanner }
                                 guardPanel
                                 heroPanel
                                 todayPanel
@@ -317,6 +319,15 @@ struct TerminalDashboardView: View {
 
     // MARK: - Cruscotto
 
+    private var liveBanner: some View {
+        Text("CONTO LIVE · SOLDI VERI")
+            .font(.system(.headline, design: .monospaced, weight: .black))
+            .frame(maxWidth: .infinity)
+            .padding(10)
+            .background(Color.red)
+            .foregroundStyle(.white)
+    }
+
     private var displayedMode: TradingMode {
         engine.activeMode ?? engine.strategyConfig.tradingMode
     }
@@ -376,11 +387,23 @@ struct TerminalDashboardView: View {
                     .buttonStyle(TerminalButtonStyle(color: .orange))
                     .disabled(engine.isKillInProgress)
                 } else {
-                    Button("START") {
-                        Task { await engine.start(symbolsText: symbols, news: news) }
+                    Button(engine.paperTrading ? "START" : "START LIVE") {
+                        if engine.paperTrading {
+                            Task { await engine.start(symbolsText: symbols, news: news) }
+                        } else {
+                            showLiveStartConfirmation = true
+                        }
                     }
-                    .buttonStyle(TerminalButtonStyle(color: terminalGreen))
+                    .buttonStyle(TerminalButtonStyle(color: engine.paperTrading ? terminalGreen : .red))
                     .disabled(engine.isKillInProgress)
+                    .alert("AVVIO CON SOLDI VERI", isPresented: $showLiveStartConfirmation) {
+                        Button("ANNULLA", role: .cancel) {}
+                        Button("AVVIA LIVE", role: .destructive) {
+                            Task { await engine.start(symbolsText: symbols, news: news) }
+                        }
+                    } message: {
+                        Text("Il motore può inviare subito ordini reali sul conto Alpaca live. Le perdite sono reali.")
+                    }
                 }
             }
             if engine.isRunning, let startedAt = engine.sessionStartedAt {
@@ -1244,34 +1267,47 @@ private struct SystemSettingsView: View {
                     in: 0.5...5.0,
                     step: 0.5
                 )
-                Stepper("Ciclo decisioni: \(draft.decisionIntervalSeconds)s", value: $draft.decisionIntervalSeconds, in: 30...120, step: 5)
-                Stepper(
-                    "Validità analisi Analyst: \(String(format: "%.1f", draft.analysisIntervalMinutes)) min",
-                    value: $draft.analysisIntervalMinutes,
-                    in: 2...15,
-                    step: 1
-                )
             }
             .font(.system(.caption, design: .monospaced, weight: .bold))
             .foregroundStyle(.white)
 
-            Text("KIMI DECIDE ALLA CHIUSURA DELLA CANDELA")
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.gray)
-            Picker("Timeframe decisione", selection: $draft.decisionTimeframeMinutes) {
-                Text("1 min").tag(1)
-                Text("5 min").tag(5)
-                Text("15 min").tag(15)
-            }
-            .pickerStyle(.segmented)
-
-            Toggle("FILTRO GRATUITO PRE-KIMI", isOn: $draft.kimiFilterEnabled)
+            // Impostazioni della sola modalità veloce: in giornaliera non servono.
+            if draft.tradingMode == .intraday {
+                Group {
+                    Stepper("Ciclo decisioni: \(draft.decisionIntervalSeconds)s", value: $draft.decisionIntervalSeconds, in: 30...120, step: 5)
+                    Stepper(
+                        "Validità analisi Analyst: \(String(format: "%.1f", draft.analysisIntervalMinutes)) min",
+                        value: $draft.analysisIntervalMinutes,
+                        in: 2...15,
+                        step: 1
+                    )
+                }
                 .font(.system(.caption, design: .monospaced, weight: .bold))
-                .tint(DashboardPalette.green)
-            Text("Kimi viene chiamato solo se scatta un trigger in codice: incrocio EMA 12/26, rottura massimo/minimo a 20 candele o RSI estremo. Nessun trigger = zero crediti spesi.")
-                .font(.system(.caption2, design: .monospaced))
-                .foregroundStyle(.gray)
-                .fixedSize(horizontal: false, vertical: true)
+                .foregroundStyle(.white)
+
+                Text("KIMI DECIDE ALLA CHIUSURA DELLA CANDELA")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+                Picker("Timeframe decisione", selection: $draft.decisionTimeframeMinutes) {
+                    Text("1 min").tag(1)
+                    Text("5 min").tag(5)
+                    Text("15 min").tag(15)
+                }
+                .pickerStyle(.segmented)
+
+                Toggle("FILTRO GRATUITO PRE-KIMI", isOn: $draft.kimiFilterEnabled)
+                    .font(.system(.caption, design: .monospaced, weight: .bold))
+                    .tint(DashboardPalette.green)
+                Text("Kimi viene chiamato solo se scatta un trigger in codice (setup long). Nessun trigger = zero crediti spesi.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("GIORNALIERA: Kimi viene chiamato solo se un ETF è in trend (sopra SMA200) con RSI2 sotto 10. Nessun segnale = zero crediti.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
 
             Toggle("LIMITE CREDITI GIORNALIERO", isOn: $draft.creditLimitEnabled)
                 .font(.system(.caption, design: .monospaced, weight: .bold))
@@ -1316,6 +1352,14 @@ private struct SystemSettingsView: View {
             Toggle("RIPRENDI SESSIONE AL RIAVVIO", isOn: $draft.autoResumeOnLaunch)
                 .font(.system(.caption, design: .monospaced, weight: .bold))
                 .tint(DashboardPalette.green)
+
+            Toggle("IMPORTI NEL WIDGET", isOn: $draft.widgetShowsAmounts)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .tint(DashboardPalette.green)
+            Text("Spento: il widget mostra solo lo stato, senza equity e P&L (il widget si vede anche a telefono bloccato).")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+                .fixedSize(horizontal: false, vertical: true)
 
             Button("APPLICA IMPOSTAZIONI") {
                 engine.updateStrategyConfig(draft)

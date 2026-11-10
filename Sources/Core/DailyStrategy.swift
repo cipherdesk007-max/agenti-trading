@@ -95,10 +95,28 @@ enum DailyStrategy {
 /// toccare posizioni aperte a mano o da altre modalità.
 struct DailyBook: Codable, Sendable, Equatable {
     var entries: [String: String] = [:]
+    /// Stop d'ingresso per simbolo: serve a ripristinare la protezione se lo
+    /// stop sul broker sparisce (uscita fallita, ordine eseguito in parte).
+    var stops: [String: Double] = [:]
     /// Simboli già sottoposti a Kimi oggi (giorno di borsa → simboli): evita di
     /// ripagare la stessa decisione a ogni ciclo.
     var decidedDay: String = ""
     var decidedSymbols: [String] = []
+
+    init() {}
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        entries = try c.decodeIfPresent([String: String].self, forKey: .entries) ?? [:]
+        stops = try c.decodeIfPresent([String: Double].self, forKey: .stops) ?? [:]
+        decidedDay = try c.decodeIfPresent(String.self, forKey: .decidedDay) ?? ""
+        decidedSymbols = try c.decodeIfPresent([String].self, forKey: .decidedSymbols) ?? []
+    }
+
+    mutating func remove(_ symbol: String) {
+        entries.removeValue(forKey: symbol)
+        stops.removeValue(forKey: symbol)
+    }
 
     mutating func markDecided(_ symbol: String, day: String) {
         if decidedDay != day {

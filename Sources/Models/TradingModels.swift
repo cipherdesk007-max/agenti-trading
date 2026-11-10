@@ -3,11 +3,8 @@ import SwiftData
 
 enum SystemLimits {
     static let kimiModel = "kimi-k3.1-pro-highspeed"
-    static let kimiAPIHost = "api.moonshot.ai"
     static let marketStreamHost = "stream.data.alpaca.markets/v2/iex"
     static let atrPeriod = 14
-    static let decisionIntervalSeconds = 60
-    static let analysisIntervalSeconds: TimeInterval = 300
     static let holdEvaluationSeconds: TimeInterval = 1800
     static let maximumRiskFraction = 0.01
     static let maximumLatencyMilliseconds = 400.0
@@ -21,7 +18,6 @@ enum SystemLimits {
     static let minimumRiskReward = 1.5
     static let closeGuardSeconds: TimeInterval = 900
     static let flatByCloseSeconds: TimeInterval = 600
-    static let maxDailyLossFraction = 0.02
     /// Bug 6: drawdown massimo dal picco di equity; oltre serve sblocco manuale.
     static let maxDrawdownFraction = 0.10
     static let maxConcurrentPositions = 3
@@ -193,6 +189,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     var creditLimitEnabled: Bool
     /// Limite di spesa in USD (0,10 – 50).
     var dailyCreditLimitUSD: Double
+    /// Il widget mostra equity e P&L (visibili anche a telefono bloccato).
+    var widgetShowsAmounts: Bool
 
     init(
         tradingMode: TradingMode = .daily,
@@ -206,7 +204,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         decisionTimeframeMinutes: Int = 15,
         kimiFilterEnabled: Bool = true,
         creditLimitEnabled: Bool = true,
-        dailyCreditLimitUSD: Double = 1.0
+        dailyCreditLimitUSD: Double = 1.0,
+        widgetShowsAmounts: Bool = false
     ) {
         self.tradingMode = tradingMode
         self.riskPerTradePercent = riskPerTradePercent
@@ -220,6 +219,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         self.kimiFilterEnabled = kimiFilterEnabled
         self.creditLimitEnabled = creditLimitEnabled
         self.dailyCreditLimitUSD = dailyCreditLimitUSD
+        self.widgetShowsAmounts = widgetShowsAmounts
     }
 
     init(from decoder: Decoder) throws {
@@ -236,7 +236,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
             decisionTimeframeMinutes: try container.decodeIfPresent(Int.self, forKey: .decisionTimeframeMinutes) ?? 15,
             kimiFilterEnabled: try container.decodeIfPresent(Bool.self, forKey: .kimiFilterEnabled) ?? true,
             creditLimitEnabled: try container.decodeIfPresent(Bool.self, forKey: .creditLimitEnabled) ?? true,
-            dailyCreditLimitUSD: try container.decodeIfPresent(Double.self, forKey: .dailyCreditLimitUSD) ?? 1.0
+            dailyCreditLimitUSD: try container.decodeIfPresent(Double.self, forKey: .dailyCreditLimitUSD) ?? 1.0,
+            widgetShowsAmounts: try container.decodeIfPresent(Bool.self, forKey: .widgetShowsAmounts) ?? false
         )
     }
 

@@ -14,6 +14,7 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
     /// Le gambe di un bracket (stop/target) hanno il parent_order_id valorizzato:
     /// serve a distinguerle dagli ordini di ingresso nel conteggio dell'esposizione.
     let parentOrderId: String?
+    let stopPrice: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -27,7 +28,10 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
         case submittedAt = "submitted_at"
         case legs
         case parentOrderId = "parent_order_id"
+        case stopPrice = "stop_price"
     }
+
+    var stopPriceValue: Double? { stopPrice.flatMap(Double.init) }
 
     var filledQuantityValue: Double { Double(filledQuantity ?? "0") ?? 0 }
     var filledAveragePriceValue: Double? { Double(filledAveragePrice ?? "") }
@@ -302,22 +306,37 @@ actor AlpacaService {
     /// (oltre 260 sedute) per avere SMA200 + RSI + ATR. Rettificate per
     /// dividendi e split, come nel backtest.
     func dailyBars(symbol: String, limit: Int = 300) async throws -> [Candle] {
+        // Prima il feed consolidato SIP (tutte le borse, come nel backtest):
+        // gratuito se la richiesta finisce ad almeno 15 minuti fa. Se il piano
+        // non lo consente, si ripiega su IEX.
+        if let sip = try? await dailyBars(symbol: symbol, limit: limit, feed: "sip"), !sip.isEmpty {
+            return sip
+        }
+        return try await dailyBars(symbol: symbol, limit: limit, feed: "iex")
+    }
+
+    private func dailyBars(symbol: String, limit: Int, feed: String) async throws -> [Candle] {
         guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
             throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
         }
-        let start = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-420 * 86_400))
+        let formatter = ISO8601DateFormatter()
+        let start = formatter.string(from: Date().addingTimeInterval(-420 * 86_400))
+        var query = [
+            URLQueryItem(name: "timeframe", value: "1Day"),
+            URLQueryItem(name: "start", value: start),
+            URLQueryItem(name: "limit", value: String(limit)),
+            URLQueryItem(name: "feed", value: feed),
+            URLQueryItem(name: "adjustment", value: "all"),
+            URLQueryItem(name: "sort", value: "desc")
+        ]
+        if feed == "sip" {
+            query.append(URLQueryItem(name: "end", value: formatter.string(from: Date().addingTimeInterval(-16 * 60))))
+        }
         let data = try await send(
             baseURL: credentials.marketDataBaseURL,
             path: "/v2/stocks/\(escaped)/bars",
             method: "GET",
-            query: [
-                URLQueryItem(name: "timeframe", value: "1Day"),
-                URLQueryItem(name: "start", value: start),
-                URLQueryItem(name: "limit", value: String(limit)),
-                URLQueryItem(name: "feed", value: "iex"),
-                URLQueryItem(name: "adjustment", value: "all"),
-                URLQueryItem(name: "sort", value: "desc")
-            ]
+            query: query
         )
         let response = try JSONDecoder().decode(BarsResponse.self, from: data)
         return (response.bars ?? [])
@@ -408,29 +427,39 @@ actor AlpacaService {
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
     }
 
-    /// Uscita a regole: prima annulla gli ordini aperti del simbolo (lo stop
-    /// GTC tiene impegnate le azioni e bloccherebbe la vendita), poi chiude
-    /// la posizione a mercato.
-    func exitPosition(symbol: String) async throws {
-        let upper = symbol.uppercased()
-        for order in try await openOrders() where order.symbol.uppercased() == upper {
-            try? await cancelOrder(id: order.id)
-        }
-        // Alpaca libera le azioni appena la cancellazione è confermata.
-        for _ in 0..<5 {
-            let still = try await openOrders().contains { $0.symbol.uppercased() == upper }
-            if !still { break }
-            try await Task.sleep(nanoseconds: 600_000_000)
-        }
-        try await closePosition(symbol: upper)
-    }
-
     /// Chiude a mercato una singola posizione (controllo manuale dal broker panel).
     func closePosition(symbol: String) async throws {
         guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
             throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
         }
-        _ = try await send(path: "/v2/positions/\(escaped)", method: "DELETE")
+        _ = try await closePositionReturningOrder(symbol: symbol)
+    }
+
+    /// Chiusura a mercato che restituisce l'ordine creato (per leggere il
+    /// prezzo di esecuzione reale).
+    func closePositionReturningOrder(symbol: String) async throws -> AlpacaOrder? {
+        guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
+        }
+        let data = try await send(path: "/v2/positions/\(escaped)", method: "DELETE")
+        // La chiusura è riuscita (HTTP 2xx): una risposta non leggibile non
+        // deve mai farla sembrare fallita.
+        return try? JSONDecoder().decode(AlpacaOrder.self, from: data)
+    }
+
+    /// Stop protettivo semplice (vendita stop GTC), usato per ripristinare la
+    /// protezione quando manca.
+    func submitStop(symbol: String, quantity: Double, stopPrice: Double) async throws -> AlpacaOrder {
+        let body: [String: Any] = [
+            "symbol": symbol.uppercased(),
+            "qty": decimalString(quantity, fractionDigits: 0),
+            "side": "sell",
+            "type": "stop",
+            "time_in_force": "gtc",
+            "stop_price": decimalString(stopPrice, fractionDigits: priceFractionDigits(stopPrice))
+        ]
+        let data = try await send(path: "/v2/orders", method: "POST", body: body)
+        return try JSONDecoder().decode(AlpacaOrder.self, from: data)
     }
 
     /// Annulla un singolo ordine aperto (controllo manuale dal broker panel).
@@ -517,5 +546,65 @@ actor AlpacaService {
     /// Regola Alpaca per i prezzi azionari: 2 decimali sopra 1 USD, 4 sotto.
     private func priceFractionDigits(_ price: Double) -> Int {
         price >= 1 ? 2 : 4
+    }
+}
+
+// MARK: - Adattatore Alpaca → BrokerClient (ciclo giornaliero)
+
+struct AlpacaBroker: BrokerClient {
+    let service: AlpacaService
+
+    init(credentials: AlpacaCredentials) {
+        service = AlpacaService(credentials: credentials)
+    }
+
+    func isMarketOpen() async throws -> Bool { try await service.clock().isOpen }
+
+    func account() async throws -> BrokerAccount {
+        let a = try await service.account()
+        return BrokerAccount(equity: a.equityValue, cash: a.cashValue, buyingPower: a.buyingPowerValue)
+    }
+
+    func positions() async throws -> [BrokerPosition] {
+        try await service.positions().map {
+            BrokerPosition(symbol: $0.symbol.uppercased(), quantity: $0.quantityValue,
+                           averageEntryPrice: $0.averageEntryPriceValue, unrealizedPL: $0.unrealizedPLValue)
+        }
+    }
+
+    func openOrders() async throws -> [BrokerOrder] {
+        try await service.openOrders().map {
+            BrokerOrder(id: $0.id, symbol: $0.symbol.uppercased(), side: $0.side, type: $0.type, status: $0.status,
+                        quantity: $0.quantityValue, filledQuantity: $0.filledQuantityValue,
+                        stopPrice: $0.stopPriceValue, parentOrderId: $0.parentOrderId, submittedAt: $0.submittedDate)
+        }
+    }
+
+    func dailyBars(symbol: String) async throws -> [Candle] { try await service.dailyBars(symbol: symbol) }
+
+    func latestPrice(symbol: String) async throws -> Double { try await service.latestTradePrice(symbol: symbol) }
+
+    func cancelOrder(id: String) async throws { try await service.cancelOrder(id: id) }
+
+    func closePosition(symbol: String) async throws -> String? {
+        try await service.closePositionReturningOrder(symbol: symbol)?.id
+    }
+
+    func submitEntryWithStop(symbol: String, quantity: Double, limitPrice: Double,
+                             stopPrice: Double, clientOrderId: String) async throws -> String {
+        try await service.submitEntryWithStop(symbol: symbol, quantity: quantity, limitPrice: limitPrice,
+                                              stopPrice: stopPrice, clientOrderId: clientOrderId).id
+    }
+
+    func submitStop(symbol: String, quantity: Double, stopPrice: Double) async throws -> String {
+        try await service.submitStop(symbol: symbol, quantity: quantity, stopPrice: stopPrice).id
+    }
+
+    func orderId(byClientOrderId clientOrderId: String) async throws -> String? {
+        try await service.order(byClientOrderId: clientOrderId)?.id
+    }
+
+    func filledAveragePrice(orderId: String) async throws -> Double? {
+        try await service.order(id: orderId).filledAveragePriceValue
     }
 }

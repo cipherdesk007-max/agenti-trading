@@ -38,8 +38,9 @@ enum WidgetStatusBridge {
             isRunning: engine.isRunning,
             paperTrading: engine.paperTrading,
             status: engine.statusMessage,
-            equity: engine.account?.equityValue,
-            dayPnL: engine.account?.dayPnL,
+            // Importi nascosti di default: il widget è visibile anche a telefono bloccato.
+            equity: engine.strategyConfig.widgetShowsAmounts ? engine.account?.equityValue : nil,
+            dayPnL: engine.strategyConfig.widgetShowsAmounts ? engine.account?.dayPnL : nil,
             positionsCount: engine.positions.count,
             openOrdersCount: engine.openOrders.count,
             symbols: savedSymbols(),

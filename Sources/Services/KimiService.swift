@@ -710,3 +710,18 @@ private struct ChatCompletionResponse: Decodable {
         let content: String?
     }
 }
+
+// MARK: - Kimi come Brain/Reviewer del ciclo giornaliero
+
+extension KimiService: DailyBrain {
+    func decide(candidates: [DailyStrategy.Candidate], market: [String: DailyStrategy.Snapshot],
+                openPositions: [String], slots: Int) async throws -> [DailyVerdict] {
+        try await dailyDecide(candidates: candidates, market: market,
+                              openPositions: openPositions, slotsAvailable: slots)
+    }
+
+    func review(candidate: DailyStrategy.Candidate, verdict: DailyVerdict,
+                market: [String: DailyStrategy.Snapshot]) async throws -> KimiReview {
+        try await dailyReview(candidate: candidate, verdict: verdict, market: market)
+    }
+}

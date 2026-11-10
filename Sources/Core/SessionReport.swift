@@ -43,7 +43,13 @@ enum SessionReportBuilder {
         do {
             // Un solo report alla volta: elimina i precedenti prima di scrivere.
             deleteAllReports(in: directory)
-            try text.write(to: url, atomically: true, encoding: .utf8)
+            // Cifrato con il telefono bloccato ed escluso dai backup iCloud/PC:
+            // contiene equity, posizioni e decisioni.
+            try Data((text).utf8).write(to: url, options: [.atomic, .completeFileProtection])
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            var mutableURL = url
+            try? mutableURL.setResourceValues(values)
             return url
         } catch {
             return nil

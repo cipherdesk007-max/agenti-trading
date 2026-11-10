@@ -10,7 +10,9 @@ actor KeychainManager {
         guard let accessControl = SecAccessControlCreateWithFlags(
             nil,
             kSecAttrAccessibleWhenUnlockedThisDeviceOnly,
-            .biometryAny,
+            // Solo i volti/impronte registrati ORA: se se ne aggiunge uno nuovo,
+            // le chiavi vanno reinserite (più sicuro di biometryAny).
+            .biometryCurrentSet,
             &accessError
         ) else {
             let error = accessError?.takeRetainedValue()

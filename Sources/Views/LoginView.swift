@@ -8,6 +8,8 @@ struct LoginView: View {
     @State private var paperTrading = true
     @State private var validating = false
     @State private var errorMessage: String?
+    @State private var showLiveConfirmation = false
+    @State private var liveConfirmText = ""
 
     private let terminalGreen = Color(red: 0.1, green: 1.0, blue: 0.55)
 
@@ -30,9 +32,31 @@ struct LoginView: View {
                     credentialField(title: "ALPACA SECRET KEY", text: $alpacaSecretKey)
 
                     VStack(alignment: .leading, spacing: 8) {
-                        Toggle("PAPER TRADING", isOn: $paperTrading)
+                        Toggle("PAPER TRADING", isOn: Binding(
+                            get: { paperTrading },
+                            set: { wantsPaper in
+                                if wantsPaper {
+                                    paperTrading = true
+                                } else {
+                                    // Live: seconda conferma obbligatoria.
+                                    liveConfirmText = ""
+                                    showLiveConfirmation = true
+                                }
+                            }
+                        ))
                             .font(.system(.callout, design: .monospaced, weight: .bold))
                             .tint(terminalGreen)
+                            .alert("PASSARE AL LIVE?", isPresented: $showLiveConfirmation) {
+                                TextField("scrivi LIVE", text: $liveConfirmText)
+                                    .textInputAutocapitalization(.characters)
+                                    .autocorrectionDisabled()
+                                Button("ANNULLA", role: .cancel) { paperTrading = true }
+                                Button("CONFERMA LIVE", role: .destructive) {
+                                    paperTrading = liveConfirmText.trimmingCharacters(in: .whitespaces).uppercased() != "LIVE"
+                                }
+                            } message: {
+                                Text("Con il live gli ordini usano SOLDI VERI e le perdite sono reali. Scrivi LIVE per confermare.")
+                            }
                         Text(paperTrading
                              ? "Ordini inviati all'ambiente paper Alpaca."
                              : "ATTENZIONE: ordini su capitale reale. Verifica prima in paper trading.")
