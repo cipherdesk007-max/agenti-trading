@@ -14,7 +14,10 @@ import pandas as pd
 import yfinance as yf
 
 SYMBOLS = ["SPY", "QQQ", "IWM", "DIA", "XLK", "XLF", "XLE", "XLV", "XLY", "XLI", "GLD", "TLT"]
-COSTS = [0.0, 0.0002, 0.0005]
+COSTS = [0.0, 0.00003, 0.0001, 0.0002, 0.0005]
+# Costo realistico per lato con ordini d'asta (MOC in chiusura, OPG in apertura) sugli
+# ETF più liquidi: commissioni Alpaca 0, spread di 1 centesimo su 500–700 $ ≈ 0,002%.
+LIQUID = ["SPY", "QQQ", "IWM", "GLD"]
 
 
 def t_stat(r):
@@ -48,6 +51,20 @@ def overnight():
         print(f"- tutti, costo {c:.2%}/lato: medio {r.mean() * 100:+.4f}% a notte (t = {t_stat(r):+.2f}), in guadagno {np.mean(r > 0):.0%}")
     r = np.asarray(recent)
     print(f"- tutti, ultimi 2 anni, 0,02%/lato: medio {r.mean() * 100:+.4f}% (t = {t_stat(r):+.2f})")
+    print("\n### Solo i 4 più liquidi (SPY, QQQ, IWM, GLD), per costo per lato e periodo\n")
+    print("| costo/lato | 2006–oggi medio (t) | ultimi 2 anni medio (t) | annuo stimato 2 anni |")
+    print("|---|---|---|---|")
+    raw = {}
+    for sym in LIQUID:
+        d = yf.download(sym, start="2006-01-01", auto_adjust=False, progress=False)
+        if isinstance(d.columns, pd.MultiIndex):
+            d.columns = d.columns.get_level_values(0)
+        raw[sym] = (d["Open"].shift(-1) / d["Close"] - 1).dropna()
+    for c in COSTS:
+        allr = np.concatenate([(raw[s_] - 2 * c).values for s_ in raw])
+        rec = np.concatenate([(raw[s_][raw[s_].index >= raw[s_].index[-1] - pd.Timedelta(days=730)] - 2 * c).values for s_ in raw])
+        # un ETF a notte a rotazione ≈ media per notte × 252
+        print(f"| {c:.3%} | {allr.mean() * 100:+.4f}% ({t_stat(allr):+.1f}) | {rec.mean() * 100:+.4f}% ({t_stat(rec):+.1f}) | {((1 + rec.mean()) ** 252 - 1):+.1%} |")
 
 
 def late_reversal():
