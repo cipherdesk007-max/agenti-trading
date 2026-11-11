@@ -53,6 +53,7 @@ jobs:
         run: xcodegen generate --spec project.yml
 
       # Test automatici delle regole di rischio: se falliscono, niente IPA.
+      # Test unitari (rischio, strategia, ciclo giornaliero): BLOCCANTI.
       - name: Run risk tests (simulatore)
         run: |
           UDID=$(xcrun simctl list devices available -j | python3 -c '
@@ -72,7 +73,35 @@ jobs:
             -destination "id=$UDID" \
             -derivedDataPath "$PWD/DerivedDataTests" \
             CODE_SIGNING_ALLOWED=NO \
-            test
+            build-for-testing
+          xcodebuild \
+            -project QuantSwarmAlphaZero.xcodeproj \
+            -scheme QuantSwarmAlphaZero \
+            -destination "id=$UDID" \
+            -derivedDataPath "$PWD/DerivedDataTests" \
+            -only-testing:QuantSwarmTests \
+            test-without-building
+
+      # Test dell'interfaccia: con riprova. Il simulatore Intel di GitHub a volte
+      # non si avvia in tempo ("AX loaded notification"): in quel caso avviso,
+      # senza bloccare l'IPA (i test unitari sopra restano bloccanti).
+      - name: Run UI tests (simulatore)
+        id: uitests
+        continue-on-error: true
+        run: |
+          xcodebuild \
+            -project QuantSwarmAlphaZero.xcodeproj \
+            -scheme QuantSwarmAlphaZero \
+            -destination "id=$SIM_UDID" \
+            -derivedDataPath "$PWD/DerivedDataTests" \
+            -only-testing:QuantSwarmUITests \
+            -retry-tests-on-failure -test-iterations 2 \
+            test-without-building
+
+      - name: Avviso UI test
+        if: steps.uitests.outcome == 'failure'
+        run: |
+          echo "::warning::UI test non superati, vedi log: controllare se è il simulatore o l'app."
 
       # Screenshot reali dell'interfaccia (dati di esempio, -QSPreview, solo
       # build debug): servono a controllare la grafica prima di consegnarla.
