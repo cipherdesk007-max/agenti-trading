@@ -100,3 +100,48 @@ def late_reversal():
 if __name__ == "__main__":
     overnight()
     late_reversal()
+
+
+def overnight_portfolio():
+    """Portafoglio vero: ogni notte metà... no: tutto il capitale diviso in parti uguali sui
+    4 ETF liquidi, comprati in asta di chiusura (MOC) e venduti in asta di apertura (OPG).
+    Confronto con compra-e-tieni degli stessi 4 in parti uguali."""
+    print("\n## 3. Portafoglio overnight (SPY, QQQ, IWM, GLD in parti uguali), costo 0,003%/lato\n")
+    closes, opens = {}, {}
+    for sym in LIQUID:
+        d = yf.download(sym, start="2006-01-01", auto_adjust=False, progress=False)
+        if isinstance(d.columns, pd.MultiIndex):
+            d.columns = d.columns.get_level_values(0)
+        closes[sym], opens[sym] = d["Close"], d["Open"]
+    c = pd.DataFrame(closes).dropna()
+    o = pd.DataFrame(opens).reindex(c.index)
+    night = (o.shift(-1) / c - 1).dropna()
+    port = night.mean(axis=1) - 2 * 0.00003
+    adj = {}
+    for sym in LIQUID:
+        a = yf.download(sym, start="2006-01-01", auto_adjust=True, progress=False)["Close"]
+        adj[sym] = np.asarray(a).ravel() if False else a.squeeze()
+    bh = pd.DataFrame(adj).reindex(c.index).pct_change().mean(axis=1).dropna()
+
+    def report(r, name):
+        eq = (1 + r).cumprod()
+        years = len(r) / 252
+        cagr = eq.iloc[-1] ** (1 / years) - 1
+        dd = (eq / eq.cummax() - 1).min()
+        sharpe = r.mean() / r.std() * np.sqrt(252)
+        print(f"- {name}: CAGR {cagr:+.1%} · perdita max {dd:.0%} · Sharpe {sharpe:.2f}")
+        return eq
+
+    eq = report(port, "overnight")
+    report(bh, "compra e tieni (stessi 4)")
+    recent = port[port.index >= port.index[-1] - pd.Timedelta(days=730)]
+    report(recent, "overnight ultimi 2 anni")
+    print("\n| anno | overnight | compra e tieni |\n|---|---|---|")
+    for year in sorted(set(port.index.year)):
+        a = (1 + port[port.index.year == year]).prod() - 1
+        b = (1 + bh[bh.index.year == year]).prod() - 1
+        print(f"| {year} | {a:+.1%} | {b:+.1%} |")
+
+
+if __name__ == "__main__":
+    overnight_portfolio()
