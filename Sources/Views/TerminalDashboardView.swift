@@ -1528,17 +1528,22 @@ private struct SystemSettingsView: View {
         let equity = engine.account?.equityValue
         let capital = min(draft.sanitized.capitalCap, equity ?? 0)
         let risk = draft.sanitized.riskFraction
-        let ok = snapshots.keys.sorted().filter { symbol in
-            let s = snapshots[symbol]!
+        func fits(_ symbol: String) -> Bool {
+            guard let s = snapshots[symbol] else { return false }
             return RiskRules.canBuyOneShare(price: s.close, stopDistance: DailyStrategy.stopATR * s.atr14,
                                             capital: capital, freeCash: capital, riskFraction: risk)
         }
-        let missing = snapshots.keys.sorted().filter { !ok.contains($0) }
+        let basket = DailyStrategy.basket.filter { snapshots[$0] != nil }
+        // Comprabile = l'ETF o il suo gemello economico entra nel capitale.
+        let viaTwin = basket.filter { !fits($0) && (DailyStrategy.twins[$0] ?? []).contains(where: fits) }
+        let ok = basket.filter { fits($0) } + viaTwin
+        let missing = basket.filter { !ok.contains($0) }
         let text: String
         if snapshots.isEmpty || equity == nil {
             text = "ETF COMPRABILI: si calcola al primo controllo (START o CONTROLLA ORA)."
         } else {
-            text = "ETF COMPRABILI: \(ok.count)/\(snapshots.count)"
+            text = "ETF COMPRABILI: \(ok.count)/\(basket.count)"
+                + (viaTwin.isEmpty ? "" : " · col gemello \(viaTwin.joined(separator: ", "))")
                 + (missing.isEmpty ? "" : " · esclusi \(missing.joined(separator: ", "))")
         }
         let color: Color = (snapshots.isEmpty || equity == nil) ? .gray : (ok.count >= 8 ? DashboardPalette.green : (ok.count >= 4 ? .orange : .red))

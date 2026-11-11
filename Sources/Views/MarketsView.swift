@@ -91,11 +91,15 @@ struct MarketsPanel: View {
     private var columns: [GridItem] { Array(repeating: GridItem(.flexible(), spacing: 8), count: 3) }
 
     private var dailyGrid: some View {
-        let held = Set(engine.positions.map { $0.symbol.uppercased() })
+        // Una posizione sul gemello (es. SPYM) conta come posizione sull'ETF (SPY).
+        let held = Set(engine.positions.map { DailyStrategy.family(of: $0.symbol) })
         let risk = engine.strategyConfig.sanitized.riskFraction
         let insights = DailyStrategy.basket.map { symbol in
-            MarketInsight.evaluate(symbol: symbol, bars: engine.marketBars[symbol] ?? [], held: held.contains(symbol),
-                                   capital: capital, riskFraction: risk)
+            let twin = (DailyStrategy.twins[symbol] ?? []).first.flatMap { t in
+                engine.marketBars[t].map { (symbol: t, bars: $0) }
+            }
+            return MarketInsight.evaluate(symbol: symbol, bars: engine.marketBars[symbol] ?? [], held: held.contains(symbol),
+                                          capital: capital, riskFraction: risk, twin: twin)
         }
         return LazyVGrid(columns: columns, spacing: 8) {
             ForEach(insights, id: \.symbol) { insight in

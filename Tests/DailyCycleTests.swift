@@ -45,7 +45,9 @@ private actor FakeBroker: BrokerClient {
         guard let b = bars[symbol] else { throw FakeError() }
         return b
     }
-    func latestPrice(symbol: String) async throws -> Double { price }
+    var prices: [String: Double] = [:]
+    func set(prices: [String: Double]) { self.prices = prices }
+    func latestPrice(symbol: String) async throws -> Double { prices[symbol] ?? price }
     func cancelOrder(id: String) async throws {
         cancelled.append(id)
         // Annullare un ordine annulla anche le sue gambe.
@@ -404,6 +406,50 @@ final class DailyCycleTests: XCTestCase {
         let result = await runner(broker, brain).run(capInput(400)) { _ in }
         XCTAssertEqual(result.kimiCalls, 0)
         XCTAssertFalse(result.book.alreadyDecided("SPY", day: today), "Va rivalutato se il capitale cambia")
+    }
+
+    // MARK: - Gemelli economici
+
+    /// Stesso andamento di `pullback` a un decimo del prezzo (come SPY → SPYM).
+    private var cheapPullback: [Candle] { candles((0..<247).map { (100 + 0.2 * Double($0)) / 10 } + [14.6, 14.4, 14.2]) }
+
+    func testTwinBoughtWhenOriginalDoesNotFitCapital() async throws {
+        // 400 USD non comprano 1 SPY (142): il segnale di SPY si esegue su SPYM.
+        let broker = FakeBroker(bars: ["SPY": pullback, "SPYM": cheapPullback])
+        await broker.set(prices: ["SPYM": 14.2])
+        let brain = FakeBrain()
+        let result = await runner(broker, brain).run(capInput(400)) { _ in }
+        let order = try XCTUnwrap(result.orders.first)
+        XCTAssertEqual(order.symbol, "SPYM")
+        XCTAssertLessThanOrEqual(order.quantity * order.limitPrice, 100 + 1e-6, "Tetto 25% del capitale")
+        let candidates = await brain.lastCandidates
+        XCTAssertEqual(candidates.first?.signalFrom, "SPY")
+        XCTAssertTrue(result.book.alreadyDecided("SPY", day: today))
+        XCTAssertEqual(result.book.entries["SPYM"], today)
+    }
+
+    func testOriginalPreferredWhenCapitalIsEnough() async throws {
+        let broker = FakeBroker(bars: ["SPY": pullback, "SPYM": cheapPullback])
+        let result = await runner(broker, FakeBrain()).run(capInput(100_000)) { _ in }
+        XCTAssertEqual(result.orders.first?.symbol, "SPY")
+    }
+
+    func testHeldTwinBlocksTheOriginalSignal() async {
+        // Già dentro con SPYM: il segnale di SPY è la stessa scommessa, Kimi non va chiamato.
+        let broker = FakeBroker(bars: ["SPY": pullback, "SPYM": cheapPullback])
+        await broker.set(positions: [BrokerPosition(symbol: "SPYM", quantity: 5, averageEntryPrice: 14, unrealizedPL: 0)])
+        await broker.set(orders: [BrokerOrder(id: "t1", symbol: "SPYM", side: "sell", type: "stop", status: "new",
+                                              quantity: 5, filledQuantity: 0, stopPrice: 13, parentOrderId: "p", submittedAt: nil)])
+        let brain = FakeBrain()
+        let result = await runner(broker, brain).run(capInput(400)) { _ in }
+        XCTAssertEqual(result.kimiCalls, 0)
+        XCTAssertTrue(result.candidates.isEmpty)
+    }
+
+    func testFamilyMapsTwinsToBasket() {
+        XCTAssertEqual(DailyStrategy.family(of: "spym"), "SPY")
+        XCTAssertEqual(DailyStrategy.family(of: "XLF"), "XLF")
+        XCTAssertTrue(DailyStrategy.tradable.contains("GLDM"))
     }
 
     func testCycleReportsEquityAndBenchmark() async {

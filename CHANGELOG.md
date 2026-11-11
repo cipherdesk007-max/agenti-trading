@@ -8,6 +8,7 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 ## [Non rilasciato]
 
 ### Aggiunto
+- **Gemelli economici** nella giornaliera: il segnale si calcola sempre sull'ETF originale; se il capitale del bot non basta per 1 azione, si compra il gemello sullo stesso indice (SPY→SPYM, QQQ→QQQM, IWM→VTWO, GLD→GLDM). Con conti grandi si compra l'originale: segue il saldo. ETF e gemello non si tengono mai insieme. Mercati ed "ETF comprabili" lo mostrano.
 - **TRADUCI** nelle notizie del grafico: usa la traduzione di Apple direttamente sul telefono, gratis e senza crediti Kimi, con iOS 17.4 o successivo.
 - **NASCONDI SALDO**: con l'occhio accanto al patrimonio, oppure in Sistema, saldo, P&L, capitale e importi delle posizioni diventano •••••. Le percentuali e i prezzi degli ETF restano visibili. L'impostazione resta salvata.
 - **Notizie agli agenti**: quando c'è un segnale, Brain e Reviewer ricevono i titoli delle notizie Benzinga delle ultime 48 ore sull'ETF e sul mercato (SPY e QQQ), presi dalla News API di Alpaca con le stesse chiavi, senza costi. Servono a non comprare dentro un evento che cambia il quadro (Fed, inflazione, crollo di un settore), non a inseguire le notizie. Il Reviewer boccia se una notizia spiega il calo con un cambiamento vero.
