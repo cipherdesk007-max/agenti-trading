@@ -14,6 +14,9 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 - Nel grafico di ogni ETF c'è la sezione **NOTIZIE · 48 ORE**, con le stesse notizie che riceve Kimi.
 
 ### Corretto
+- Niente più falso allarme HEARTBEAT al rientro dal background: il tempo con l'app chiusa non conta.
+- Una sola riconciliazione col broker anche se iOS segnala il rientro due volte.
+- "Strategia: nessun segnale oggi" scritto una volta al giorno, non a ogni riapertura.
 - Catena agenti: "0 crediti" compariva anche su Rischio ed Esecutore, che sono codice e non usano mai Kimi. Ora compare solo su Analyst, Brain e Reviewer.
 
 ### Aggiunto

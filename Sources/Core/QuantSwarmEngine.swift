@@ -123,6 +123,11 @@ final class QuantSwarmEngine: ObservableObject {
     private var analysisInFlight = false
     private var heartbeatTask: Task<Void, Never>?
     private var heartbeatAlerted = false
+    /// Evita due riconciliazioni in parallelo se iOS segnala il rientro due volte.
+    private var reconciling = false
+    /// Ultimo esito "Strategia: …" scritto nel log: le ripetizioni identiche
+    /// a ogni rientro non sporcano il registro.
+    private var lastStrategyLog: String?
     /// Protezioni persistite (stop giornaliero UTC + drawdown): un riavvio
     /// dell'app non azzera i circuit breaker.
     private var guardState = RiskGuardStore.load()
@@ -664,7 +669,8 @@ final class QuantSwarmEngine: ObservableObject {
             } catch {
                 return
             }
-            guard isRunning, !heartbeatAlerted else { continue }
+            // In background iOS sospende il ciclo: non è un blocco.
+            guard isRunning, !heartbeatAlerted, acceptsNewOrders else { continue }
             guard let beat = lastLoopBeat else { continue }
             let silence = Date().timeIntervalSince(beat)
             guard silence > 150 else { continue }
@@ -803,6 +809,11 @@ final class QuantSwarmEngine: ObservableObject {
     func handleEnteredForeground() async {
         // Di nuovo in primo piano: il promemoria non serve più.
         NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
+        guard !reconciling else { return }
+        reconciling = true
+        defer { reconciling = false }
+        // Il tempo passato in background non conta per l'heartbeat.
+        if isRunning { lastLoopBeat = Date() }
         let wasSuspended = !acceptsNewOrders
         if wasSuspended, credentials != nil {
             log("App di nuovo in foreground: riconciliazione col broker in corso…", agent: .system)
@@ -2150,6 +2161,11 @@ extension QuantSwarmEngine {
         await refreshPortfolio()
     }
 
+    private static func dayKey(_ date: Date) -> String {
+        let c = Calendar(identifier: .gregorian).dateComponents(in: TimeZone(identifier: "America/New_York")!, from: date)
+        return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
+    }
+
     /// Applica un evento del ciclo: stato della catena, log, notifica.
     fileprivate func apply(_ event: DailyCycleEvent) {
         if let stage = event.stage {
@@ -2157,7 +2173,15 @@ extension QuantSwarmEngine {
         } else {
             lastLoopBeat = Date()
         }
-        if let message = event.log { log(message, agent: event.agent) }
+        if let message = event.log {
+            if message.hasPrefix("Strategia:") {
+                let key = "\(Self.dayKey(Date())) \(message)"
+                if key != lastStrategyLog { log(message, agent: event.agent) }
+                lastStrategyLog = key
+            } else {
+                log(message, agent: event.agent)
+            }
+        }
         if let notice = event.notify { NotificationManager.shared.notify(notice.title, body: notice.body) }
     }
 
