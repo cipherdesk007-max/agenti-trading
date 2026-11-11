@@ -191,7 +191,9 @@ struct NightCycleRunner: Sendable {
         func pending(_ s: String, side: String) -> Bool {
             orders.contains { $0.symbol.uppercased() == s && $0.side == side }
         }
+        // Gli acquisti di oggi a mercato aperto restano: si eseguono in chiusura.
         for symbol in book.positions.keys.sorted() where heldQty(symbol) <= 0 && !pending(symbol, side: "buy") {
+            if clock.isOpen, book.positions[symbol] == input.today { continue }
             book.positions[symbol] = nil
         }
 
