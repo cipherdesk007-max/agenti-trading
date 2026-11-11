@@ -1,6 +1,7 @@
 # FMLAB · QuantSwarm Alpha Zero
 
-Versione corrente: vedi [CHANGELOG.md](CHANGELOG.md) e, nell'app, **SISTEMA → VERSIONE**.
+Versione corrente: **1.3.0 build 130** (vedi [CHANGELOG.md](CHANGELOG.md) e, nell'app, **SISTEMA → VERSIONE**).
+Per revisori umani o AI: lo stato del progetto, le decisioni prese e i numeri degli studi sono in [docs/STATO.md](docs/STATO.md).
 
 App iOS 17+ (Swift 6, SwiftUI, SwiftData) di trading con agenti AI: Kimi via API sceglie e contesta, il codice decide quantità e rischio, Alpaca esegue. Nessuna credenziale nel repository.
 
@@ -10,6 +11,7 @@ App iOS 17+ (Swift 6, SwiftUI, SwiftData) di trading con agenti AI: Kimi via API
 |---|---|---|
 | **GIORNALIERA · ETF** (default) | 15 ETF (SPY, QQQ, IWM, DIA, 9 settori, GLD, TLT). Ingresso se chiusura > SMA200 e RSI(2) < 10. Stop a 2,5 ATR **sul broker, GTC**: resta attivo ad app chiusa. Uscita a chiusura > SMA5 o dopo 10 giorni. Un controllo subito, poi ogni 15 minuti ad app aperta, e a ogni riapertura. | Validata: batte ingressi casuali nel backtest 2006–oggi |
 | **VELOCE · SPERIMENTALE** | Candele 15m, filtro long, bracket in giornata, chiusura totale 10 minuti prima della fine della seduta. Serve l'app sempre aperta. | Nei backtest perde e non batte il caso |
+| **NOTTE · ETF** | Compra in asta di chiusura (MOC) S&P 500, Nasdaq-100, Russell 2000 e oro a peso uguale, vende in asta di apertura (OPG) il giorno dopo. ETF originale o gemello economico (SPYM, QQQM, VTWO, GLDM) secondo il saldo. Zero crediti Kimi. Due aperture al giorno: mattina entro le 15:28, pomeriggio 15:30–21:50 (ora italiana). Registro separato: non tocca le posizioni della giornaliera. | Studio 2006–oggi: circa +8% annuo, Sharpe 0,81, perdita massima −22%. In prova su conto paper separato |
 
 ## Schermate
 
@@ -31,15 +33,14 @@ Scout (dati, conto, posizioni) → Strategia (segnali a regole, zero crediti) �
 ## Verifica indipendente
 
 - **Test automatici**: a ogni push GitHub Actions esegue i test XCTest (regole di rischio, filtro, strategia giornaliera) su simulatore; se un test fallisce l'IPA non viene pubblicata.
-- **Backtest**: Actions → "Backtest filtro" → Run workflow (`tutti`, `giornaliero`, `intraday15`, `veloce5m`). Codice in `tools/`. I risultati sono nel riepilogo del run.
+- **Backtest**: Actions → "Backtest filtro" → Run workflow con `quale` = `tutti`, `app`, `piccolo`, `overnight`, `segnali`, `momentum`, `giornaliero`, `intraday15`, `veloce5m` oppure `oggi` (segnali di oggi con dati Yahoo, indipendenti dall'app). Il 1° di ogni mese parte da solo il controllo `mensile` (app, piccolo, overnight). Codice in `tools/`, risultati nel riepilogo del run.
 - **Broker**: confronta il registro dell'app con l'estratto conto Alpaca.
 
 ## Build e IPA
 
-1. Push su `main` con modifiche a `Sources/`, `Tests/`, `project.yml` o al workflow: GitHub Actions genera il progetto con XcodeGen, esegue i test su simulatore e, solo se passano, compila l'IPA non firmata.
-2. L'IPA viene pubblicata nella release `ultima` (`QuantSwarm-Alpha-Zero.ipa`, URL fisso) e nella release numerata `vX.Y.Z`, con le note prese dal CHANGELOG.
+1. Push su `main` con modifiche a `Sources/`, `Tests/`, `project.yml` o al workflow: GitHub Actions genera il progetto con XcodeGen, esegue i test unitari su simulatore e, solo se passano, compila l'IPA non firmata. I test di interfaccia e gli screenshot girano solo a mano (Run workflow con `uitest` / `screenshot`), per tenere veloce la CI.
+2. L'IPA finisce nel ramo `bozza-ipa` (`QuantSwarm-Alpha-Zero.ipa`, con il numero di build nel messaggio del commit); gli screenshot nel ramo `screenshot`. Le release si creano a mano dalla pagina Releases: il token di Actions non ha il permesso di crearle. La pubblicazione per l'aggiornamento dall'app parte solo con l'opzione `pubblica`.
 3. Per una nuova versione: aggiorna `MARKETING_VERSION` in `project.yml` (app e widget) e aggiungi la sezione in `CHANGELOG.md`.
-4. Screenshot dell'interfaccia (anche MERCATI e grafico): Actions → "Unsigned iOS IPA" → Run workflow con "screenshot" attivo; finiscono nella release `screenshot`.
 
 Build locale su macOS:
 
@@ -52,7 +53,8 @@ xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -d
 ## Avvio
 
 1. Inserisci la chiave Kimi (`https://api.moonshot.ai/v1`) e le chiavi Alpaca, prima in **paper**. Il passaggio al live richiede di scrivere `LIVE`, e ogni START in live chiede conferma.
-2. Modalità GIORNALIERA: premi START. L'app controlla i 15 ETF, chiama Kimi solo se c'è un segnale, mette ordine limite + stop GTC. Poi puoi chiuderla: riaprendola parte subito un controllo (o usa CONTROLLA ORA).
+2. Modalità GIORNALIERA: premi START. L'app controlla i 15 ETF, chiama Kimi solo se c'è un segnale, mette ordine limite + stop GTC. Poi puoi chiuderla: riaprendola parte subito un controllo (o usa CONTROLLA ORA). Basta aprirla una volta al giorno a mercato aperto: il segnale si calcola sulle barre chiuse e non cambia durante la seduta.
+   Modalità NOTTE: meglio su un secondo conto paper (SISTEMA → Conti Alpaca). Aprila la mattina entro le 15:28 (vendita all'apertura) e il pomeriggio entro le 21:50 (acquisto in chiusura); i promemoria arrivano alle 14:45 e alle 21:15.
 3. `STOP` ferma il motore senza toccare le posizioni. `HARD KILL SWITCH` annulla tutti gli ordini e chiude tutte le posizioni del conto.
 
 ## Protezioni (in codice)
@@ -61,6 +63,7 @@ xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -d
 - Uscite a regole solo a mercato aperto: a mercato chiuso lo stop resta.
 - Ingressi eseguiti in parte: il giorno dopo il residuo viene annullato e lo stop copre solo la quantità comprata.
 - La chiusura di fine giornata della modalità veloce tocca solo le sue posizioni, mai quelle della giornaliera.
+- La notte usa un registro proprio per conto (`NightBookStore`): vende solo quello che ha comprato. Ordini d'asta con `client_order_id` deterministico e ricerca prima di ogni nuovo invio, quindi mai due ordini uguali. Se la vendita del mattino è saltata, il pomeriggio chiude a mercato la posizione rimasta prima di ricomprare.
 - Rischio reale calcolato sul prezzo d'ingresso effettivo; posizione max 25% del capitale; max 3 posizioni; stop giornaliero e drawdown 10% (sblocco manuale); niente short.
 - Errore di Kimi o del broker = nessun ordine; timeout sull'invio = verifica sul broker, mai un secondo invio.
 - Barre giornaliere dal feed consolidato SIP (gratuito oltre i 15 minuti), con ripiego su IEX.
@@ -86,7 +89,8 @@ xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -d
 
 ## Limiti reali
 
-- Nessuna app iOS resta attiva 24/7: la giornaliera è pensata per questo (stop sul broker), la veloce richiede l'app aperta.
+- Nessuna app iOS resta attiva 24/7: la giornaliera è pensata per questo (stop sul broker), la notte usa ordini d'asta che restano sul broker, la veloce richiede l'app aperta.
+- Con un conto piccolo (1.000 $) circa il 44% dei segnali della giornaliera viene saltato perché 1 azione costa troppo; il rendimento percentuale cambia poco (studio `piccolo`).
 - I backtest descrivono il passato; il paper trading non dimostra rendimenti futuri. Il live può perdere più del rischio teorico in caso di gap o rifiuti del broker.
 
 ## Riferimenti ufficiali

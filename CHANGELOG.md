@@ -7,6 +7,8 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+## [1.3.0 · build 130] - 2026-11-11
+
 ### Aggiunto
 - **MODALITÀ NOTTE**: compra in chiusura (asta MOC) S&P 500, Nasdaq-100, Russell 2000 e oro a peso uguale e vende all'apertura del giorno dopo (asta OPG). Per ogni indice l'ETF originale o il gemello economico (SPYM, QQQM, VTWO, GLDM) secondo il saldo. Zero crediti Kimi. Due promemoria: 14:45 per la vendita, 21:15 per l'acquisto (ora italiana). Le posizioni della giornaliera non vengono mai toccate. Studio 2006–oggi: circa +8% l'anno, cali fino al −22%.
 - **TRADUCI** nelle notizie del grafico: usa la traduzione di Apple direttamente sul telefono, gratis e senza crediti Kimi, con iOS 17.4 o successivo.
