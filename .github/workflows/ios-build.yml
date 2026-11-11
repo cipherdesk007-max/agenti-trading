@@ -16,6 +16,10 @@ on:
         description: "Fai anche gli screenshot dell'interfaccia"
         type: boolean
         default: false
+      uitest:
+        description: "Esegui anche i test dell'interfaccia (circa 4 minuti)"
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -85,8 +89,11 @@ jobs:
       # Test dell'interfaccia: con riprova. Il simulatore Intel di GitHub a volte
       # non si avvia in tempo ("AX loaded notification"): in quel caso avviso,
       # senza bloccare l'IPA (i test unitari sopra restano bloccanti).
+      # A ogni push solo i test unitari (veloci, bloccanti): i test
+      # dell'interfaccia girano su richiesta (Run workflow) e prima delle release.
       - name: Run UI tests (simulatore)
         id: uitests
+        if: github.event_name == 'workflow_dispatch' && inputs.uitest
         continue-on-error: true
         run: |
           xcodebuild \

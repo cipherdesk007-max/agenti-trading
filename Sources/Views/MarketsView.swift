@@ -66,7 +66,13 @@ struct MarketsPanel: View {
         .onAppear {
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
-            if selected == nil, let i = args.firstIndex(of: "-QSMarket"), i + 1 < args.count { selected = args[i + 1] }
+            if selected == nil, let i = args.firstIndex(of: "-QSMarket"), i + 1 < args.count {
+                let symbol = args[i + 1]
+                Task { @MainActor in
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                    selected = symbol
+                }
+            }
             #endif
         }
         .sheet(item: Binding(get: { selected.map(SymbolID.init) }, set: { selected = $0?.id })) { item in
