@@ -31,6 +31,11 @@ final class MarketInsightTests: XCTestCase {
         XCTAssertEqual(MarketInsight.evaluate(symbol: "A", bars: Array(rising.prefix(50)), held: false, capital: 100_000, riskFraction: 0.01).state, .noData)
     }
 
+    func testUnknownCapitalIsNotJudged() {
+        let i = MarketInsight.evaluate(symbol: "SPY", bars: pullback, held: false, capital: nil, riskFraction: 0.01)
+        XCTAssertEqual(i.state, .signal, "Senza saldo letto non si dice fuori capitale")
+    }
+
     func testDayChange() throws {
         let i = MarketInsight.evaluate(symbol: "A", bars: candles([100, 102]), held: false, capital: 1_000, riskFraction: 0.01)
         XCTAssertEqual(try XCTUnwrap(i.dayChange), 0.02, accuracy: 1e-9)

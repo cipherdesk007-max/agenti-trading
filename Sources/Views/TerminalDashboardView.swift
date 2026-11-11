@@ -340,13 +340,13 @@ struct TerminalDashboardView: View {
         let points = engine.equityHistory
         let summary = EquityHistory.summary(points)
         let series = EquityHistory.normalized(points)
-        let capital = min(engine.strategyConfig.capitalCap, engine.account?.equityValue ?? 0)
+        let capital = engine.account.map { min(engine.strategyConfig.capitalCap, $0.equityValue) }
         func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", $0 * 100) } ?? "—" }
         return VStack(alignment: .leading, spacing: 8) {
             panelHeader("CAPITALE BOT · CONTRO SPY", color: terminalGreen)
             portfolioRow(
                 "IMPEGNATO",
-                "\(String(format: "%.0f", engine.botExposure)) / \(String(format: "%.0f", capital)) USD",
+                "\(String(format: "%.0f", engine.botExposure))" + (capital.map { " / \(String(format: "%.0f", $0))" } ?? "") + " USD",
                 color: .white
             )
             if let summary {
@@ -1353,7 +1353,8 @@ private struct SystemSettingsView: View {
     /// comprare con almeno 1 azione intera, sui prezzi dell'ultimo controllo.
     private var buyableRow: some View {
         let snapshots = engine.basketSnapshots
-        let capital = min(draft.sanitized.capitalCap, engine.account?.equityValue ?? 0)
+        let equity = engine.account?.equityValue
+        let capital = min(draft.sanitized.capitalCap, equity ?? 0)
         let risk = draft.sanitized.riskFraction
         let ok = snapshots.keys.sorted().filter { symbol in
             let s = snapshots[symbol]!
@@ -1362,13 +1363,13 @@ private struct SystemSettingsView: View {
         }
         let missing = snapshots.keys.sorted().filter { !ok.contains($0) }
         let text: String
-        if snapshots.isEmpty {
+        if snapshots.isEmpty || equity == nil {
             text = "ETF COMPRABILI: si calcola al primo controllo (START o CONTROLLA ORA)."
         } else {
             text = "ETF COMPRABILI: \(ok.count)/\(snapshots.count)"
                 + (missing.isEmpty ? "" : " · esclusi \(missing.joined(separator: ", "))")
         }
-        let color: Color = snapshots.isEmpty ? .gray : (ok.count >= 8 ? DashboardPalette.green : (ok.count >= 4 ? .orange : .red))
+        let color: Color = (snapshots.isEmpty || equity == nil) ? .gray : (ok.count >= 8 ? DashboardPalette.green : (ok.count >= 4 ? .orange : .red))
         return Text(text)
             .font(.system(.caption2, design: .monospaced, weight: .bold))
             .foregroundStyle(color)
@@ -1379,7 +1380,7 @@ private struct SystemSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                panelHeader("CONFIG SISTEMA · LIVE", color: DashboardPalette.green)
+                panelHeader("IMPOSTAZIONI", color: DashboardPalette.green)
                 Spacer()
                 Button("CARICA MODELLI") {
                     Task { await engine.loadAvailableKimiModels() }
@@ -1415,7 +1416,7 @@ private struct SystemSettingsView: View {
                 }
                 Text(draft.capitalLimitEnabled
                      ? "Il bot non impegna mai più di questa cifra (USD), anche se sul conto c'è di più. Utile solo se sul conto tieni altri soldi."
-                     : "Il bot usa tutto il saldo del conto (\(String(format: "%.0f", engine.account?.equityValue ?? 0)) USD): cresce e cala da solo con guadagni e perdite. Rischio 1% e tetto 25% si ricalcolano a ogni controllo.")
+                     : "Il bot usa tutto il saldo del conto" + (engine.account.map { " (\(String(format: "%.0f", $0.equityValue)) USD)" } ?? "") + ": cresce e cala da solo con guadagni e perdite. Rischio e tetto del 25% si ricalcolano a ogni controllo.")
                     .font(.system(.caption2, design: .monospaced, weight: .regular))
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)

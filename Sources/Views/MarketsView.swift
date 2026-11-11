@@ -37,8 +37,8 @@ struct MarketsPanel: View {
         (engine.activeMode ?? engine.strategyConfig.tradingMode) == .intraday
     }
 
-    private var capital: Double {
-        min(engine.strategyConfig.sanitized.capitalCap, engine.account?.equityValue ?? 0)
+    private var capital: Double? {
+        engine.account.map { min(engine.strategyConfig.sanitized.capitalCap, $0.equityValue) }
     }
 
     var body: some View {
@@ -220,7 +220,7 @@ struct MarketDetailView: View {
         let start = max(candles.count - visibleCount, 0)
         let levels = BrokerLevels.from(engine, symbol: symbol)
         let held = engine.positions.contains { $0.symbol.uppercased() == symbol.uppercased() }
-        let capital = min(engine.strategyConfig.sanitized.capitalCap, engine.account?.equityValue ?? 0)
+        let capital = engine.account.map { min(engine.strategyConfig.sanitized.capitalCap, $0.equityValue) }
         let insight = MarketInsight.evaluate(symbol: symbol, bars: candles, held: held, capital: capital,
                                              riskFraction: engine.strategyConfig.sanitized.riskFraction)
 
@@ -311,6 +311,9 @@ private struct CandleChart: View {
     let fastLabel: String
     let levels: BrokerLevels
 
+    /// Corpo della candela: circa il 60% dello spazio di una seduta.
+    private var bodyWidth: CGFloat { CGFloat(max(1.5, min(8, 300.0 / Double(max(candles.count, 1)) * 0.6))) }
+
     private var domain: ClosedRange<Double> {
         var values = candles.flatMap { [$0.low, $0.high] }
         values += slow.compactMap { $0 } + fast.compactMap { $0 }
@@ -331,7 +334,7 @@ private struct CandleChart: View {
                 RectangleMark(x: .value("Seduta", index),
                               yStart: .value("Apertura", min(candle.open, candle.close)),
                               yEnd: .value("Chiusura", max(candle.open, candle.close, min(candle.open, candle.close) + 0.0001)),
-                              width: .ratio(0.65))
+                              width: .fixed(bodyWidth))
                     .foregroundStyle(up ? Theme.green : Theme.red)
             }
             ForEach(Array(slow.enumerated()), id: \.offset) { index, value in

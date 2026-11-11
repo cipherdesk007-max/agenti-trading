@@ -2046,7 +2046,11 @@ extension QuantSwarmEngine {
         currentActivity = "In attesa · prossimo controllo alle \(Date().addingTimeInterval(780).formatted(date: .omitted, time: .shortened))"
         nextCheckAt = Date().addingTimeInterval(780)
         kimiCallsToday = 3
-        botExposure = 4_356
+        botExposure = 202.52
+        let decoder = JSONDecoder()
+        account = try? decoder.decode(AccountSnapshot.self, from: Data(#"{"account_number":"PA-ANTEPRIMA","cash":"797.48","equity":"1000","buying_power":"797.48","last_equity":"996.70","trading_blocked":false,"trade_suspended_by_email":false}"#.utf8))
+        positions = (try? decoder.decode([AlpacaPosition].self, from: Data(#"[{"symbol":"XLF","qty":"4","side":"long","avg_entry_price":"49.80","current_price":"50.63","market_value":"202.52","unrealized_pl":"3.32","unrealized_plpc":"0.0167","change_today":"-0.015"}]"#.utf8))) ?? []
+        openOrders = (try? decoder.decode([AlpacaOrder].self, from: Data(#"[{"id":"s1","status":"held","symbol":"XLF","side":"sell","type":"stop","qty":"4","stop_price":"47.85","parent_order_id":"p1"},{"id":"t1","status":"new","symbol":"XLF","side":"sell","type":"limit","qty":"4","limit_price":"51.40","parent_order_id":"p1"}]"#.utf8))) ?? []
         basketSnapshots = [
             "SPY": .init(close: 655, sma200: 600, sma5: 650, rsi2: 40, atr14: 7.5),
             "QQQ": .init(close: 590, sma200: 540, sma5: 585, rsi2: 35, atr14: 8.0),
@@ -2057,9 +2061,9 @@ extension QuantSwarmEngine {
         var preview: [EquityPoint] = []
         for i in 0..<40 {
             let day = DailyStrategy.tradingDay(Date().addingTimeInterval(Double(i - 40) * 86_400))
-            let bot = 100_000 + 10_000 * (0.0015 * Double(i) + 0.012 * sin(Double(i) / 3))
+            let bot = 1_000 * (1 + 0.0015 * Double(i) + 0.012 * sin(Double(i) / 3))
             let spy = 590 * (1 + 0.0012 * Double(i) + 0.008 * sin(Double(i) / 4))
-            preview = EquityHistory.record(preview, day: day, equity: bot, benchmark: spy, capital: 10_000)
+            preview = EquityHistory.record(preview, day: day, equity: bot, benchmark: spy)
         }
         equityHistory = preview
         var bars: [String: [Candle]] = [:]

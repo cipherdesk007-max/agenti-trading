@@ -128,7 +128,7 @@ jobs:
           }
           for TAB in CRUSCOTTO DETTAGLI BROKER SISTEMA; do shot "$TAB" -QSTab "$TAB"; done
           shot MERCATI -QSTab CRUSCOTTO -QSFocusMarkets
-          shot GRAFICO -QSTab CRUSCOTTO -QSMarket XLV
+          shot GRAFICO -QSTab CRUSCOTTO -QSMarket XLF
           ls -la shots
           echo "===== CRASH REPORT ====="
           find ~/Library/Logs/DiagnosticReports -name "QuantSwarm*" -mmin -30 2>/dev/null | while read f; do
