@@ -133,6 +133,15 @@ jobs:
             xcrun simctl launch "$SIM_UDID" com.quantswarm.alphazero -QSPreview "$@" || echo "LAUNCH FALLITO $NAME"
             sleep 14
             xcrun simctl io "$SIM_UDID" screenshot "shots/$NAME.png"
+            # Il simulatore Intel a volte è ancora sulla schermata di avvio
+            # (bianca): seconda foto più tardi, tiene la più "pesante".
+            sleep 8
+            xcrun simctl io "$SIM_UDID" screenshot "shots/$NAME-2.png"
+            if [ "$(stat -f%z "shots/$NAME-2.png")" -gt "$(stat -f%z "shots/$NAME.png")" ]; then
+              mv "shots/$NAME-2.png" "shots/$NAME.png"
+            else
+              rm -f "shots/$NAME-2.png"
+            fi
             if ! xcrun simctl spawn "$SIM_UDID" launchctl list | grep -q quantswarm; then
               echo "::warning::APP NON IN ESECUZIONE dopo $NAME (crash?)"
             fi

@@ -7,6 +7,8 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+## [1.3.0] - 2026-11-11
+
 ### Aggiunto
 - **Barra delle sezioni in basso** con icone (Cruscotto, Mercati, Dettagli, Broker, Sistema), alla portata del pollice. MERCATI diventa una sezione sua, con la legenda degli stati.
 - **Intestazione nuova**: patrimonio in grande, risultato del giorno in dollari e in percentuale, PAPER/LIVE e mercato aperto/chiuso come etichette, stato del motore in una riga.
@@ -22,6 +24,9 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 - **Conto piccolo** (`backtest_small.py`): azioni intere ai prezzi di oggi. Con 1.000 $ la giornaliera rende circa +1,8% l'anno, contro +2,2% con 100.000 $, con perdita massima −6%/−7%. Gli ETF "gemelli" economici (QQQM, VTWO, GLDM, SPYM) fanno saltare meno segnali, ma in due esecuzioni il rendimento è cambiato di segno rispetto al paniere attuale: differenza dentro il rumore, quindi il paniere resta com'è.
 - **Intraday momentum** (`backtest_momentum.py`): verifica sui dati recenti dello studio Gao, Han, Li e Zhou (JFE 2018) per la modalità veloce.
 
+### Corretto
+- Se il modello Kimi rifiuta il ragionamento "medio" (errore 400), la chiamata viene ripetuta una volta al livello base invece di perdere la decisione.
+
 ### Cambiato
 - Testi descrittivi in carattere di sistema, più leggibile; numeri ed etichette restano in stile terminale.
 
@@ -32,6 +37,7 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 - Su richiesta (Run workflow con "pubblica"), la CI pubblica la build sul repository pubblico `quantswarm-releases`: solo IPA, icona e sorgente `apps.json`, il codice resta privato. Serve il segreto `RELEASES_TOKEN`.
 
 ### Cambiato
+- IPA e screenshot della CI vanno sui branch `bozza-ipa` e `screenshot` (un commit sovrascritto ogni volta): da novembre il token delle Actions non può più creare release nel repository.
 - Le release non partono più da sole: di default l'IPA va in una bozza privata e viene consegnata a mano. `ultima`, `vX.Y.Z` e gli aggiornamenti dall'app partono solo con "pubblica".
 - CI più veloce: a ogni modifica girano solo i test sulla logica, che bloccano l'IPA se falliscono. I test dell'interfaccia e gli screenshot partono su richiesta, prima delle release.
 

@@ -618,6 +618,24 @@ actor KimiService {
         maxTokens: Int,
         reasoningEffort: String = "low"
     ) async throws -> String {
+        do {
+            return try await chatOnce(messages: messages, schema: schema, schemaName: schemaName,
+                                      maxTokens: maxTokens, reasoningEffort: reasoningEffort)
+        } catch QuantSwarmError.httpStatus(let status, _) where status == 400 && reasoningEffort != "low" {
+            // Il modello non accetta questo livello di ragionamento: si riprova
+            // una volta al livello base invece di perdere la decisione.
+            return try await chatOnce(messages: messages, schema: schema, schemaName: schemaName,
+                                      maxTokens: maxTokens, reasoningEffort: "low")
+        }
+    }
+
+    private func chatOnce(
+        messages: [[String: String]],
+        schema: [String: Any],
+        schemaName: String,
+        maxTokens: Int,
+        reasoningEffort: String
+    ) async throws -> String {
         let body: [String: Any] = [
             "model": modelBox.get(),
             "messages": messages,
