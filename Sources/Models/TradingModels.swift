@@ -193,6 +193,11 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     var widgetShowsAmounts: Bool
     /// Promemoria lun–ven 15:30 New York per aprire l'app (giornaliera).
     var dailyReminder: Bool
+    /// Capitale del bot in USD (paper e live): rischio e tetti si calcolano su
+    /// min(patrimonio, capitale) e il bot non impegna mai di più.
+    var botCapitalUSD: Double
+
+    static let botCapitalRange: ClosedRange<Double> = 2_000...1_000_000
 
     init(
         tradingMode: TradingMode = .daily,
@@ -208,7 +213,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         creditLimitEnabled: Bool = true,
         dailyCreditLimitUSD: Double = 1.0,
         widgetShowsAmounts: Bool = false,
-        dailyReminder: Bool = true
+        dailyReminder: Bool = true,
+        botCapitalUSD: Double = 10_000
     ) {
         self.tradingMode = tradingMode
         self.riskPerTradePercent = riskPerTradePercent
@@ -224,6 +230,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         self.dailyCreditLimitUSD = dailyCreditLimitUSD
         self.widgetShowsAmounts = widgetShowsAmounts
         self.dailyReminder = dailyReminder
+        self.botCapitalUSD = botCapitalUSD
     }
 
     init(from decoder: Decoder) throws {
@@ -242,7 +249,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
             creditLimitEnabled: try container.decodeIfPresent(Bool.self, forKey: .creditLimitEnabled) ?? true,
             dailyCreditLimitUSD: try container.decodeIfPresent(Double.self, forKey: .dailyCreditLimitUSD) ?? 1.0,
             widgetShowsAmounts: try container.decodeIfPresent(Bool.self, forKey: .widgetShowsAmounts) ?? false,
-            dailyReminder: try container.decodeIfPresent(Bool.self, forKey: .dailyReminder) ?? true
+            dailyReminder: try container.decodeIfPresent(Bool.self, forKey: .dailyReminder) ?? true,
+            botCapitalUSD: try container.decodeIfPresent(Double.self, forKey: .botCapitalUSD) ?? 10_000
         )
     }
 
@@ -261,6 +269,9 @@ struct StrategyConfig: Codable, Sendable, Equatable {
             copy.decisionTimeframeMinutes = 15
         }
         copy.dailyCreditLimitUSD = min(max(copy.dailyCreditLimitUSD, 0.10), 50.0)
+        copy.botCapitalUSD = copy.botCapitalUSD.isFinite
+            ? min(max(copy.botCapitalUSD, Self.botCapitalRange.lowerBound), Self.botCapitalRange.upperBound)
+            : 10_000
         return copy
     }
 

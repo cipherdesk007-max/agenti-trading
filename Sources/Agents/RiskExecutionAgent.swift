@@ -38,6 +38,7 @@ actor RiskExecutionAgent {
         riskFraction: Double = SystemLimits.maximumRiskFraction,
         atr: Double,
         maxOpenPositions: Int = SystemLimits.maxConcurrentPositions,
+        capitalCap: Double = .infinity,
         alreadyCommittedThisCycle: Set<String> = [],
         constraints: InstrumentConstraints = .alpacaStock,
         freshPrice: @Sendable () async -> Double?
@@ -120,10 +121,15 @@ actor RiskExecutionAgent {
             proposal,
             currentPrice: currentPrice,
             atr: atr,
-            account: RiskRules.Account(
-                equity: account.equityValue,
-                cash: account.cashValue,
-                buyingPower: account.buyingPowerValue
+            // Capitale del bot: valore delle posizioni aperte già impegnato.
+            account: RiskRules.capped(
+                RiskRules.Account(
+                    equity: account.equityValue,
+                    cash: account.cashValue,
+                    buyingPower: account.buyingPowerValue
+                ),
+                capital: capitalCap,
+                exposure: positions.reduce(0) { $0 + abs(Double($1.marketValue ?? "") ?? 0) }
             ),
             riskFraction: riskFraction,
             constraints: constraints

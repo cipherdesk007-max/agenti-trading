@@ -152,4 +152,47 @@ final class RiskRulesTests: XCTestCase {
         XCTAssertEqual(RiskRules.roundDown(99.999, tick: 0.01), 99.99, accuracy: 1e-9)
         XCTAssertEqual(RiskRules.roundDown(99.99, tick: 0.01), 99.99, accuracy: 1e-9)
     }
+
+    // MARK: - Capitale del bot
+
+    func testCappedUsesBotCapitalAndFreePart() {
+        let account = RiskRules.Account(equity: 100_000, cash: 80_000, buyingPower: 200_000)
+        let capped = RiskRules.capped(account, capital: 10_000, exposure: 4_000)
+        XCTAssertEqual(capped.equity, 10_000)
+        XCTAssertEqual(capped.cash, 6_000)
+        XCTAssertEqual(capped.buyingPower, 6_000)
+    }
+
+    func testCappedNeverExceedsRealEquityOrCash() {
+        let account = RiskRules.Account(equity: 3_000, cash: 1_000, buyingPower: 1_000)
+        let capped = RiskRules.capped(account, capital: 10_000, exposure: 0)
+        XCTAssertEqual(capped.equity, 3_000)
+        XCTAssertEqual(capped.cash, 1_000)
+    }
+
+    func testCappedFailsClosedOnBadExposure() {
+        let account = RiskRules.Account(equity: 100_000, cash: 100_000, buyingPower: 100_000)
+        XCTAssertEqual(RiskRules.capped(account, capital: 10_000, exposure: .nan).cash, 0)
+        XCTAssertEqual(RiskRules.capped(account, capital: 10_000, exposure: 50_000).cash, 0)
+        // Tetto non valido = nessun tetto (si usa il conto), mai un crash.
+        XCTAssertEqual(RiskRules.capped(account, capital: .infinity, exposure: 0).equity, 100_000)
+    }
+
+    func testStopOnlySizingWithCappedAccountRespectsCap() throws {
+        let account = RiskRules.capped(RiskRules.Account(equity: 100_000, cash: 100_000, buyingPower: 400_000),
+                                       capital: 10_000, exposure: 0)
+        let sizing = try RiskRules.sizeStopOnly(currentPrice: 100, stopDistance: 5, account: account,
+                                                riskFraction: 0.01, constraints: .alpacaStock).get()
+        XCTAssertLessThanOrEqual(sizing.riskAmount, 100 + 1e-6)
+        XCTAssertLessThanOrEqual(sizing.quantity * sizing.limitPrice, 2_500 + 1e-6)
+    }
+
+    func testConfigClampsBotCapital() {
+        XCTAssertEqual(StrategyConfig(botCapitalUSD: 10).sanitized.botCapitalUSD, 2_000)
+        XCTAssertEqual(StrategyConfig(botCapitalUSD: 1e9).sanitized.botCapitalUSD, 1_000_000)
+        XCTAssertEqual(StrategyConfig(botCapitalUSD: .nan).sanitized.botCapitalUSD, 10_000)
+        // Config salvate prima di questa versione: default 10.000.
+        let old = try? JSONDecoder().decode(StrategyConfig.self, from: Data("{}".utf8))
+        XCTAssertEqual(old?.botCapitalUSD, 10_000)
+    }
 }

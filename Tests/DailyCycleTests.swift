@@ -342,4 +342,69 @@ final class DailyCycleTests: XCTestCase {
         XCTAssertEqual(stops.count, 1)
         XCTAssertEqual(stops.first?.qty, 5, "Lo stop copre solo la quantità comprata")
     }
+
+    // MARK: - Capitale del bot
+
+    private func capInput(_ cap: Double, book: DailyBook = DailyBook()) -> DailyCycleInput {
+        DailyCycleInput(book: book, today: today, riskFraction: 0.01, maxOpenPositions: 3,
+                        entryBlock: nil, capitalCap: cap)
+    }
+
+    func testCapitalCapScalesRiskAndPositionToBotCapital() async throws {
+        let broker = FakeBroker(bars: ["SPY": pullback])
+        let brain = FakeBrain()
+        let result = await runner(broker, brain).run(capInput(5_000)) { _ in }
+        let order = try XCTUnwrap(result.orders.first)
+        // Conto da 100.000 ma capitale bot 5.000: rischio ≤ 1% di 5.000, posizione ≤ 25% di 5.000.
+        XCTAssertLessThanOrEqual((order.limitPrice - order.stopPrice) * order.quantity, 50 + 1e-6)
+        XCTAssertLessThanOrEqual(order.quantity * order.limitPrice, 1_250 + 1e-6)
+        XCTAssertGreaterThan(order.quantity, 0)
+    }
+
+    func testCommittedCapitalBlocksEntriesWithoutCallingKimi() async {
+        // QQQ già del bot per ~6.000 USD con capitale 5.000: niente nuovi ingressi.
+        let broker = FakeBroker(bars: ["SPY": pullback, "QQQ": rising])
+        await broker.set(marketOpen: false)
+        await broker.set(positions: [BrokerPosition(symbol: "QQQ", quantity: 40, averageEntryPrice: 140, unrealizedPL: 0)])
+        await broker.set(orders: [BrokerOrder(id: "q1", symbol: "QQQ", side: "sell", type: "stop", status: "new",
+                                              quantity: 40, filledQuantity: 0, stopPrice: 130, parentOrderId: "p", submittedAt: nil)])
+        var book = DailyBook()
+        book.entries["QQQ"] = "2026-11-05"
+        book.stops["QQQ"] = 130
+        let brain = FakeBrain()
+        let runner = DailyCycleRunner(broker: broker, brain: brain, basket: ["SPY", "QQQ"], exitFillWaitSeconds: 0)
+        let result = await runner.run(capInput(5_000, book: book)) { _ in }
+        XCTAssertGreaterThan(result.botExposure, 5_000)
+        XCTAssertEqual(result.kimiCalls, 0, "Senza capitale libero Kimi non va chiamato")
+        let entries = await broker.entryCalls.count
+        XCTAssertEqual(entries, 0)
+    }
+
+    func testPositionsOutsideTheBotDoNotCountAsBotExposure() async {
+        // Una posizione non del bot (non nel registro) non consuma il suo capitale.
+        let broker = FakeBroker(bars: ["SPY": pullback, "QQQ": rising])
+        await broker.set(marketOpen: false)
+        await broker.set(positions: [BrokerPosition(symbol: "QQQ", quantity: 40, averageEntryPrice: 140, unrealizedPL: 0)])
+        let brain = FakeBrain()
+        let runner = DailyCycleRunner(broker: broker, brain: brain, basket: ["SPY", "QQQ"], exitFillWaitSeconds: 0)
+        let result = await runner.run(capInput(5_000)) { _ in }
+        XCTAssertEqual(result.botExposure, 0, accuracy: 1e-9)
+        XCTAssertEqual(result.orders.count, 1)
+    }
+
+    func testUnaffordableCandidateNeverReachesKimi() async {
+        // Capitale troppo piccolo per 1 azione entro il 25%: zero crediti spesi.
+        let broker = FakeBroker(bars: ["SPY": pullback])
+        let brain = FakeBrain()
+        let result = await runner(broker, brain).run(capInput(400)) { _ in }
+        XCTAssertEqual(result.kimiCalls, 0)
+        XCTAssertFalse(result.book.alreadyDecided("SPY", day: today), "Va rivalutato se il capitale cambia")
+    }
+
+    func testCycleReportsEquityAndBenchmark() async {
+        let broker = FakeBroker(bars: ["SPY": rising])
+        let result = await runner(broker, FakeBrain()).run(input()) { _ in }
+        XCTAssertEqual(result.equity, 100_000)
+        XCTAssertNotNil(result.benchmarkClose)
+    }
 }

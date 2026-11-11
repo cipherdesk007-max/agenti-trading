@@ -107,6 +107,7 @@ struct TerminalDashboardView: View {
                                 reportPanel
                                 killButton
                             case .agents:
+                                capitalPanel
                                 decisionsPanel
                                 shadowPanel
                                 analysisPanel
@@ -303,7 +304,7 @@ struct TerminalDashboardView: View {
                             .fixedSize(horizontal: false, vertical: true)
                     }
                     if engine.drawdownLocked {
-                        Text("STOP DRAWDOWN: equity oltre il -10% dal picco. Nessun nuovo ordine finché non sblocchi manualmente.")
+                        Text("STOP DRAWDOWN: persi oltre il 10% del capitale bot dal picco. Nessun nuovo ordine finché non sblocchi manualmente.")
                             .font(.system(.caption2, design: .monospaced))
                             .foregroundStyle(.white.opacity(0.85))
                             .fixedSize(horizontal: false, vertical: true)
@@ -322,6 +323,43 @@ struct TerminalDashboardView: View {
 
     /// Kimi aggiunge valore? Esito ipotetico, con le stesse regole, dei
     /// candidati scelti e di quelli scartati.
+    /// Curva del capitale del bot contro SPY "compra e tieni", stessa scala
+    /// (100 = primo giorno), più quanto del capitale è già impegnato.
+    private var capitalPanel: some View {
+        let points = engine.equityHistory
+        let summary = EquityHistory.summary(points)
+        let series = EquityHistory.normalized(points)
+        let capital = engine.strategyConfig.botCapitalUSD
+        func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", $0 * 100) } ?? "—" }
+        return VStack(alignment: .leading, spacing: 8) {
+            panelHeader("CAPITALE BOT · CONTRO SPY", color: terminalGreen)
+            portfolioRow(
+                "IMPEGNATO",
+                "\(String(format: "%.0f", engine.botExposure)) / \(String(format: "%.0f", capital)) USD",
+                color: .white
+            )
+            if let summary {
+                portfolioRow("BOT (\(summary.days) sedute)", pct(summary.botReturn),
+                             color: summary.botReturn >= 0 ? terminalGreen : .red)
+                portfolioRow("SPY COMPRA E TIENI", pct(summary.benchmarkReturn), color: DashboardPalette.cyan)
+                portfolioRow("PERDITA MASSIMA DAL PICCO", pct(summary.maxDrawdown), color: .orange)
+                ComparisonChart(bot: series.bot, benchmark: series.benchmark,
+                                botColor: terminalGreen, benchmarkColor: DashboardPalette.cyan)
+                    .frame(height: 150)
+                Text("Verde: bot (guadagno del conto sul capitale del bot). Azzurro: SPY. 100 = primo giorno registrato. Il bot investe solo in parte e sta fermo molti giorni: deve perdere meno di SPY nei cali, non batterlo nei rialzi.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("La curva parte dalla prima seduta con l'app aperta a mercato aperto: un punto al giorno.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .panelStyle(terminalGreen)
+    }
+
     private var shadowPanel: some View {
         let s = engine.shadowSummary
         let stats = engine.entryStats
@@ -1280,6 +1318,16 @@ private struct SystemSettingsView: View {
     @EnvironmentObject private var engine: QuantSwarmEngine
     @State private var draft = StrategyConfig()
 
+    /// Gradini del capitale del bot (USD).
+    static let capitalSteps: [Double] = [2_000, 3_000, 5_000, 7_500, 10_000, 15_000, 20_000, 25_000,
+                                         50_000, 75_000, 100_000, 250_000, 500_000, 1_000_000]
+    static func nextCapital(after value: Double) -> Double {
+        capitalSteps.first { $0 > value + 0.5 } ?? capitalSteps[capitalSteps.count - 1]
+    }
+    static func previousCapital(before value: Double) -> Double {
+        capitalSteps.last { $0 < value - 0.5 } ?? capitalSteps[0]
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -1309,14 +1357,25 @@ private struct SystemSettingsView: View {
 
             Group {
                 Stepper(
-                    "Rischio per trade: \(String(format: "%.2f", draft.riskPerTradePercent))% equity",
+                    "Capitale bot: \(String(format: "%.0f", draft.botCapitalUSD)) USD",
+                    onIncrement: { draft.botCapitalUSD = Self.nextCapital(after: draft.botCapitalUSD) },
+                    onDecrement: { draft.botCapitalUSD = Self.previousCapital(before: draft.botCapitalUSD) }
+                )
+                Text(draft.botCapitalUSD < 5_000
+                     ? "Sotto 5.000 USD gli ETF più cari (SPY, QQQ) spesso non entrano: si compra almeno 1 azione intera."
+                     : "Il bot non impegna mai più di questa cifra; rischio e tetti si calcolano su questa, non sull'intero conto. Vale in paper e live: in paper usa la cifra che userai in live.")
+                    .font(.system(.caption2, design: .monospaced, weight: .regular))
+                    .foregroundStyle(draft.botCapitalUSD < 5_000 ? .orange : .gray)
+                    .fixedSize(horizontal: false, vertical: true)
+                Stepper(
+                    "Rischio per trade: \(String(format: "%.2f", draft.riskPerTradePercent))% capitale",
                     value: $draft.riskPerTradePercent,
                     in: 0.25...2.0,
                     step: 0.25
                 )
                 Stepper("Max posizioni aperte: \(draft.maxOpenPositions)", value: $draft.maxOpenPositions, in: 1...5)
                 Stepper(
-                    "Stop giornaliero: \(String(format: "%.1f", draft.dailyStopPercent))% equity",
+                    "Stop giornaliero: \(String(format: "%.1f", draft.dailyStopPercent))% capitale",
                     value: $draft.dailyStopPercent,
                     in: 0.5...5.0,
                     step: 0.5
@@ -1431,6 +1490,7 @@ private struct SystemSettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 let config = engine.strategyConfig
                 settingRow("MODALITÀ", config.tradingMode.label)
+                settingRow("CAPITALE BOT", "\(String(format: "%.0f", config.botCapitalUSD)) USD · impegnati \(String(format: "%.0f", engine.botExposure))")
                 settingRow("STATO APPLICATO", "rischio \(String(format: "%.2f", config.riskPerTradePercent))% · max \(config.maxOpenPositions) · stop giorno \(String(format: "%.1f", config.dailyStopPercent))%")
                 settingRow("MODELLO ATTIVO", config.kimiModel)
                 if config.tradingMode == .daily {
@@ -1485,6 +1545,50 @@ private struct SystemSettingsView: View {
                 .multilineTextAlignment(.trailing)
         }
         .font(.system(.caption2, design: .monospaced))
+    }
+}
+
+/// Due linee sulla stessa scala (bot e riferimento), con la linea 100 tratteggiata.
+private struct ComparisonChart: View {
+    let bot: [Double]
+    let benchmark: [Double?]
+    let botColor: Color
+    let benchmarkColor: Color
+
+    var body: some View {
+        Canvas { context, size in
+            let all = bot + benchmark.compactMap { $0 } + [100]
+            let minimum = all.min() ?? 99
+            let maximum = all.max() ?? 101
+            let span = max(maximum - minimum, 0.000_001)
+            let count = max(bot.count, benchmark.count)
+            func point(_ index: Int, _ value: Double) -> CGPoint {
+                let x = count <= 1 ? size.width / 2 : size.width * Double(index) / Double(count - 1)
+                let y = size.height - (value - minimum) / span * size.height
+                return CGPoint(x: x, y: y)
+            }
+            let base = Path { path in
+                path.move(to: CGPoint(x: 0, y: point(0, 100).y))
+                path.addLine(to: CGPoint(x: size.width, y: point(0, 100).y))
+            }
+            context.stroke(base, with: .color(.gray.opacity(0.5)), style: StrokeStyle(lineWidth: 0.5, dash: [4, 4]))
+            var benchLine = Path()
+            var started = false
+            for (index, value) in benchmark.enumerated() {
+                guard let value else { started = false; continue }
+                if started { benchLine.addLine(to: point(index, value)) } else { benchLine.move(to: point(index, value)); started = true }
+            }
+            context.stroke(benchLine, with: .color(benchmarkColor.opacity(0.8)), style: StrokeStyle(lineWidth: 1.5, lineJoin: .round))
+            let botLine = Path { path in
+                for (index, value) in bot.enumerated() {
+                    if index == 0 { path.move(to: point(index, value)) } else { path.addLine(to: point(index, value)) }
+                }
+            }
+            context.stroke(botLine, with: .color(botColor), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
+        }
+        .background(Color(white: 0.04))
+        .overlay(Rectangle().stroke(botColor.opacity(0.4), lineWidth: 1))
+        .accessibilityLabel("Curva del capitale del bot contro SPY")
     }
 }
 

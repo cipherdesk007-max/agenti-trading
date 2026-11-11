@@ -72,6 +72,10 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var activeMode: TradingMode?
     /// Registro ombra: scelti da Kimi vs scartati (esiti ipotetici).
     @Published private(set) var shadowSummary = ShadowSummary.from(DailyBookStore.load().shadow)
+    /// Curva del capitale del conto attivo (un punto per seduta) e valore che
+    /// il bot ha impegnato all'ultimo controllo.
+    @Published private(set) var equityHistory: [EquityPoint] = EquityHistoryStore.load(paper: true)
+    @Published private(set) var botExposure: Double = 0
     /// Ordini d'ingresso giornalieri: inviati, mai eseguiti, eseguiti in parte.
     @Published private(set) var entryStats = (placed: 0, unfilled: 0, partial: 0)
 
@@ -298,6 +302,7 @@ final class QuantSwarmEngine: ObservableObject {
         if previous.tradingMode != sanitized.tradingMode { changes.append("modalità \(sanitized.tradingMode.label) (dal prossimo START)") }
         if previous.riskPerTradePercent != sanitized.riskPerTradePercent { changes.append("rischio \(format(sanitized.riskPerTradePercent))%") }
         if previous.maxOpenPositions != sanitized.maxOpenPositions { changes.append("max posizioni \(sanitized.maxOpenPositions)") }
+        if previous.botCapitalUSD != sanitized.botCapitalUSD { changes.append("capitale bot \(format(sanitized.botCapitalUSD, fractionDigits: 0)) USD") }
         if previous.dailyStopPercent != sanitized.dailyStopPercent { changes.append("stop giorno \(format(sanitized.dailyStopPercent))%") }
         if previous.creditLimitEnabled != sanitized.creditLimitEnabled || previous.dailyCreditLimitUSD != sanitized.dailyCreditLimitUSD {
             changes.append("limite crediti \(sanitized.creditLimitEnabled ? format(sanitized.dailyCreditLimitUSD) + " USD" : "OFF")")
@@ -612,8 +617,19 @@ final class QuantSwarmEngine: ObservableObject {
             decisions: decisions,
             account: account,
             positions: positions,
-            performance: performanceStats
+            performance: performanceStats,
+            capitalLines: capitalReportLines()
         )
+    }
+
+    private func capitalReportLines() -> [String] {
+        var lines = ["Capitale:      \(format(strategyConfig.botCapitalUSD, fractionDigits: 0)) USD",
+                     "Impegnato:     \(format(botExposure, fractionDigits: 0)) USD"]
+        func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", $0 * 100) } ?? "—" }
+        if let summary = EquityHistory.summary(equityHistory) {
+            lines.append("Curva:         \(summary.days) sedute · bot \(pct(summary.botReturn)) · SPY \(pct(summary.benchmarkReturn)) · max perdita \(pct(summary.maxDrawdown))")
+        }
+        return lines
     }
 
     /// Cancella il report dal dispositivo dopo l'invio: zero spazio occupato.
@@ -934,6 +950,7 @@ final class QuantSwarmEngine: ObservableObject {
         service.setModel(strategyConfig.kimiModel)
         kimiService = service
         paperTrading = stored.paperTrading
+        equityHistory = EquityHistoryStore.load(paper: stored.paperTrading)
         isConfigured = true
         statusMessage = "Pronto in modalità \(stored.paperTrading ? "paper" : "live")"
     }
@@ -1343,6 +1360,7 @@ final class QuantSwarmEngine: ObservableObject {
                         riskFraction: config.riskFraction,
                         atr: atr,
                         maxOpenPositions: config.maxOpenPositions,
+                        capitalCap: config.botCapitalUSD,
                         alreadyCommittedThisCycle: cycleCommittedSymbols,
                         constraints: .alpacaStock,
                         freshPrice: { [weak self] in
@@ -1572,14 +1590,16 @@ final class QuantSwarmEngine: ObservableObject {
         guard let lastEquity = snapshot.lastEquityValue, lastEquity > 0 else { return }
         let config = strategyConfig.sanitized
         let dayPnL = snapshot.equityValue - lastEquity
-        let limit = config.dailyStopFraction * lastEquity
+        // Misurato sul capitale del bot: con 10.000 USD su un conto da 100.000
+        // il 2% vale 200 USD, non 2.000.
+        let limit = config.dailyStopFraction * min(lastEquity, config.botCapitalUSD)
         guard dayPnL <= -limit, !dailyStopActive else { return }
         guardState.dailyStopDayUTC = Self.dayStampUTC()
         RiskGuardStore.save(guardState)
         dailyStopOn = true
         let percent = format(config.dailyStopPercent)
         log(
-            "STOP GIORNALIERO: P&L \(format(dayPnL)) USD oltre il -\(percent)% di equity; "
+            "STOP GIORNALIERO: P&L \(format(dayPnL)) USD oltre il -\(percent)% del capitale bot; "
                 + "nuovi segnali sospesi fino alla mezzanotte UTC.",
             agent: .risk
         )
@@ -1597,13 +1617,15 @@ final class QuantSwarmEngine: ObservableObject {
             guardState.peakEquity = equity
             RiskGuardStore.save(guardState)
         }
-        let floor = guardState.peakEquity * (1 - SystemLimits.maxDrawdownFraction)
+        // Perdita dal picco misurata sul capitale del bot (stessa base del rischio).
+        let base = min(guardState.peakEquity, strategyConfig.sanitized.botCapitalUSD)
+        let floor = guardState.peakEquity - base * SystemLimits.maxDrawdownFraction
         guard guardState.peakEquity > 0, equity <= floor, !guardState.drawdownLocked else { return }
         guardState.drawdownLocked = true
         RiskGuardStore.save(guardState)
         drawdownLocked = true
         log(
-            "STOP DRAWDOWN: equity \(format(equity)) USD sotto il -10% dal picco "
+            "STOP DRAWDOWN: equity \(format(equity)) USD, persi oltre il 10% del capitale bot dal picco "
                 + "\(format(guardState.peakEquity)) USD; nuovi ordini bloccati fino a sblocco manuale.",
             agent: .risk
         )
@@ -1859,7 +1881,8 @@ extension QuantSwarmEngine {
             today: DailyStrategy.tradingDay(Date()),
             riskFraction: config.riskFraction,
             maxOpenPositions: config.maxOpenPositions,
-            entryBlock: entryBlock
+            entryBlock: entryBlock,
+            capitalCap: config.botCapitalUSD
         )
         let runner = DailyCycleRunner(broker: AlpacaBroker(credentials: credentials.alpaca), brain: kimi)
         let result = await runner.run(input) { [weak self] event in
@@ -1867,6 +1890,18 @@ extension QuantSwarmEngine {
         }
         guard !result.aborted else { return }
         DailyBookStore.save(result.book)
+        botExposure = result.botExposure
+        if result.marketOpen, let equity = result.equity {
+            // SPY in tempo reale (stesso istante del patrimonio); se manca,
+            // l'ultima chiusura giornaliera.
+            let spy = (try? await AlpacaService(credentials: credentials.alpaca).latestTradePrice(symbol: "SPY"))
+                ?? result.benchmarkClose
+            let updated = EquityHistory.record(EquityHistoryStore.load(paper: paperTrading),
+                                               day: input.today, equity: equity, benchmark: spy,
+                                               capital: config.botCapitalUSD)
+            EquityHistoryStore.save(updated, paper: paperTrading)
+        }
+        equityHistory = EquityHistoryStore.load(paper: paperTrading)
         shadowSummary = ShadowSummary.from(result.book.shadow)
         entryStats = (result.book.placedEntries, result.book.unfilledEntries, result.book.partialEntries)
         dailyCandidates = result.candidates
@@ -1944,6 +1979,15 @@ extension QuantSwarmEngine {
         currentActivity = "In attesa · prossimo controllo alle \(Date().addingTimeInterval(780).formatted(date: .omitted, time: .shortened))"
         nextCheckAt = Date().addingTimeInterval(780)
         kimiCallsToday = 3
+        botExposure = 4_356
+        var preview: [EquityPoint] = []
+        for i in 0..<40 {
+            let day = DailyStrategy.tradingDay(Date().addingTimeInterval(Double(i - 40) * 86_400))
+            let bot = 100_000 + 10_000 * (0.0015 * Double(i) + 0.012 * sin(Double(i) / 3))
+            let spy = 590 * (1 + 0.0012 * Double(i) + 0.008 * sin(Double(i) / 4))
+            preview = EquityHistory.record(preview, day: day, equity: bot, benchmark: spy, capital: 10_000)
+        }
+        equityHistory = preview
         creditsSpentToday = 0.04
         let now = Date()
         pipeline = [

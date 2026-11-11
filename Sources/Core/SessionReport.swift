@@ -20,7 +20,8 @@ enum SessionReportBuilder {
         decisions: [DecisionEntry],
         account: AccountSnapshot?,
         positions: [AlpacaPosition],
-        performance: PerformanceStats?
+        performance: PerformanceStats?,
+        capitalLines: [String] = []
     ) -> URL? {
         guard let directory = FileManager.default.urls(
             for: .documentDirectory,
@@ -38,7 +39,8 @@ enum SessionReportBuilder {
             decisions: decisions,
             account: account,
             positions: positions,
-            performance: performance
+            performance: performance,
+            capitalLines: capitalLines
         )
         do {
             // Un solo report alla volta: elimina i precedenti prima di scrivere.
@@ -99,7 +101,8 @@ enum SessionReportBuilder {
         decisions: [DecisionEntry],
         account: AccountSnapshot?,
         positions: [AlpacaPosition],
-        performance: PerformanceStats?
+        performance: PerformanceStats?,
+        capitalLines: [String]
     ) -> String {
         let rule = String(repeating: "=", count: 46)
         let thin = String(repeating: "-", count: 46)
@@ -127,6 +130,13 @@ enum SessionReportBuilder {
             lines.append("Dati conto non disponibili.")
         }
         lines.append("")
+
+        if !capitalLines.isEmpty {
+            lines.append("CAPITALE BOT")
+            lines.append(thin)
+            lines.append(contentsOf: capitalLines)
+            lines.append("")
+        }
 
         lines.append("METRICHE PERFORMANCE (trade chiusi)")
         lines.append(thin)

@@ -15,7 +15,7 @@ Scout (dati, conto, posizioni) → Strategia (segnali a regole, zero crediti) �
 
 ## Regole di rischio (in codice, testate)
 
-Rischio max 1% per trade (impostabile 0,25–2%, mai oltre 5%), posizione max 25% del capitale, max 3 posizioni, stop giornaliero e stop drawdown 10% con sblocco manuale, solo acquisti (niente short), limite giornaliero di spesa Kimi.
+**Capitale del bot** (default 10.000 USD, 2.000–1.000.000, paper e live): il bot non impegna mai di più e tutti i limiti si calcolano su questa cifra, non sull'intero conto. Rischio max 1% per trade (impostabile 0,25–2%, mai oltre 5%), posizione max 25% del capitale, max 3 posizioni, stop giornaliero e stop drawdown 10% del capitale con sblocco manuale, solo acquisti (niente short), limite giornaliero di spesa Kimi. In DETTAGLI la **curva del capitale** confronta il bot con SPY compra-e-tieni (un punto per seduta, paper e live separati).
 
 ## Verifica indipendente
 

@@ -69,6 +69,9 @@ struct DailyCycleInput: Sendable {
     let maxOpenPositions: Int
     /// nil = si possono aprire nuove posizioni; altrimenti il motivo del blocco.
     let entryBlock: String?
+    /// Capitale massimo che il bot può impegnare (USD). Rischio e tetto per
+    /// posizione si calcolano su min(patrimonio, capitale); oltre, niente ingressi.
+    var capitalCap: Double = .infinity
 }
 
 struct DailyCycleEvent: Sendable {
@@ -107,6 +110,12 @@ struct DailyCycleResult: Sendable {
     var kimiCalls = 0
     var marketOpen = false
     var aborted = false
+    /// Patrimonio letto dal broker a inizio ciclo (per la curva del capitale).
+    var equity: Double?
+    /// Ultima chiusura giornaliera di SPY (riferimento della curva).
+    var benchmarkClose: Double?
+    /// Valore impegnato dal bot (posizioni + ingressi pendenti) dopo le uscite.
+    var botExposure: Double = 0
 }
 
 struct DailyCycleRunner: Sendable {
@@ -138,6 +147,7 @@ struct DailyCycleRunner: Sendable {
             return result
         }
         result.marketOpen = marketOpen
+        result.equity = account.equity
         var bars: [String: [Candle]] = [:]
         var missing: [String] = []
         for symbol in basket {
@@ -158,6 +168,7 @@ struct DailyCycleRunner: Sendable {
                          detail: "\(bars.count)/\(basket.count) ETF aggiornati"
                             + (missing.isEmpty ? "" : " · mancano \(missing.joined(separator: ", "))")
                             + " · mercato \(marketOpen ? "aperto" : "chiuso")"))
+        result.benchmarkClose = bars["SPY"]?.last?.close
         var market: [String: DailyStrategy.Snapshot] = [:]
         for symbol in ["SPY", "QQQ", "IWM", "TLT", "GLD"] {
             if let b = bars[symbol], let s = DailyStrategy.snapshot(of: b) { market[symbol] = s }
@@ -258,6 +269,21 @@ struct DailyCycleRunner: Sendable {
             }
         }
 
+        // CAPITALE DEL BOT: quanto è già impegnato (posizioni del bot al prezzo
+        // dell'ultima chiusura + residuo degli ingressi pendenti).
+        let exposure = book.entries.keys.reduce(0.0) { sum, symbol in
+            let price = bars[symbol]?.last?.close ?? held[symbol]?.averageEntryPrice ?? 0
+            let heldQty = held[symbol]?.quantity ?? 0
+            let pendingQty = orders.filter { $0.isEntry && $0.symbol.uppercased() == symbol }
+                .reduce(0) { $0 + max($1.quantity - $1.filledQuantity, 0) }
+            return sum + max(heldQty + pendingQty, 0) * price
+        }
+        result.botExposure = exposure
+        let botAccount = RiskRules.capped(
+            RiskRules.Account(equity: account.equity, cash: account.cash, buyingPower: account.buyingPower),
+            capital: input.capitalCap, exposure: exposure
+        )
+
         // SEGNALI d'ingresso.
         let pendingNow = Set(orders.filter(\.isEntry).map { $0.symbol.uppercased() })
         let candidates = basket.compactMap { symbol -> DailyStrategy.Candidate? in
@@ -266,8 +292,8 @@ struct DailyCycleRunner: Sendable {
             return DailyStrategy.entryCandidate(symbol: symbol, bars: b)
         }
         result.candidates = candidates
-        let fresh = candidates.filter { !book.alreadyDecided($0.symbol, day: today) }
-        guard !fresh.isEmpty else {
+        let undecided = candidates.filter { !book.alreadyDecided($0.symbol, day: today) }
+        guard !undecided.isEmpty else {
             let text = candidates.isEmpty ? "nessun segnale oggi"
                 : "segnali già valutati oggi: \(candidates.map(\.symbol).joined(separator: ", "))"
             await emit(.init(stage: .strategy, state: .done, detail: text, log: "Strategia: \(text). Kimi non chiamato.", agent: .scout))
@@ -275,12 +301,24 @@ struct DailyCycleRunner: Sendable {
             result.book = book
             return result
         }
-        let list = fresh.map { "\($0.symbol) (RSI2 \(String(format: "%.1f", $0.snapshot.rsi2)))" }.joined(separator: ", ")
+        let list = undecided.map { "\($0.symbol) (RSI2 \(String(format: "%.1f", $0.snapshot.rsi2)))" }.joined(separator: ", ")
         await emit(.init(stage: .strategy, state: .done, detail: "segnali: \(list)",
                          log: "Strategia: segnali Trend+Pullback su \(list).", agent: .scout))
 
         let slots = input.maxOpenPositions - held.count - pendingNow.count
-        if let block = input.entryBlock ?? (slots <= 0 ? "già \(input.maxOpenPositions) posizioni/ordini aperti" : nil) {
+        // Solo i candidati di cui il capitale del bot può comprare almeno 1 azione
+        // (contante libero, tetto per posizione, rischio per trade) arrivano a
+        // Kimi: niente crediti spesi per ordini che il Rischio boccerebbe.
+        let positionCap = min(botAccount.cash, botAccount.equity * RiskRules.maximumPositionFraction)
+        let riskBudget = botAccount.equity * input.riskFraction
+        let fresh = undecided.filter { c in
+            let price = c.snapshot.close * (1 + RiskRules.entryLimitSlippage)
+            return positionCap >= price && riskBudget >= c.stopDistance + 0.01
+        }
+        let capitalBlock = fresh.isEmpty
+            ? "capitale bot insufficiente per 1 azione (libero \(fmt(botAccount.cash)) su \(fmt(botAccount.equity)) USD, impegnati \(fmt(exposure)))"
+            : nil
+        if let block = input.entryBlock ?? (slots <= 0 ? "già \(input.maxOpenPositions) posizioni/ordini aperti" : nil) ?? capitalBlock {
             await emit(.init(stage: .analyst, state: .blocked, detail: block, log: "Segnali non operati: \(block).", agent: .risk))
             await skip(after: .analyst, block, emit)
             result.book = book
@@ -337,7 +375,7 @@ struct DailyCycleRunner: Sendable {
         }
         await emit(.init(stage: .brain, state: .done, detail: "sceglie \(buys.map(\.symbol).joined(separator: ", "))"))
 
-        var equityLeft = account
+        var equityLeft = botAccount
         for verdict in buys {
             if Task.isCancelled { break }
             let symbol = verdict.symbol.uppercased()
@@ -381,7 +419,7 @@ struct DailyCycleRunner: Sendable {
             let sizing: RiskRules.StopSizing
             switch RiskRules.sizeStopOnly(
                 currentPrice: price, stopDistance: candidate.stopDistance,
-                account: RiskRules.Account(equity: account.equity, cash: equityLeft.cash, buyingPower: equityLeft.buyingPower),
+                account: equityLeft,
                 riskFraction: input.riskFraction, constraints: .alpacaStock
             ) {
             case .success(let value): sizing = value
@@ -418,8 +456,8 @@ struct DailyCycleRunner: Sendable {
             book.entries[symbol] = today
             book.stops[symbol] = sizing.stopPrice
             let notional = sizing.quantity * sizing.limitPrice
-            equityLeft = BrokerAccount(equity: account.equity, cash: equityLeft.cash - notional,
-                                       buyingPower: equityLeft.buyingPower - notional)
+            equityLeft = RiskRules.Account(equity: botAccount.equity, cash: max(equityLeft.cash - notional, 0),
+                                           buyingPower: max(equityLeft.buyingPower - notional, 0))
             result.orders.append(DailyPlacedOrder(symbol: symbol, orderId: orderId, quantity: sizing.quantity,
                                                   limitPrice: sizing.limitPrice, stopPrice: sizing.stopPrice,
                                                   takeProfitPrice: takeProfit, atr: snap.atr14, verdict: verdict))

@@ -214,6 +214,19 @@ enum RiskRules {
         return .success(StopSizing(quantity: quantity, limitPrice: limit, stopPrice: stop, riskAmount: riskAmount))
     }
 
+    /// Capitale del bot: il dimensionamento vede al massimo `capital` dollari,
+    /// meno quanto il bot ha già investito (`exposure`). Il rischio per trade e
+    /// il tetto del 25% si calcolano sul capitale del bot, non sull'intero conto;
+    /// contante e buying power non superano mai la parte ancora libera.
+    static func capped(_ account: Account, capital: Double, exposure: Double) -> Account {
+        let limit = capital.isFinite && capital > 0 ? capital : account.equity
+        let base = max(min(account.equity, limit), 0)
+        let free = max(base - max(exposure.isFinite ? exposure : base, 0), 0)
+        return Account(equity: base,
+                       cash: max(min(account.cash, free), 0),
+                       buyingPower: max(min(account.buyingPower, free), 0))
+    }
+
     static func roundUp(_ value: Double, tick: Double) -> Double {
         guard tick > 0 else { return value }
         return ((value / tick) - 1e-9).rounded(.up) * tick
