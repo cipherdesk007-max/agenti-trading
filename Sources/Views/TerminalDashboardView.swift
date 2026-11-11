@@ -26,6 +26,19 @@ private enum DashboardPalette {
 }
 
 private enum Formatters {
+    /// NASCONDI SALDO: saldi e guadagni diventano "•••••" (i prezzi no).
+    /// Aggiornato a ogni disegno del cruscotto dall'impostazione salvata.
+    nonisolated(unsafe) static var hidden = false
+
+    static func sync(_ hide: Bool) -> Bool {
+        hidden = hide
+        return hide
+    }
+
+    /// Saldo o guadagno: nascosto se NASCONDI SALDO è attivo.
+    static func amount(_ value: Double?) -> String { hidden ? "•••••" : money(value) }
+    static func signedAmount(_ value: Double) -> String { hidden ? "•••••" : signedMoney(value) }
+
     static func money(_ value: Double?) -> String {
         guard let value else { return "—" }
         let formatter = NumberFormatter()
@@ -232,22 +245,35 @@ struct TerminalDashboardView: View {
     /// Intestazione: patrimonio e risultato del giorno in grande, poi lo stato
     /// del motore in una riga. Tutto ciò che conta, senza aprire niente.
     private var statusHeader: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        let hidden = Formatters.sync(engine.strategyConfig.hideAmounts)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(engine.account.map { Formatters.money($0.equityValue) + " $" } ?? "— $")
+                    Text(engine.account.map { Formatters.amount($0.equityValue) + " $" } ?? "— $")
                         .font(.system(size: 30, weight: .bold, design: .rounded))
                         .monospacedDigit()
                         .foregroundStyle(Theme.textPrimary)
                         .contentTransition(.numericText())
                     if let account = engine.account, let dayPnL = account.dayPnL {
                         let base = account.lastEquityValue ?? account.equityValue
-                        Text(Formatters.signedMoney(dayPnL) + " $ oggi" + (base > 0 ? String(format: " · %+.2f%%", dayPnL / base * 100) : ""))
+                        Text(Formatters.signedAmount(dayPnL) + " $ oggi" + (base > 0 ? String(format: " · %+.2f%%", dayPnL / base * 100) : ""))
                             .font(.system(.footnote, design: .rounded, weight: .semibold))
                             .monospacedDigit()
                             .foregroundStyle(Theme.signed(dayPnL))
                     }
                 }
+                Button {
+                    var config = engine.strategyConfig
+                    config.hideAmounts.toggle()
+                    engine.updateStrategyConfig(config)
+                } label: {
+                    Image(systemName: hidden ? "eye.slash" : "eye")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(Theme.textTertiary)
+                        .padding(6)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(hidden ? "Mostra saldo" : "Nascondi saldo")
                 Spacer()
                 VStack(alignment: .trailing, spacing: 5) {
                     Text(engine.paperTrading ? "PAPER" : "LIVE")
@@ -406,7 +432,7 @@ struct TerminalDashboardView: View {
             panelHeader("CAPITALE BOT · CONTRO SPY", color: terminalGreen)
             portfolioRow(
                 "IMPEGNATO",
-                "\(String(format: "%.0f", engine.botExposure))" + (capital.map { " / \(String(format: "%.0f", $0))" } ?? "") + " USD",
+                Formatters.amount(engine.botExposure) + (capital.map { " / " + Formatters.amount($0) } ?? "") + " USD",
                 color: .white
             )
             if let summary {
@@ -675,13 +701,13 @@ struct TerminalDashboardView: View {
                 statTile(
                     "POSIZIONI",
                     "\(engine.positions.count) aperte",
-                    engine.positions.isEmpty ? "nessuna" : Formatters.signedMoney(unrealized) + " non realizzati",
+                    engine.positions.isEmpty ? "nessuna" : Formatters.signedAmount(unrealized) + " non realizzati",
                     unrealized >= 0 ? terminalGreen : .red
                 )
                 statTile(
                     "P&L GIORNATA",
-                    engine.account?.dayPnL.map(Formatters.signedMoney) ?? "—",
-                    "equity " + Formatters.money(engine.account?.equityValue),
+                    engine.account?.dayPnL.map(Formatters.signedAmount) ?? "—",
+                    "equity " + Formatters.amount(engine.account?.equityValue),
                     (engine.account?.dayPnL ?? 0) >= 0 ? terminalGreen : .red
                 )
             }
@@ -852,13 +878,13 @@ struct TerminalDashboardView: View {
                 .disabled(engine.isKillInProgress)
             }
             if let account = engine.account {
-                portfolioRow("EQUITY", Formatters.money(account.equityValue), color: .white)
-                portfolioRow("CASH", Formatters.money(account.cashValue), color: .white)
-                portfolioRow("BUYING POWER", Formatters.money(account.buyingPowerValue), color: .white)
+                portfolioRow("EQUITY", Formatters.amount(account.equityValue), color: .white)
+                portfolioRow("CASH", Formatters.amount(account.cashValue), color: .white)
+                portfolioRow("BUYING POWER", Formatters.amount(account.buyingPowerValue), color: .white)
                 if let dayPnL = account.dayPnL {
                     portfolioRow(
                         "P&L OGGI",
-                        Formatters.signedMoney(dayPnL),
+                        Formatters.signedAmount(dayPnL),
                         color: dayPnL >= 0 ? terminalGreen : .red
                     )
                 }
@@ -1115,7 +1141,7 @@ struct TerminalDashboardView: View {
                             .font(.caption)
                             .foregroundStyle(.gray)
                             Spacer()
-                            Text(Formatters.signedMoney(position.unrealizedPLValue))
+                            Text(Formatters.signedAmount(position.unrealizedPLValue))
                                 .font(.system(.caption, design: .monospaced, weight: .bold))
                                 .foregroundStyle(position.unrealizedPLValue >= 0 ? terminalGreen : .red)
                         }
@@ -1225,12 +1251,12 @@ struct TerminalDashboardView: View {
                 )
                 portfolioRow(
                     "EXPECTANCY / TRADE",
-                    Formatters.signedMoney(stats.expectancy ?? 0),
+                    Formatters.signedAmount(stats.expectancy ?? 0),
                     color: (stats.expectancy ?? 0) >= 0 ? terminalGreen : .red
                 )
                 portfolioRow(
                     "MAX DRAWDOWN",
-                    Formatters.money(stats.maxDrawdown),
+                    Formatters.amount(stats.maxDrawdown),
                     color: .red
                 )
             } else {
@@ -1439,7 +1465,7 @@ private struct BrokerControlView: View {
                             Text("\(position.symbol) · qty \(Formatters.trimmed(position.quantity))")
                                 .font(.system(.caption, design: .monospaced, weight: .bold))
                                 .foregroundStyle(.white)
-                            Text("P&L \(Formatters.signedMoney(position.unrealizedPLValue)) USD")
+                            Text("P&L \(Formatters.signedAmount(position.unrealizedPLValue)) USD")
                                 .font(.caption)
                                 .foregroundStyle(position.unrealizedPLValue >= 0 ? DashboardPalette.green : .red)
                         }
@@ -1558,12 +1584,12 @@ private struct SystemSettingsView: View {
                     Text("CAPITALE USATO DAL BOT")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Theme.textSecondary)
-                    Text(used.map { Formatters.money($0) + " $" } ?? "saldo in arrivo…")
+                    Text(used.map { Formatters.amount($0) + " $" } ?? "saldo in arrivo…")
                         .font(.system(.title2, design: .rounded, weight: .bold))
                         .monospacedDigit()
                         .foregroundStyle(Theme.textPrimary)
                     Text(draft.capitalLimitEnabled
-                         ? "solo una parte del conto" + (equityNow.map { " (conto: \(Formatters.money($0)) $)" } ?? "")
+                         ? "solo una parte del conto" + (equityNow.map { " (conto: \(Formatters.amount($0)) $)" } ?? "")
                          : "tutto il conto: segue da solo guadagni e perdite")
                         .font(.caption)
                         .foregroundStyle(draft.capitalLimitEnabled ? Theme.amber : Theme.green)
@@ -1582,7 +1608,7 @@ private struct SystemSettingsView: View {
                 }
                 Text(draft.capitalLimitEnabled
                      ? "Il bot non impegna mai più di questa cifra (USD), anche se sul conto c'è di più. Utile solo se sul conto tieni altri soldi."
-                     : "Il bot usa tutto il saldo del conto" + (engine.account.map { " (\(String(format: "%.0f", $0.equityValue)) USD)" } ?? "") + ": cresce e cala da solo con guadagni e perdite. Rischio e tetto del 25% si ricalcolano a ogni controllo.")
+                     : "Il bot usa tutto il saldo del conto" + (engine.account.map { " (\(Formatters.amount($0.equityValue)) USD)" } ?? "") + ": cresce e cala da solo con guadagni e perdite. Rischio e tetto del 25% si ricalcolano a ogni controllo.")
                     .font(.system(.caption2, design: .monospaced, weight: .regular))
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1693,6 +1719,15 @@ private struct SystemSettingsView: View {
                 .font(.system(.caption, design: .monospaced, weight: .bold))
                 .tint(DashboardPalette.green)
             Text("Lun–ven, mezz'ora prima della chiusura USA: ti ricorda di aprire l'app per la modalità giornaliera. iOS non permette di leggere le chiavi protette da Face ID in background, quindi l'app non controlla da sola: ti avvisa.")
+                .font(.caption)
+                .foregroundStyle(.gray)
+                .fixedSize(horizontal: false, vertical: true)
+                .explanation()
+
+            Toggle("NASCONDI SALDO", isOn: $draft.hideAmounts)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .tint(DashboardPalette.green)
+            Text("Saldo, P&L e capitale diventano ••••• (anche con l'occhio in alto). I prezzi degli ETF restano visibili.")
                 .font(.caption)
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)

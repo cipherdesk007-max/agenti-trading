@@ -196,6 +196,7 @@ final class RiskRulesTests: XCTestCase {
         let old = try? JSONDecoder().decode(StrategyConfig.self, from: Data("{}".utf8))
         XCTAssertEqual(old?.capitalLimitEnabled, false)
         XCTAssertEqual(old?.proMode, false, "La modalità PRO di base è spenta")
+        XCTAssertEqual(old?.hideAmounts, false, "Il saldo di base è visibile")
         XCTAssertEqual(old?.capitalCap, Double.infinity)
         XCTAssertEqual(StrategyConfig(capitalLimitEnabled: true, botCapitalUSD: 1_000).capitalCap, 1_000)
     }

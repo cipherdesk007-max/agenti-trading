@@ -411,6 +411,7 @@ final class QuantSwarmEngine: ObservableObject {
         }
         if previous.kimiModel != sanitized.kimiModel { changes.append("modello \(sanitized.kimiModel)") }
         if previous.dailyReminder != sanitized.dailyReminder { changes.append("promemoria \(sanitized.dailyReminder ? "ON" : "OFF")") }
+        if previous.hideAmounts != sanitized.hideAmounts { changes.append("saldo \(sanitized.hideAmounts ? "nascosto" : "visibile")") }
         if previous.proMode != sanitized.proMode { changes.append("modalità PRO \(sanitized.proMode ? "ON" : "OFF")") }
         if previous.widgetShowsAmounts != sanitized.widgetShowsAmounts { changes.append("importi widget \(sanitized.widgetShowsAmounts ? "ON" : "OFF")") }
         if previous.autoResumeOnLaunch != sanitized.autoResumeOnLaunch { changes.append("ripresa automatica \(sanitized.autoResumeOnLaunch ? "ON" : "OFF")") }

@@ -223,6 +223,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
 
     /// MODALITÀ PRO: interfaccia senza spiegazioni (default spenta).
     var proMode: Bool
+    /// NASCONDI SALDO: saldi e guadagni coperti da ••••• (default spento).
+    var hideAmounts: Bool
 
     /// Tetto effettivo per il motore: infinito = tutto il conto.
     var capitalCap: Double { capitalLimitEnabled ? botCapitalUSD : .infinity }
@@ -246,7 +248,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         dailyReminder: Bool = true,
         capitalLimitEnabled: Bool = false,
         botCapitalUSD: Double = 10_000,
-        proMode: Bool = false
+        proMode: Bool = false,
+        hideAmounts: Bool = false
     ) {
         self.tradingMode = tradingMode
         self.riskPerTradePercent = riskPerTradePercent
@@ -265,6 +268,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         self.capitalLimitEnabled = capitalLimitEnabled
         self.botCapitalUSD = botCapitalUSD
         self.proMode = proMode
+        self.hideAmounts = hideAmounts
     }
 
     init(from decoder: Decoder) throws {
@@ -286,7 +290,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
             dailyReminder: try container.decodeIfPresent(Bool.self, forKey: .dailyReminder) ?? true,
             capitalLimitEnabled: try container.decodeIfPresent(Bool.self, forKey: .capitalLimitEnabled) ?? false,
             botCapitalUSD: try container.decodeIfPresent(Double.self, forKey: .botCapitalUSD) ?? 10_000,
-            proMode: try container.decodeIfPresent(Bool.self, forKey: .proMode) ?? false
+            proMode: try container.decodeIfPresent(Bool.self, forKey: .proMode) ?? false,
+            hideAmounts: try container.decodeIfPresent(Bool.self, forKey: .hideAmounts) ?? false
         )
     }
 
