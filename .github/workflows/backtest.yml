@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi"
         default: "tutti"
 
 jobs:
@@ -53,4 +53,7 @@ jobs:
         if: env.Q == 'tutti' || env.Q == 'segnali'
         working-directory: tools
         run: python backtest_signals.py | tee -a ../backtest.md
+      - name: Segnali di oggi (controllo indipendente)
+        if: env.Q == 'oggi'
+        run: python tools/oggi.py | tee -a backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
