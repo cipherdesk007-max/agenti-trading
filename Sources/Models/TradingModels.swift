@@ -221,6 +221,9 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     /// min(patrimonio, tetto) e il bot non impegna mai di più.
     var botCapitalUSD: Double
 
+    /// MODALITÀ PRO: interfaccia senza spiegazioni (default spenta).
+    var proMode: Bool
+
     /// Tetto effettivo per il motore: infinito = tutto il conto.
     var capitalCap: Double { capitalLimitEnabled ? botCapitalUSD : .infinity }
 
@@ -242,7 +245,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         widgetShowsAmounts: Bool = false,
         dailyReminder: Bool = true,
         capitalLimitEnabled: Bool = false,
-        botCapitalUSD: Double = 10_000
+        botCapitalUSD: Double = 10_000,
+        proMode: Bool = false
     ) {
         self.tradingMode = tradingMode
         self.riskPerTradePercent = riskPerTradePercent
@@ -260,6 +264,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         self.dailyReminder = dailyReminder
         self.capitalLimitEnabled = capitalLimitEnabled
         self.botCapitalUSD = botCapitalUSD
+        self.proMode = proMode
     }
 
     init(from decoder: Decoder) throws {
@@ -280,7 +285,8 @@ struct StrategyConfig: Codable, Sendable, Equatable {
             widgetShowsAmounts: try container.decodeIfPresent(Bool.self, forKey: .widgetShowsAmounts) ?? false,
             dailyReminder: try container.decodeIfPresent(Bool.self, forKey: .dailyReminder) ?? true,
             capitalLimitEnabled: try container.decodeIfPresent(Bool.self, forKey: .capitalLimitEnabled) ?? false,
-            botCapitalUSD: try container.decodeIfPresent(Double.self, forKey: .botCapitalUSD) ?? 10_000
+            botCapitalUSD: try container.decodeIfPresent(Double.self, forKey: .botCapitalUSD) ?? 10_000,
+            proMode: try container.decodeIfPresent(Bool.self, forKey: .proMode) ?? false
         )
     }
 
@@ -434,11 +440,45 @@ struct MarketSnapshot: Sendable {
     }
 }
 
+/// Un conto Alpaca salvato (paper o live). La chiave Kimi è una sola per tutti.
+struct AlpacaProfile: Codable, Sendable, Identifiable, Equatable {
+    var id: String
+    var name: String
+    let keyID: String
+    let secretKey: String
+    let paperTrading: Bool
+}
+
 struct StoredCredentials: Codable, Sendable {
     let moonshotAPIKey: String
     let alpacaKeyID: String
     let alpacaSecretKey: String
     let paperTrading: Bool
+    /// Altri conti salvati (nil nelle versioni precedenti: solo quello attivo).
+    var profiles: [AlpacaProfile]? = nil
+    var activeProfileID: String? = nil
+
+    /// Tutti i conti, con quello attivo sempre presente.
+    var allProfiles: [AlpacaProfile] {
+        var list = profiles ?? []
+        if !list.contains(where: { $0.keyID == alpacaKeyID && $0.paperTrading == paperTrading }) {
+            list.insert(AlpacaProfile(id: activeProfileID ?? "principale",
+                                      name: paperTrading ? "Paper principale" : "Live principale",
+                                      keyID: alpacaKeyID, secretKey: alpacaSecretKey, paperTrading: paperTrading), at: 0)
+        }
+        return list
+    }
+
+    var activeID: String? {
+        allProfiles.first { $0.keyID == alpacaKeyID && $0.paperTrading == paperTrading }?.id
+    }
+
+    /// Stesse credenziali con un altro conto attivo.
+    func activating(_ profile: AlpacaProfile, in list: [AlpacaProfile]) -> StoredCredentials {
+        StoredCredentials(moonshotAPIKey: moonshotAPIKey, alpacaKeyID: profile.keyID,
+                          alpacaSecretKey: profile.secretKey, paperTrading: profile.paperTrading,
+                          profiles: list, activeProfileID: profile.id)
+    }
 
     var alpaca: AlpacaCredentials {
         AlpacaCredentials(

@@ -112,7 +112,7 @@ struct TerminalDashboardView: View {
                                 killButton
                             case .markets:
                                 MarketsPanel()
-                                marketsLegend
+                                if !engine.strategyConfig.proMode { marketsLegend }
                             case .agents:
                                 capitalPanel
                                 decisionsPanel
@@ -135,6 +135,7 @@ struct TerminalDashboardView: View {
                                 ordersPanel
                                 linksPanel
                             case .system:
+                                AccountsView()
                                 SystemSettingsView()
                             }
                         }
@@ -148,6 +149,7 @@ struct TerminalDashboardView: View {
                 }
             }
             .safeAreaInset(edge: .bottom, spacing: 0) { tabBar }
+            .environment(\.proMode, engine.strategyConfig.proMode)
             .sensoryFeedback(.selection, trigger: selectedSection)
             .sensoryFeedback(.success, trigger: engine.isRunning)
             .navigationBarTitleDisplayMode(.inline)
@@ -419,11 +421,13 @@ struct TerminalDashboardView: View {
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
             } else {
                 Text("La curva parte dalla prima seduta con l'app aperta a mercato aperto: un punto al giorno.")
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
             }
         }
         .panelStyle(terminalGreen)
@@ -470,6 +474,7 @@ struct TerminalDashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)
+                .explanation()
             Divider().overlay(Color.gray.opacity(0.3))
             let filled = max(stats.placed - stats.unfilled - stats.partial, 0)
             portfolioRow(
@@ -560,6 +565,7 @@ struct TerminalDashboardView: View {
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
             }
             if displayedMode == .intraday, !engine.isRunning {
                 intradayInputs
@@ -978,6 +984,7 @@ struct TerminalDashboardView: View {
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
             }
         }
         .panelStyle(DashboardPalette.cyan)
@@ -1028,6 +1035,7 @@ struct TerminalDashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)
+                .explanation()
         }
         .panelStyle(DashboardPalette.cyan)
     }
@@ -1061,6 +1069,7 @@ struct TerminalDashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)
+                .explanation()
         }
         .panelStyle(terminalGreen)
     }
@@ -1451,6 +1460,7 @@ private struct BrokerControlView: View {
                 .font(.caption)
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)
+                .explanation()
         }
         .panelStyle(DashboardPalette.green)
     }
@@ -1541,7 +1551,27 @@ private struct SystemSettingsView: View {
                 .foregroundStyle(.gray)
 
             Group {
-                Toggle("Limita il capitale del bot", isOn: $draft.capitalLimitEnabled)
+                // Il numero che conta, scritto in chiaro: quanto usa il bot adesso.
+                let equityNow = engine.account?.equityValue
+                let used = equityNow.map { min(draft.sanitized.capitalCap, $0) }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("CAPITALE USATO DAL BOT")
+                        .font(.caption2.weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                    Text(used.map { Formatters.money($0) + " $" } ?? "saldo in arrivo…")
+                        .font(.system(.title2, design: .rounded, weight: .bold))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.textPrimary)
+                    Text(draft.capitalLimitEnabled
+                         ? "solo una parte del conto" + (equityNow.map { " (conto: \(Formatters.money($0)) $)" } ?? "")
+                         : "tutto il conto: segue da solo guadagni e perdite")
+                        .font(.caption)
+                        .foregroundStyle(draft.capitalLimitEnabled ? Theme.amber : Theme.green)
+                }
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+                Toggle("Usa solo una parte del conto", isOn: $draft.capitalLimitEnabled)
                     .tint(DashboardPalette.green)
                 if draft.capitalLimitEnabled {
                     Stepper(
@@ -1556,6 +1586,7 @@ private struct SystemSettingsView: View {
                     .font(.system(.caption2, design: .monospaced, weight: .regular))
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
                 buyableRow
                 Stepper(
                     "Rischio per trade: \(String(format: "%.2f", draft.riskPerTradePercent))% capitale",
@@ -1605,11 +1636,13 @@ private struct SystemSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
             } else {
                 Text("GIORNALIERA: Kimi viene chiamato solo se un ETF è in trend (sopra SMA200) con RSI2 sotto 10. Nessun segnale = zero crediti.")
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
             }
 
             Toggle("LIMITE CREDITI GIORNALIERO", isOn: $draft.creditLimitEnabled)
@@ -1663,6 +1696,15 @@ private struct SystemSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)
+                .explanation()
+
+            Toggle("MODALITÀ PRO", isOn: $draft.proMode)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .tint(DashboardPalette.green)
+            Text("Per chi conosce già l'app: toglie spiegazioni, legende e testi d'aiuto. Restano numeri, stati, avvisi e pulsanti.")
+                .font(.caption)
+                .foregroundStyle(.gray)
+                .fixedSize(horizontal: false, vertical: true)
 
             Toggle("IMPORTI NEL WIDGET", isOn: $draft.widgetShowsAmounts)
                 .font(.system(.caption, design: .monospaced, weight: .bold))
@@ -1671,6 +1713,7 @@ private struct SystemSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)
+                .explanation()
 
             Button("APPLICA IMPOSTAZIONI") {
                 engine.updateStrategyConfig(draft)
@@ -1699,6 +1742,7 @@ private struct SystemSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
                 settingRow("MODALITÀ", config.tradingMode.label)
                 settingRow("CAPITALE BOT", (config.capitalLimitEnabled
                     ? "limitato a \(String(format: "%.0f", config.botCapitalUSD)) USD"
@@ -1726,6 +1770,7 @@ private struct SystemSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)
+                .explanation()
         }
         .panelStyle(DashboardPalette.green)
         .onAppear {

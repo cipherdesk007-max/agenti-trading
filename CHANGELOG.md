@@ -11,9 +11,16 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 - **Barra delle sezioni in basso** con icone (Cruscotto, Mercati, Dettagli, Broker, Sistema), alla portata del pollice. MERCATI diventa una sezione sua, con la legenda degli stati.
 - **Intestazione nuova**: patrimonio in grande, risultato del giorno in dollari e in percentuale, PAPER/LIVE e mercato aperto/chiuso come etichette, stato del motore in una riga.
 - **Conto alla rovescia** del prossimo controllo, con barra di avanzamento.
+- **Più conti Alpaca** (SISTEMA → CONTI ALPACA): con la stessa chiave Kimi salvi più conti paper o live e passi dall'uno all'altro a motore fermo. Le chiavi vengono provate sul broker prima di salvarle. Ogni conto ha registro del bot, curva del capitale e protezioni separati; passare a un conto live chiede conferma.
+- **Capitale scritto in chiaro**: in SISTEMA c'è il numero "CAPITALE USATO DAL BOT" e la scritta "tutto il conto" oppure "solo una parte". L'interruttore si chiama ora "Usa solo una parte del conto".
+- **MODALITÀ PRO** (SISTEMA, spenta di base): per chi conosce già l'app toglie spiegazioni, legende e testi d'aiuto. Restano numeri, stati, avvisi e pulsanti.
 - Vibrazione leggera al cambio di sezione e all'avvio o arresto del motore.
 - **Agenti**: Brain e Reviewer ricevono la **correlazione a 60 sedute** di ogni candidato con le posizioni aperte e con gli altri candidati. Prima il prompt chiedeva di evitare ETF quasi uguali senza dare i numeri. Il Reviewer boccia sopra 0,85 con una posizione già aperta.
 - **Agenti**: ragionamento "medio" per Brain e Reviewer della giornaliera, che fanno poche chiamate al giorno ma importanti; resta "basso" per la modalità veloce.
+
+### Studiato (tools/)
+- **Conto piccolo** (`backtest_small.py`): azioni intere ai prezzi di oggi. Con 1.000 $ la giornaliera rende circa +1,8% l'anno, contro +2,2% con 100.000 $, con perdita massima −6%/−7%. Gli ETF "gemelli" economici (QQQM, VTWO, GLDM, SPYM) fanno saltare meno segnali, ma in due esecuzioni il rendimento è cambiato di segno rispetto al paniere attuale: differenza dentro il rumore, quindi il paniere resta com'è.
+- **Intraday momentum** (`backtest_momentum.py`): verifica sui dati recenti dello studio Gao, Han, Li e Zhou (JFE 2018) per la modalità veloce.
 
 ### Cambiato
 - Testi descrittivi in carattere di sistema, più leggibile; numeri ed etichette restano in stile terminale.

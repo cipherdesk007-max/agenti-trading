@@ -71,7 +71,10 @@ final class QuantSwarmEngine: ObservableObject {
     /// Modalità attiva della sessione in corso.
     @Published private(set) var activeMode: TradingMode?
     /// Registro ombra: scelti da Kimi vs scartati (esiti ipotetici).
-    @Published private(set) var shadowSummary = ShadowSummary.from(DailyBookStore.load().shadow)
+    @Published private(set) var shadowSummary = ShadowSummary.from(DailyBookStore.load(account: nil).shadow)
+    /// Conti Alpaca salvati e quello attivo (la chiave Kimi è la stessa per tutti).
+    @Published private(set) var alpacaProfiles: [AlpacaProfile] = []
+    @Published private(set) var activeProfileID: String?
     /// Curva del capitale del conto attivo (un punto per seduta) e valore che
     /// il bot ha impegnato all'ultimo controllo.
     @Published private(set) var equityHistory: [EquityPoint] = []
@@ -183,6 +186,63 @@ final class QuantSwarmEngine: ObservableObject {
         }
         datasetExportURL = DatasetExporter.existingExportURL()
         refreshDatasetStats()
+    }
+
+    // MARK: - Più conti Alpaca
+
+    /// Aggiunge un conto Alpaca (stessa chiave Kimi). Le chiavi vengono provate
+    /// sul broker prima di salvarle.
+    func addAlpacaProfile(name: String, keyID: String, secretKey: String, paperTrading: Bool) async throws {
+        guard let current = credentials else { throw QuantSwarmError.invalidCredentialInput }
+        let id = keyID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let secret = secretKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !id.isEmpty, !secret.isEmpty else { throw QuantSwarmError.invalidCredentialInput }
+        let creds = AlpacaCredentials(keyID: id, secretKey: secret, paperTrading: paperTrading)
+        do {
+            try await AlpacaService(credentials: creds).validateCredentials()
+        } catch {
+            throw QuantSwarmError.validationFailed(stage: paperTrading ? "Alpaca paper" : "Alpaca live",
+                                                   message: describeValidationError(error))
+        }
+        var list = current.allProfiles.filter { !($0.keyID == id && $0.paperTrading == paperTrading) }
+        let label = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        list.append(AlpacaProfile(id: UUID().uuidString, name: label.isEmpty ? "Conto \(list.count + 1)" : label,
+                                  keyID: id, secretKey: secret, paperTrading: paperTrading))
+        let updated = StoredCredentials(moonshotAPIKey: current.moonshotAPIKey, alpacaKeyID: current.alpacaKeyID,
+                                        alpacaSecretKey: current.alpacaSecretKey, paperTrading: current.paperTrading,
+                                        profiles: list, activeProfileID: current.activeID)
+        try await keychain.save(data: JSONEncoder().encode(updated))
+        credentials = updated
+        alpacaProfiles = updated.allProfiles
+        log("Conto Alpaca aggiunto: \(list.last?.name ?? "") (\(paperTrading ? "paper" : "live")).")
+    }
+
+    /// Passa a un altro conto: solo a motore fermo. Protezioni, curva e registro
+    /// del bot seguono il conto (per numero di conto Alpaca).
+    func switchAlpacaProfile(id: String) async throws {
+        guard !isRunning else { throw QuantSwarmError.riskRejected("Ferma il motore prima di cambiare conto") }
+        guard let current = credentials, let profile = current.allProfiles.first(where: { $0.id == id }) else { return }
+        let updated = current.activating(profile, in: current.allProfiles)
+        try await keychain.save(data: JSONEncoder().encode(updated))
+        account = nil
+        positions = []
+        openOrders = []
+        recentOrders = []
+        equityHistory = []
+        apply(stored: updated)
+        log("Conto attivo: \(profile.name) (\(profile.paperTrading ? "paper" : "live")).")
+        await refreshPortfolio()
+    }
+
+    func removeAlpacaProfile(id: String) async {
+        guard let current = credentials, id != current.activeID else { return }
+        let list = current.allProfiles.filter { $0.id != id }
+        let updated = StoredCredentials(moonshotAPIKey: current.moonshotAPIKey, alpacaKeyID: current.alpacaKeyID,
+                                        alpacaSecretKey: current.alpacaSecretKey, paperTrading: current.paperTrading,
+                                        profiles: list, activeProfileID: current.activeID)
+        guard (try? await keychain.save(data: JSONEncoder().encode(updated))) != nil else { return }
+        credentials = updated
+        alpacaProfiles = updated.allProfiles
     }
 
     /// Controlla la sorgente pubblica: all'avvio e dal pulsante in SISTEMA.
@@ -351,6 +411,7 @@ final class QuantSwarmEngine: ObservableObject {
         }
         if previous.kimiModel != sanitized.kimiModel { changes.append("modello \(sanitized.kimiModel)") }
         if previous.dailyReminder != sanitized.dailyReminder { changes.append("promemoria \(sanitized.dailyReminder ? "ON" : "OFF")") }
+        if previous.proMode != sanitized.proMode { changes.append("modalità PRO \(sanitized.proMode ? "ON" : "OFF")") }
         if previous.widgetShowsAmounts != sanitized.widgetShowsAmounts { changes.append("importi widget \(sanitized.widgetShowsAmounts ? "ON" : "OFF")") }
         if previous.autoResumeOnLaunch != sanitized.autoResumeOnLaunch { changes.append("ripresa automatica \(sanitized.autoResumeOnLaunch ? "ON" : "OFF")") }
         if previous.decisionTimeframeMinutes != sanitized.decisionTimeframeMinutes
@@ -996,6 +1057,8 @@ final class QuantSwarmEngine: ObservableObject {
         service.setModel(strategyConfig.kimiModel)
         kimiService = service
         paperTrading = stored.paperTrading
+        alpacaProfiles = stored.allProfiles
+        activeProfileID = stored.activeID
         isConfigured = true
         statusMessage = "Pronto in modalità \(stored.paperTrading ? "paper" : "live")"
     }
@@ -1071,7 +1134,7 @@ final class QuantSwarmEngine: ObservableObject {
                     flatByCloseTriggered = true
                     // Solo le posizioni della modalità veloce: quelle della
                     // giornaliera (registro DailyBook) restano con il loro stop.
-                    let dailySymbols = Set(DailyBookStore.load().entries.keys)
+                    let dailySymbols = Set(DailyBookStore.load(account: account?.accountNumber).entries.keys)
                     let intradaySymbols = positions.map { $0.symbol.uppercased() }
                         .filter { !dailySymbols.contains($0) }
                     if intradaySymbols.isEmpty {
@@ -1691,6 +1754,9 @@ final class QuantSwarmEngine: ObservableObject {
         guardState = state
         RiskGuardStore.save(guardState)
         drawdownLocked = guardState.drawdownLocked
+        let book = DailyBookStore.load(account: snapshot.accountNumber)
+        shadowSummary = ShadowSummary.from(book.shadow)
+        entryStats = (book.placedEntries, book.unfilledEntries, book.partialEntries)
         if changed {
             dailyStopOn = false
             baselineEquity = snapshot.equityValue
@@ -1995,8 +2061,9 @@ extension QuantSwarmEngine {
         else if dailyStopActive { entryBlock = "stop giornaliero attivo" }
         else if creditLimitExceeded { entryBlock = "limite crediti Kimi raggiunto" }
 
+        let bookAccount = account?.accountNumber
         let input = DailyCycleInput(
-            book: DailyBookStore.load(),
+            book: DailyBookStore.load(account: bookAccount),
             today: DailyStrategy.tradingDay(Date()),
             riskFraction: config.riskFraction,
             maxOpenPositions: config.maxOpenPositions,
@@ -2008,7 +2075,7 @@ extension QuantSwarmEngine {
             await self?.apply(event)
         }
         guard !result.aborted else { return }
-        DailyBookStore.save(result.book)
+        DailyBookStore.save(result.book, account: bookAccount)
         botExposure = result.botExposure
         if !result.snapshots.isEmpty { basketSnapshots = result.snapshots }
         if !result.bars.isEmpty {

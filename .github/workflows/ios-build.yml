@@ -158,10 +158,14 @@ jobs:
         run: |
           ls shots/*.png >/dev/null 2>&1 || exit 0
           for f in shots/*.png; do sips -Z 1400 "$f" >/dev/null; done
-          gh release delete screenshot --yes --cleanup-tag 2>/dev/null || true
-          gh release create screenshot shots/*.png --prerelease \
-            --target "$GITHUB_SHA" --title "Screenshot interfaccia" \
-            --notes "Screenshot automatici dal simulatore (dati di esempio). Commit: $GITHUB_SHA"
+          # Branch "screenshot" (un commit sovrascritto ogni volta).
+          D=$(mktemp -d)
+          cp shots/*.png "$D/"
+          cd "$D"
+          git init -q -b screenshot
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add .
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" commit -qm "Screenshot $GITHUB_SHA"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/screenshot
 
       - name: Build unsigned Release app
         run: |
@@ -203,7 +207,25 @@ jobs:
       # Di default nessuna release: l'IPA va in una bozza privata (non visibile,
       # non installabile dal link) e viene consegnata a mano. Le release vere
       # partono solo con "pubblica" attivo.
+      # Consegna dell'IPA non pubblicata: su un branch "bozza-ipa" (un solo
+      # commit, sovrascritto ogni volta). Funziona anche se la creazione di
+      # release è bloccata per il token delle Actions.
+      - name: IPA sul branch bozza-ipa
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.pubblica) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -m1 'MARKETING_VERSION:' project.yml | sed -E 's/.*"([^"]+)".*/\1/')
+          D=$(mktemp -d)
+          cp QuantSwarm-Alpha-Zero.ipa "$D/"
+          cd "$D"
+          git init -q -b bozza-ipa
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add QuantSwarm-Alpha-Zero.ipa
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" commit -qm "IPA $VERSION build $GITHUB_RUN_NUMBER ($GITHUB_SHA)"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/bozza-ipa
+
       - name: IPA in bozza privata
+        continue-on-error: true
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.pubblica) }}
         env:
           GH_TOKEN: ${{ github.token }}

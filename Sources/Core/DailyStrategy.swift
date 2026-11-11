@@ -187,18 +187,27 @@ struct DailyBook: Codable, Sendable, Equatable {
     }
 }
 
+/// Un registro per conto Alpaca (numero del conto): con più conti paper/live
+/// le posizioni del bot di un conto non si mescolano con quelle di un altro.
+/// Il registro delle versioni precedenti (senza conto) passa al primo conto che lo apre.
 enum DailyBookStore {
-    private static let key = "com.quantswarm.alphazero.dailyBook"
+    private static let legacyKey = "com.quantswarm.alphazero.dailyBook"
 
-    static func load() -> DailyBook {
-        guard let data = UserDefaults.standard.data(forKey: key),
-              let book = try? JSONDecoder().decode(DailyBook.self, from: data) else { return DailyBook() }
+    private static func key(_ account: String?) -> String {
+        account.map { "\(legacyKey).\($0)" } ?? legacyKey
+    }
+
+    static func load(account: String?, defaults: UserDefaults = .standard) -> DailyBook {
+        let data = defaults.data(forKey: key(account))
+            ?? (account != nil ? defaults.data(forKey: legacyKey) : nil)
+        guard let data, let book = try? JSONDecoder().decode(DailyBook.self, from: data) else { return DailyBook() }
         return book
     }
 
-    static func save(_ book: DailyBook) {
+    static func save(_ book: DailyBook, account: String?, defaults: UserDefaults = .standard) {
         guard let data = try? JSONEncoder().encode(book) else { return }
-        UserDefaults.standard.set(data, forKey: key)
+        defaults.set(data, forKey: key(account))
+        if account != nil { defaults.removeObject(forKey: legacyKey) }
     }
 }
 

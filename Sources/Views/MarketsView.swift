@@ -350,6 +350,7 @@ struct MarketDetailView: View {
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
+                .explanation()
         }
     }
 

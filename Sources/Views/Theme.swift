@@ -38,7 +38,29 @@ enum AppVersion {
     }
 }
 
+private struct ProModeKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    /// MODALITÀ PRO: niente spiegazioni né testi d'aiuto.
+    var proMode: Bool {
+        get { self[ProModeKey.self] }
+        set { self[ProModeKey.self] = newValue }
+    }
+}
+
+/// Testo d'aiuto: sparisce in MODALITÀ PRO.
+private struct ExplanationModifier: ViewModifier {
+    @Environment(\.proMode) private var proMode
+    func body(content: Content) -> some View {
+        if proMode { EmptyView() } else { content }
+    }
+}
+
 extension View {
+    func explanation() -> some View { modifier(ExplanationModifier()) }
+
     /// Superficie a scheda: fondo a strati, bordo sottile, accento colorato.
     func themedCard(_ accent: Color = Theme.green, padding: CGFloat = 16) -> some View {
         self
