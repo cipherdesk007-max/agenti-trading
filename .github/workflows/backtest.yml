@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo"
         default: "tutti"
 
 jobs:
@@ -35,4 +35,8 @@ jobs:
       - name: Regole esatte dell'app (giornaliera) + robustezza
         if: env.Q == 'tutti' || env.Q == 'app'
         run: python tools/backtest_app.py | tee -a backtest.md
+      - name: Conto piccolo (azioni intere ai prezzi di oggi, gemelli economici)
+        if: env.Q == 'tutti' || env.Q == 'piccolo'
+        working-directory: tools
+        run: python backtest_small.py | tee -a ../backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
