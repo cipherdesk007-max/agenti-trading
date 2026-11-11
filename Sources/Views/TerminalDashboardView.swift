@@ -107,6 +107,7 @@ struct TerminalDashboardView: View {
                             switch selectedSection {
                             case .operations:
                                 if Self.focusMarkets { MarketsPanel() }
+                                if let update = engine.availableUpdate { updateBanner(update) }
                                 if !engine.paperTrading { liveBanner }
                                 guardPanel
                                 heroPanel
@@ -399,6 +400,23 @@ struct TerminalDashboardView: View {
             )
         }
         .panelStyle(DashboardPalette.cyan)
+    }
+
+    private func updateBanner(_ update: UpdateChecker.Release) -> some View {
+        Button {
+            selectedSection = .system
+        } label: {
+            HStack {
+                Text("AGGIORNAMENTO \(update.version) DISPONIBILE")
+                    .font(.system(.caption, design: .monospaced, weight: .heavy))
+                Spacer()
+                Text("SISTEMA →").font(.system(.caption2, design: .monospaced, weight: .bold))
+            }
+            .foregroundStyle(Theme.background)
+            .padding(12)
+            .background(Theme.cyan, in: Theme.shape(Theme.smallRadius))
+        }
+        .buttonStyle(.plain)
     }
 
     private var liveBanner: some View {
@@ -1337,6 +1355,7 @@ private struct BrokerControlView: View {
 /// ciclo. Il modello Kimi può essere scritto a mano o scelto dalla lista API.
 private struct SystemSettingsView: View {
     @EnvironmentObject private var engine: QuantSwarmEngine
+    @Environment(\.openURL) private var openURL
     @State private var draft = StrategyConfig()
 
     /// Gradini del capitale del bot (USD).
@@ -1544,6 +1563,25 @@ private struct SystemSettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 let config = engine.strategyConfig
                 settingRow("VERSIONE", AppVersion.text)
+                settingRow("AGGIORNAMENTI", engine.updateStatus)
+                HStack(spacing: 10) {
+                    if let update = engine.availableUpdate, let url = UpdateChecker.liveContainerInstallURL(for: update) {
+                        Button("AGGIORNA A \(update.version)") { openURL(url) }
+                            .buttonStyle(TerminalButtonStyle(color: DashboardPalette.cyan))
+                    } else {
+                        Button("CONTROLLA AGGIORNAMENTI") { Task { await engine.checkForUpdates() } }
+                            .buttonStyle(TerminalButtonStyle(color: DashboardPalette.cyan))
+                    }
+                }
+                if let source = UpdateChecker.liveContainerSourceURL {
+                    Button("AGGIUNGI SORGENTE A LIVECONTAINER") { openURL(source) }
+                        .font(.system(.caption2, design: .monospaced, weight: .bold))
+                        .foregroundStyle(DashboardPalette.cyan)
+                }
+                Text("AGGIORNA apre LiveContainer, che installa la nuova IPA sopra questa: dati, chiavi e impostazioni restano. Con la sorgente aggiunta, LiveContainer mostra da solo le versioni nuove.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
                 settingRow("MODALITÀ", config.tradingMode.label)
                 settingRow("CAPITALE BOT", (config.capitalLimitEnabled
                     ? "limitato a \(String(format: "%.0f", config.botCapitalUSD)) USD"

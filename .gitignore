@@ -36,3 +36,4 @@ Credentials.swift
 *.dSYM
 *.tmp
 *.log
+__pycache__/

@@ -88,6 +88,7 @@ private struct RootView: View {
             }
             await engine.restoreCredentials()
             WidgetStatusBridge.write(engine: engine, force: true)
+            await engine.checkForUpdates()
         }
         .onReceive(engine.$statusMessage) { _ in
             WidgetStatusBridge.write(engine: engine)

@@ -20,6 +20,10 @@ on:
         description: "Esegui anche i test dell'interfaccia (circa 4 minuti)"
         type: boolean
         default: true
+      pubblica:
+        description: "Pubblica la release (ultima, vX.Y.Z, aggiornamenti dall'app)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -196,7 +200,21 @@ jobs:
 
       # Come FMLAB: l'IPA esce direttamente nella release "ultima",
       # URL stabile per LiveContainer (Installa dall'URL) e aggiornamento sopra la vecchia.
+      # Di default nessuna release: l'IPA va in una bozza privata (non visibile,
+      # non installabile dal link) e viene consegnata a mano. Le release vere
+      # partono solo con "pubblica" attivo.
+      - name: IPA in bozza privata
+        if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.pubblica) }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete bozza-ipa --yes --cleanup-tag 2>/dev/null || true
+          gh release create bozza-ipa QuantSwarm-Alpha-Zero.ipa --draft \
+            --target "$GITHUB_SHA" --title "Bozza IPA (non pubblicata)" \
+            --notes "Build $GITHUB_RUN_NUMBER · commit $GITHUB_SHA"
+
       - name: Pubblica release "ultima"
+        if: github.event_name == 'workflow_dispatch' && inputs.pubblica
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -210,6 +228,7 @@ jobs:
       # Release numerata (vX.Y.Z) con le note dal CHANGELOG: la storia delle
       # versioni resta su GitHub; "ultima" resta l'URL fisso per LiveContainer.
       - name: Pubblica release numerata
+        if: github.event_name == 'workflow_dispatch' && inputs.pubblica
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -229,3 +248,19 @@ jobs:
             gh release create "$TAG" QuantSwarm-Alpha-Zero.ipa --target "$GITHUB_SHA" \
               --title "FMLAB QuantSwarm Alpha Zero $VERSION" --notes-file notes.md --latest=false
           fi
+
+      # Aggiornamenti dall'app: la stessa build sul repository PUBBLICO che
+      # contiene solo IPA, icona e sorgente apps.json (LiveContainer/SideStore).
+      # Serve il segreto RELEASES_TOKEN; se manca il passo viene saltato.
+      - name: Pubblica per gli aggiornamenti dall'app
+        if: github.event_name == 'workflow_dispatch' && inputs.pubblica
+        env:
+          RELEASES_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+        run: |
+          if [ -z "$RELEASES_TOKEN" ]; then
+            echo "::notice::RELEASES_TOKEN non impostato: aggiornamento dall'app non pubblicato."
+            exit 0
+          fi
+          VERSION=$(grep -m1 'MARKETING_VERSION:' project.yml | sed -E 's/.*"([^"]+)".*/\1/')
+          python3 tools/publish_public.py "$VERSION" "$GITHUB_RUN_NUMBER" QuantSwarm-Alpha-Zero.ipa \
+            Sources/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-1024.png notes.md

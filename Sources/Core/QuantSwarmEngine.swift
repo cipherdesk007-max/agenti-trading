@@ -80,6 +80,10 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var basketSnapshots: [String: DailyStrategy.Snapshot] = [:]
     /// Barre giornaliere dei 15 ETF all'ultimo controllo (vista MERCATI).
     @Published private(set) var marketBars: [String: [Candle]] = [:]
+    /// Aggiornamento disponibile nella sorgente pubblica (nil = nessuno).
+    @Published private(set) var availableUpdate: UpdateChecker.Release?
+    /// Esito dell'ultimo controllo aggiornamenti, per SISTEMA.
+    @Published private(set) var updateStatus = "non controllato"
     /// Simboli della modalità veloce della sessione in corso.
     @Published private(set) var intradaySymbols: [String] = []
     /// Ordini d'ingresso giornalieri: inviati, mai eseguiti, eseguiti in parte.
@@ -169,6 +173,24 @@ final class QuantSwarmEngine: ObservableObject {
         sessionReportURL = SessionReportBuilder.existingReportURL()
         datasetExportURL = DatasetExporter.existingExportURL()
         refreshDatasetStats()
+    }
+
+    /// Controlla la sorgente pubblica: all'avvio e dal pulsante in SISTEMA.
+    func checkForUpdates() async {
+        updateStatus = "controllo in corso…"
+        guard let latest = await UpdateChecker.fetchLatest() else {
+            availableUpdate = nil
+            updateStatus = "sorgente pubblica non raggiungibile o non ancora attiva"
+            return
+        }
+        if UpdateChecker.isNewer(latest, than: UpdateChecker.installedBuild) {
+            availableUpdate = latest
+            updateStatus = "disponibile \(latest.version) (build \(latest.build))"
+            log("Aggiornamento disponibile: \(latest.version) (build \(latest.build)). SISTEMA → AGGIORNA.")
+        } else {
+            availableUpdate = nil
+            updateStatus = "aggiornata (ultima pubblicata: \(latest.version), build \(latest.build))"
+        }
     }
 
     func restoreCredentials() async {
@@ -890,7 +912,8 @@ final class QuantSwarmEngine: ObservableObject {
             log("Nessun trade chiuso da esportare.", agent: .risk)
             return
         }
-        tradesCSVURL = TradeExporter.write(records: records)
+        // Solo trade con un esito vero: gli ingressi mai eseguiti non sono trade.
+        tradesCSVURL = TradeExporter.write(records: records.filter { $0.netPnL != nil })
         log(tradesCSVURL != nil ? "Trade esportati in CSV: \(records.count)." : "Export CSV fallito.", agent: .risk)
     }
 
@@ -1475,6 +1498,15 @@ final class QuantSwarmEngine: ObservableObject {
             for record in records {
                 do {
                     let order = try await service.order(id: record.orderID)
+                    // Ingresso mai eseguito e chiuso (annullato, scaduto, rifiutato):
+                    // non c'è esito da aspettare. Senza questo il record verrebbe
+                    // richiesto al broker a ogni ciclo per sempre.
+                    if order.filledQuantityValue == 0, ["canceled", "expired", "rejected"].contains(order.status) {
+                        record.outcomeRecorded = true
+                        record.netPnL = nil
+                        log("\(record.symbol): ingresso mai eseguito (\(order.status)); escluso dalle statistiche.")
+                        continue
+                    }
                     if let entry = order.filledAveragePriceValue {
                         record.actualEntry = entry
                     }
