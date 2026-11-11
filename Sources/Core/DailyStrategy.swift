@@ -14,19 +14,6 @@ import Foundation
 enum DailyStrategy {
     static let basket = ["SPY", "QQQ", "IWM", "DIA", "XLK", "XLF", "XLE", "XLV",
                          "XLY", "XLP", "XLI", "XLU", "XLB", "GLD", "TLT"]
-    /// Gemelli economici: stesso indice, quota più piccola. Il segnale si
-    /// calcola sempre sull'originale; si compra il gemello solo se il capitale
-    /// del bot non basta per 1 azione dell'originale. Con conti grandi si
-    /// compra l'originale, con conti piccoli il gemello: segue il saldo.
-    static let twins: [String: [String]] = ["SPY": ["SPYM"], "QQQ": ["QQQM"], "IWM": ["VTWO"], "GLD": ["GLDM"]]
-    /// Tutti i simboli che la giornaliera può avere in portafoglio.
-    static let tradable: [String] = basket + basket.flatMap { twins[$0] ?? [] }
-    /// L'ETF del paniere da cui viene il segnale (SPYM → SPY).
-    static func family(of symbol: String) -> String {
-        let s = symbol.uppercased()
-        return twins.first(where: { $0.value.contains(s) })?.key ?? s
-    }
-
     static let stopATR = 2.5
     /// Take-profit sul broker (bracket GTC): nel backtest con le regole
     /// dell'app non cambia rendimento né drawdown, ma fa uscire la posizione
@@ -56,8 +43,6 @@ enum DailyStrategy {
         var correlations: [String: Double] = [:]
         /// Titoli delle notizie delle ultime 48 ore sull'ETF e sul mercato.
         var news: [String] = []
-        /// Se si compra un gemello: l'ETF originale che ha dato il segnale.
-        var signalFrom: String?
         /// Stop teorico sulla chiusura (quello reale si ricalcola sul prezzo d'ingresso).
         var stopDistance: Double { DailyStrategy.stopATR * snapshot.atr14 }
     }

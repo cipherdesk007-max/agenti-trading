@@ -326,9 +326,7 @@ actor KimiService {
         quasi lo stesso rischio. news_48h sono i titoli delle notizie delle ultime 48 ore \
         (Benzinga) sull'ETF e sul mercato: usale per evitare di comprare dentro un evento \
         che può cambiare il quadro (decisione della Fed, dati sull'inflazione, crollo di un \
-        settore), non per inseguire una notizia. Se signal_from non è null, il candidato è il \
-        gemello economico di quell'ETF (stesso indice, quota più piccola, scelto perché il \
-        capitale non basta per l'originale): giudicalo come l'originale. Usa market_overview per il contesto generale e \
+        settore), non per inseguire una notizia. Usa market_overview per il contesto generale e \
         recent_closes (ultime 20 chiusure) per giudicare la forma del ribasso. Se c'è \
         past_outcomes, tienine conto: se gli ETF che scarti vanno meglio di quelli che scegli, \
         sii meno selettivo. \
@@ -351,8 +349,7 @@ actor KimiService {
                     "indicators": snap(candidate.snapshot),
                     "recent_closes": candidate.recentCloses.map { ($0 * 100).rounded() / 100 },
                     "correlation_60d": candidate.correlations,
-                    "news_48h": candidate.news,
-                    "signal_from": candidate.signalFrom.map { $0 as Any } ?? NSNull()
+                    "news_48h": candidate.news
                 ]
             },
             "market_overview": market.mapValues(snap),
@@ -425,8 +422,7 @@ actor KimiService {
                 "rsi2": s.rsi2, "atr14": s.atr14,
                 "stop_distance": candidate.stopDistance,
                 "correlation_60d": candidate.correlations,
-                "news_48h": candidate.news,
-                "signal_from": candidate.signalFrom.map { $0 as Any } ?? NSNull()
+                "news_48h": candidate.news
             ],
             "market_overview": market.mapValues { m -> [String: Double] in
                 ["close": m.close, "sma200": m.sma200, "rsi2": m.rsi2, "atr14": m.atr14]

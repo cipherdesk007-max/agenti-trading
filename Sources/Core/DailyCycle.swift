@@ -163,8 +163,6 @@ struct DailyCycleRunner: Sendable {
     let broker: any BrokerClient
     let brain: any DailyBrain
     var basket: [String] = DailyStrategy.basket
-    var twinSymbols: [String] { basket.flatMap { DailyStrategy.twins[$0] ?? [] } }
-    var tradable: [String] { basket + twinSymbols }
     var exitFillWaitSeconds: Double = 2.0
 
     func run(_ input: DailyCycleInput, emit: @Sendable (DailyCycleEvent) async -> Void) async -> DailyCycleResult {
@@ -201,14 +199,6 @@ struct DailyCycleRunner: Sendable {
                 missing.append(symbol)
             }
         }
-        // Barre dei gemelli economici (servono per comprarli e per le loro uscite).
-        var twinBars: [String: [Candle]] = [:]
-        for symbol in twinSymbols {
-            if Task.isCancelled { result.aborted = true; return result }
-            if let raw = try? await broker.dailyBars(symbol: symbol) {
-                twinBars[symbol] = DailyStrategy.closedBars(raw, marketOpen: marketOpen)
-            }
-        }
         guard !bars.isEmpty else {
             await emit(.init(stage: .scout, state: .failed, detail: "nessuna barra ricevuta",
                              log: "Scout: barre giornaliere non disponibili; ciclo annullato (nessun ordine).", agent: .scout))
@@ -221,11 +211,6 @@ struct DailyCycleRunner: Sendable {
                             + " · mercato \(marketOpen ? "aperto" : "chiuso")"))
         result.benchmarkClose = bars["SPY"]?.last?.close
         for (symbol, b) in bars {
-            if let snap = DailyStrategy.snapshot(of: b) { result.snapshots[symbol] = snap }
-        }
-        // Da qui in poi le barre includono i gemelli (uscite, stop, correlazioni).
-        bars.merge(twinBars) { current, _ in current }
-        for (symbol, b) in twinBars {
             if let snap = DailyStrategy.snapshot(of: b) { result.snapshots[symbol] = snap }
         }
         result.bars = bars
@@ -254,7 +239,7 @@ struct DailyCycleRunner: Sendable {
         }
         // Ingressi dei giorni precedenti: il residuo non eseguito si annulla
         // (anche se eseguiti in parte: si tiene solo la quantità già comprata).
-        for order in orders where order.isEntry && tradable.contains(order.symbol.uppercased()) {
+        for order in orders where order.isEntry && basket.contains(order.symbol.uppercased()) {
             let symbol = order.symbol.uppercased()
             guard let day = book.entries[symbol], day < today else { continue }
             do {
@@ -346,10 +331,9 @@ struct DailyCycleRunner: Sendable {
 
         // SEGNALI d'ingresso.
         let pendingNow = Set(orders.filter(\.isEntry).map { $0.symbol.uppercased() })
-        // Un ETF e il suo gemello sono la stessa scommessa: se ne hai uno, l'altro non entra.
-        let busyFamilies = Set((Array(held.keys) + Array(pendingNow) + Array(exited)).map(DailyStrategy.family(of:)))
         let candidates = basket.compactMap { symbol -> DailyStrategy.Candidate? in
-            guard !busyFamilies.contains(symbol), let b = bars[symbol] else { return nil }
+            guard held[symbol] == nil, !pendingNow.contains(symbol), !exited.contains(symbol),
+                  let b = bars[symbol] else { return nil }
             return DailyStrategy.entryCandidate(symbol: symbol, bars: b)
         }
         result.candidates = candidates
@@ -370,39 +354,19 @@ struct DailyCycleRunner: Sendable {
         // Solo i candidati di cui il capitale del bot può comprare almeno 1 azione
         // (contante libero, tetto per posizione, rischio per trade) arrivano a
         // Kimi: niente crediti spesi per ordini che il Rischio boccerebbe.
-        func affordable(_ c: DailyStrategy.Candidate) -> Bool {
+        var fresh = undecided.filter { c in
             RiskRules.canBuyOneShare(price: c.snapshot.close, stopDistance: c.stopDistance,
                                      capital: botAccount.equity, freeCash: botAccount.cash,
                                      riskFraction: input.riskFraction)
         }
-        // Se l'originale non entra nel capitale si prova il gemello economico
-        // (stesso indice): livelli, stop e quantità si calcolano sul gemello.
-        var fresh: [DailyStrategy.Candidate] = []
-        var viaTwin: [String] = []
-        for c in undecided {
-            if affordable(c) { fresh.append(c); continue }
-            for twin in DailyStrategy.twins[c.symbol] ?? [] {
-                guard let b = bars[twin], let s = DailyStrategy.snapshot(of: b) else { continue }
-                var t = DailyStrategy.Candidate(symbol: twin, snapshot: s, recentCloses: b.suffix(20).map(\.close))
-                t.signalFrom = c.symbol
-                if affordable(t) {
-                    fresh.append(t)
-                    viaTwin.append("\(c.symbol)→\(twin)")
-                    break
-                }
-            }
-        }
-        if !viaTwin.isEmpty {
-            await emit(.init(log: "Capitale: segnali eseguiti col gemello economico (stesso indice): \(viaTwin.joined(separator: ", ")).", agent: .risk))
-        }
         // Notizie delle ultime 48 ore: candidati e mercato in due richieste
         // separate, così le tante notizie su SPY non coprono quelle dell'ETF.
         if !fresh.isEmpty {
-            let own = (try? await broker.news(symbols: Array(Set(fresh.map { $0.signalFrom ?? $0.symbol })).sorted(), hours: 48)) ?? []
+            let own = (try? await broker.news(symbols: fresh.map(\.symbol).sorted(), hours: 48)) ?? []
             let market = (try? await broker.news(symbols: ["QQQ", "SPY"], hours: 48)) ?? []
             let headlines = own + market
             for index in fresh.indices {
-                fresh[index].news = NewsHeadline.pick(for: fresh[index].signalFrom ?? fresh[index].symbol, from: headlines).map(\.compact)
+                fresh[index].news = NewsHeadline.pick(for: fresh[index].symbol, from: headlines).map(\.compact)
             }
         }
         // Correlazioni con le posizioni aperte e tra i candidati (60 sedute).
@@ -447,10 +411,7 @@ struct DailyCycleRunner: Sendable {
             result.book = book
             return result
         }
-        for c in fresh {
-            book.markDecided(c.symbol, day: today)
-            if let origin = c.signalFrom { book.markDecided(origin, day: today) }
-        }
+        for c in fresh { book.markDecided(c.symbol, day: today) }
         result.verdicts = verdicts
         for v in verdicts {
             await emit(.init(log: "\(v.symbol): \(v.wantsBuy ? "BUY" : "SKIP") \(Int(v.confidence * 100))% — \(v.rationale)", agent: .brain))

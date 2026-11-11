@@ -24,8 +24,7 @@ struct MarketInsight: Sendable, Equatable {
     /// `capital` nil = saldo del conto non ancora letto: non si giudica la
     /// comprabilità (meglio nessun giudizio che "fuori capitale" sbagliato).
     static func evaluate(symbol: String, bars: [Candle], held: Bool,
-                         capital: Double?, riskFraction: Double,
-                         twin: (symbol: String, bars: [Candle])? = nil) -> MarketInsight {
+                         capital: Double?, riskFraction: Double) -> MarketInsight {
         let close = bars.last?.close
         let change: Double? = bars.count >= 2 ? bars[bars.count - 1].close / bars[bars.count - 2].close - 1 : nil
         guard let snap = DailyStrategy.snapshot(of: bars) else {
@@ -37,16 +36,10 @@ struct MarketInsight: Sendable, Equatable {
             return MarketInsight(symbol: symbol, state: .held, close: close, dayChange: change, snapshot: snap,
                                  reason: "Posizione aperta: esce quando chiude sopra la media a 5 giorni o dopo \(DailyStrategy.maxHoldingDays) sedute; stop sul broker.")
         }
-        func fits(_ s: DailyStrategy.Snapshot) -> Bool {
-            capital.map {
-                RiskRules.canBuyOneShare(price: s.close, stopDistance: DailyStrategy.stopATR * s.atr14,
-                                         capital: $0, freeCash: $0, riskFraction: riskFraction)
-            } ?? true
-        }
-        // Se l'originale è troppo caro ma il gemello economico entra, si compra quello.
-        let twinFits = !fits(snap) && (twin.flatMap { DailyStrategy.snapshot(of: $0.bars) }.map(fits) ?? false)
-        let affordable = fits(snap) || twinFits
-        let via = twinFits ? " Si compra il gemello \(twin!.symbol) (stesso indice, quota più piccola)." : ""
+        let affordable = capital.map {
+            RiskRules.canBuyOneShare(price: snap.close, stopDistance: DailyStrategy.stopATR * snap.atr14,
+                                     capital: $0, freeCash: $0, riskFraction: riskFraction)
+        } ?? true
         if snap.close <= snap.sma200 {
             return MarketInsight(symbol: symbol, state: .trendDown, close: close, dayChange: change, snapshot: snap,
                                  reason: "Sotto la media a 200 giorni: trend in calo, il bot non compra.")
@@ -54,7 +47,7 @@ struct MarketInsight: Sendable, Equatable {
         if DailyStrategy.entryCandidate(symbol: symbol, bars: bars) != nil {
             return affordable
                 ? MarketInsight(symbol: symbol, state: .signal, close: close, dayChange: change, snapshot: snap,
-                                reason: "Trend su e ribasso forte (RSI2 \(rsi) < 10): candidato all'acquisto, decide Kimi.\(via)")
+                                reason: "Trend su e ribasso forte (RSI2 \(rsi) < 10): candidato all'acquisto, decide Kimi.")
                 : MarketInsight(symbol: symbol, state: .unaffordable, close: close, dayChange: change, snapshot: snap,
                                 reason: "Segnale (RSI2 \(rsi)) ma il capitale non compra 1 azione entro i limiti.")
         }
@@ -63,7 +56,7 @@ struct MarketInsight: Sendable, Equatable {
                                  reason: "Con questo capitale 1 azione supera il 25% o il rischio dell'1%.")
         }
         return MarketInsight(symbol: symbol, state: .trendUp, close: close, dayChange: change, snapshot: snap,
-                             reason: "Trend su; si compra solo dopo un ribasso forte (RSI2 sotto 10, ora \(rsi)).\(via)")
+                             reason: "Trend su; si compra solo dopo un ribasso forte (RSI2 sotto 10, ora \(rsi)).")
     }
 
     /// Media mobile semplice punto per punto (nil finché non ci sono `period` valori).
