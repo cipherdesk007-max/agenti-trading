@@ -407,4 +407,21 @@ final class DailyCycleTests: XCTestCase {
         XCTAssertEqual(result.equity, 100_000)
         XCTAssertNotNil(result.benchmarkClose)
     }
+
+    func testZeroCreditsOnlyOnKimiStages() async {
+        let broker = FakeBroker(bars: ["SPY": rising])
+        let collector = EventCollector()
+        _ = await runner(broker, FakeBrain()).run(input()) { await collector.add($0) }
+        let skipped = await collector.events.filter { $0.state == .skipped && $0.stage != nil }
+        XCTAssertFalse(skipped.isEmpty)
+        for event in skipped {
+            let kimi = event.stage?.usesKimi ?? false
+            XCTAssertEqual(event.detail.contains("crediti"), kimi, "\(String(describing: event.stage)): \(event.detail)")
+        }
+    }
+}
+
+actor EventCollector {
+    private(set) var events: [DailyCycleEvent] = []
+    func add(_ event: DailyCycleEvent) { events.append(event) }
 }

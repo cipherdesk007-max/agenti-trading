@@ -1973,7 +1973,9 @@ extension QuantSwarmEngine {
     func skipStages(after id: PipelineStageID, _ detail: String) {
         guard let start = PipelineStageID.allCases.firstIndex(of: id) else { return }
         for stage in PipelineStageID.allCases.dropFirst(start + 1) {
-            setStage(stage, .skipped, detail)
+            // "0 crediti" ha senso solo per gli agenti Kimi: Rischio ed
+            // Esecutore sono codice e non usano mai crediti.
+            setStage(stage, .skipped, stage.usesKimi ? detail : detail.replacingOccurrences(of: " · 0 crediti", with: ""))
         }
     }
 

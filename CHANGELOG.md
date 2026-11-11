@@ -7,6 +7,9 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+### Corretto
+- Catena agenti: "0 crediti" compariva anche su Rischio ed Esecutore, che sono codice e non usano mai Kimi. Ora compare solo su Analyst, Brain e Reviewer.
+
 ### Aggiunto
 - Controllo mensile automatico delle strategie (GitHub Actions, il 1° del mese): giornaliera con le regole dell'app, conto piccolo e overnight rifatti sui dati aggiornati, per accorgersi se un effetto si sta spegnendo.
 

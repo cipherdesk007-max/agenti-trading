@@ -551,7 +551,9 @@ struct DailyCycleRunner: Sendable {
     private func skip(after id: PipelineStageID, _ detail: String, _ emit: @Sendable (DailyCycleEvent) async -> Void) async {
         guard let start = PipelineStageID.allCases.firstIndex(of: id) else { return }
         for stage in PipelineStageID.allCases.dropFirst(start + 1) {
-            await emit(.init(stage: stage, state: .skipped, detail: detail))
+            // "0 crediti" solo sugli agenti Kimi (Rischio ed Esecutore sono codice).
+            let text = stage.usesKimi ? detail : detail.replacingOccurrences(of: " · 0 crediti", with: "")
+            await emit(.init(stage: stage, state: .skipped, detail: text))
         }
     }
 
