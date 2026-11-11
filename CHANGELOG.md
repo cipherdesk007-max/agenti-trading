@@ -17,7 +17,11 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 - Le release non partono più da sole: di default l'IPA va in una bozza privata e viene consegnata a mano. `ultima`, `vX.Y.Z` e gli aggiornamenti dall'app partono solo con "pubblica".
 - CI più veloce: a ogni modifica girano solo i test sulla logica, che bloccano l'IPA se falliscono. I test dell'interfaccia e gli screenshot partono su richiesta, prima delle release.
 
+- MERCATI compare subito all'apertura con le ultime barre salvate, con l'ora dei dati; il primo controllo le aggiorna.
+- DETTAGLI mostra solo ciò che serve alla modalità attiva: analisi a richiesta, dataset di training, edge e calibrazione restano nella modalità veloce. L'esportazione CSV dei trade ha un pannello suo.
+
 ### Corretto
+- "ANALIZZA ORA" a mercato chiuso lasciava in alto il messaggio "Dati fermi: analisi impossibile". Ora resta solo nel registro.
 - Gli ingressi mai eseguiti (limite annullato, scaduto o rifiutato) venivano richiesti al broker a ogni ciclo, per sempre. Ora vengono chiusi una volta ed esclusi da statistiche e CSV.
 - Il grafico negli screenshot automatici si apre dopo il caricamento dei dati d'esempio.
 

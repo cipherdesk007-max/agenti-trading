@@ -48,7 +48,9 @@ struct MarketsPanel: View {
                     .font(.system(.caption, design: .monospaced, weight: .heavy))
                     .foregroundStyle(Theme.cyan)
                 Spacer()
-                Text("tocca per il grafico")
+                Text(isIntraday || engine.marketBarsDate == nil
+                     ? "tocca per il grafico"
+                     : "dati \(engine.marketBarsDate!.formatted(date: .omitted, time: .shortened)) · tocca")
                     .font(.system(.caption2, design: .monospaced))
                     .foregroundStyle(Theme.textTertiary)
             }

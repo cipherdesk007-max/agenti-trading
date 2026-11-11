@@ -80,6 +80,8 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var basketSnapshots: [String: DailyStrategy.Snapshot] = [:]
     /// Barre giornaliere dei 15 ETF all'ultimo controllo (vista MERCATI).
     @Published private(set) var marketBars: [String: [Candle]] = [:]
+    /// Quando sono state scaricate le barre mostrate (cache all'avvio).
+    @Published private(set) var marketBarsDate: Date?
     /// Aggiornamento disponibile nella sorgente pubblica (nil = nessuno).
     @Published private(set) var availableUpdate: UpdateChecker.Release?
     /// Esito dell'ultimo controllo aggiornamenti, per SISTEMA.
@@ -171,6 +173,14 @@ final class QuantSwarmEngine: ObservableObject {
         // Report .txt di un'eventuale sessione precedente (es. generato alla
         // chiusura dell'app): riappare in dashboard per export/eliminazione.
         sessionReportURL = SessionReportBuilder.existingReportURL()
+        // Grafici subito all'apertura: ultime barre salvate, aggiornate al primo controllo.
+        if let cached = MarketBarsCache.load() {
+            marketBars = cached.bars
+            marketBarsDate = cached.savedAt
+            for (symbol, bars) in cached.bars {
+                if let snap = DailyStrategy.snapshot(of: bars) { basketSnapshots[symbol] = snap }
+            }
+        }
         datasetExportURL = DatasetExporter.existingExportURL()
         refreshDatasetStats()
     }
@@ -842,7 +852,6 @@ final class QuantSwarmEngine: ObservableObject {
             .sorted { $0.symbol < $1.symbol }
         guard !fresh.isEmpty else {
             if manual {
-                statusMessage = "Dati fermi: analisi impossibile"
                 log("Analisi richiesta ma i dati di mercato sono fermi (mercato chiuso o stream muto).", agent: .brain)
             }
             return
@@ -1988,7 +1997,11 @@ extension QuantSwarmEngine {
         DailyBookStore.save(result.book)
         botExposure = result.botExposure
         if !result.snapshots.isEmpty { basketSnapshots = result.snapshots }
-        if !result.bars.isEmpty { marketBars = result.bars }
+        if !result.bars.isEmpty {
+            marketBars = result.bars
+            marketBarsDate = Date()
+            MarketBarsCache.save(result.bars)
+        }
         if result.marketOpen, let equity = result.equity {
             // SPY in tempo reale (stesso istante del patrimonio); se manca,
             // l'ultima chiusura giornaliera.

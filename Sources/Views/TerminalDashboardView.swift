@@ -122,13 +122,18 @@ struct TerminalDashboardView: View {
                                 capitalPanel
                                 decisionsPanel
                                 shadowPanel
-                                analysisPanel
+                                // Pannelli della sola modalità veloce (stream 1m,
+                                // analisi a richiesta, dataset): in giornaliera non servono.
+                                if displayedMode == .intraday { analysisPanel }
                                 portfolioPanel
                                 kimiPanel
-                                edgePanel
-                                calibrationPanel
+                                if displayedMode == .intraday {
+                                    edgePanel
+                                    calibrationPanel
+                                }
                                 metricsPanel
-                                datasetPanel
+                                if displayedMode == .intraday { datasetPanel }
+                                exportPanel
                                 logPanel
                             case .broker:
                                 BrokerControlView()
@@ -919,6 +924,18 @@ struct TerminalDashboardView: View {
                     .buttonStyle(TerminalButtonStyle(color: .red))
                 }
             }
+            Text("Ogni decisione (anche gli HOLD) è registrata con prezzo, ATR, livelli ed esito: win/loss per i trade eseguiti, movimento del prezzo a 30 min per gli HOLD.")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .panelStyle(DashboardPalette.cyan)
+    }
+
+    /// Esportazione dei trade chiusi: vale per entrambe le modalità.
+    private var exportPanel: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            panelHeader("ESPORTA TRADE", color: terminalGreen)
             Button("ESPORTA TRADE CHIUSI CSV") {
                 engine.exportTradesCSV()
             }
@@ -940,12 +957,12 @@ struct TerminalDashboardView: View {
                     .buttonStyle(TerminalButtonStyle(color: .red))
                 }
             }
-            Text("Ogni decisione (anche gli HOLD) è registrata con prezzo, ATR, livelli ed esito: win/loss per i trade eseguiti, movimento del prezzo a 30 min per gli HOLD.")
+            Text("Un file da aprire in Numbers o Excel: data, ETF, quantità, ingresso, uscita, P&L, stop e motivazione di Kimi.")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .panelStyle(DashboardPalette.cyan)
+        .panelStyle(terminalGreen)
     }
 
     private func panelHeader(_ title: String, color: Color) -> some View {

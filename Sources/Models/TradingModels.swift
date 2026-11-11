@@ -51,7 +51,7 @@ struct InstrumentConstraints: Sendable {
 
 /// Candela OHLCV chiusa. Quella in formazione non esce mai da CandleStore:
 /// Kimi e i filtri vedono solo candele concluse.
-struct Candle: Sendable, Equatable {
+struct Candle: Codable, Sendable, Equatable {
     let timestamp: Date
     let open: Double
     let high: Double

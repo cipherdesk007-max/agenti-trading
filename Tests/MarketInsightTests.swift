@@ -49,3 +49,17 @@ final class MarketInsightTests: XCTestCase {
         XCTAssertEqual(MarketInsight.movingAverage([1, 2], period: 0).compactMap { $0 }.count, 0)
     }
 }
+
+final class MarketBarsCacheTests: XCTestCase {
+    func testRoundTripKeepsLast300Bars() throws {
+        let start = Date(timeIntervalSince1970: 1_735_732_800)
+        let bars = (0..<320).map { i in
+            Candle(timestamp: start.addingTimeInterval(Double(i) * 86_400), open: 1, high: 2, low: 0.5, close: Double(i), volume: 1)
+        }
+        MarketBarsCache.save(["SPY": bars], now: start)
+        let loaded = try XCTUnwrap(MarketBarsCache.load())
+        XCTAssertEqual(loaded.bars["SPY"]?.count, 300)
+        XCTAssertEqual(loaded.bars["SPY"]?.last, bars.last)
+        XCTAssertEqual(loaded.savedAt, start)
+    }
+}
