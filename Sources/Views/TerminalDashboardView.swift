@@ -1429,16 +1429,28 @@ private struct SystemSettingsView: View {
             .buttonStyle(TerminalButtonStyle(color: DashboardPalette.green))
 
             VStack(alignment: .leading, spacing: 6) {
-                settingRow("STATO APPLICATO", "rischio \(String(format: "%.2f", engine.strategyConfig.riskPerTradePercent))% · max \(engine.strategyConfig.maxOpenPositions) · stop \(String(format: "%.1f", engine.strategyConfig.dailyStopPercent))%")
-                settingRow("DECISIONI KIMI", "chiusura candela \(engine.strategyConfig.decisionTimeframeMinutes)m · filtro \(engine.strategyConfig.kimiFilterEnabled ? "ON" : "OFF")")
-                settingRow("MODELLO ATTIVO", engine.strategyConfig.kimiModel)
-                settingRow("STREAM DATI", SystemLimits.marketStreamHost)
-                settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
-                settingRow("FLAT BY CLOSE", "chiusura totale a T-10 min")
-                settingRow("FOREGROUND", "motore solo ad app aperta: in background nessun ordine, rientro con riconciliazione")
+                let config = engine.strategyConfig
+                settingRow("MODALITÀ", config.tradingMode.label)
+                settingRow("STATO APPLICATO", "rischio \(String(format: "%.2f", config.riskPerTradePercent))% · max \(config.maxOpenPositions) · stop giorno \(String(format: "%.1f", config.dailyStopPercent))%")
+                settingRow("MODELLO ATTIVO", config.kimiModel)
+                if config.tradingMode == .daily {
+                    settingRow("SEGNALI", "15 ETF · sopra SMA200 e RSI2 < 10 · Kimi solo se c'è un segnale")
+                    settingRow("ORDINI", "limite + stop \(String(format: "%.1f", DailyStrategy.stopATR)) ATR + target \(String(format: "%.0f", DailyStrategy.takeProfitATR)) ATR, GTC sul broker")
+                    settingRow("USCITE", "chiusura > SMA5 o \(DailyStrategy.maxHoldingDays) giorni, solo a mercato aperto")
+                    settingRow("DATI", "barre giornaliere SIP (consolidate), ripiego IEX")
+                    settingRow("CONTROLLI", "subito, ogni 15 min ad app aperta e a ogni riapertura")
+                } else {
+                    settingRow("DECISIONI KIMI", "chiusura candela \(config.decisionTimeframeMinutes)m · filtro \(config.kimiFilterEnabled ? "ON" : "OFF")")
+                    settingRow("STREAM DATI", SystemLimits.marketStreamHost)
+                    settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
+                    settingRow("FLAT BY CLOSE", "chiude le posizioni della veloce a T-10 min")
+                    settingRow("FOREGROUND", "motore solo ad app aperta: in background nessun ordine")
+                }
                 settingRow("PAUSE AUTOMATICHE", "rete assente o batteria < 20%")
             }
-            Text("Verità tecnica: nessuna app iOS può garantire un WebSocket attivo 24/7 se chiusa o sospesa. Il motore gira solo in foreground con schermo tenuto acceso e indicatore MOTORE ATTIVO; in background le posizioni restano protette dalle gambe stop/target sul broker. Per operatività 24/7 reale serve un servizio server-side.")
+            Text(engine.strategyConfig.tradingMode == .daily
+                 ? "Nessuna app iOS resta attiva 24/7: per questo la giornaliera mette stop e target sul broker, attivi anche ad app chiusa. Basta aprirla una volta al giorno a mercato aperto."
+                 : "Nessuna app iOS resta attiva 24/7: la veloce lavora solo ad app aperta con lo schermo acceso; in background nessun nuovo ordine, le posizioni restano protette dalle gambe stop/target sul broker.")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.gray)
                 .fixedSize(horizontal: false, vertical: true)

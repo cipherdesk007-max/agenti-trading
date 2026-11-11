@@ -281,6 +281,7 @@ final class QuantSwarmEngine: ObservableObject {
     /// Aggiorna la strategia senza ricompilare: salva in UserDefaults, applica
     /// subito il modello Kimi e lascia che il ciclo successivo usi i nuovi limiti.
     func updateStrategyConfig(_ config: StrategyConfig) {
+        let previous = strategyConfig
         let sanitized = config.sanitized
         strategyConfig = sanitized
         StrategyConfigStore.save(sanitized)
@@ -292,14 +293,28 @@ final class QuantSwarmEngine: ObservableObject {
         if !isRunning {
             NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
         }
-        log(
-            "Impostazioni aggiornate: rischio \(format(sanitized.riskPerTradePercent))%, "
-                + "max posizioni \(sanitized.maxOpenPositions), stop giorno \(format(sanitized.dailyStopPercent))%, "
-                + "ciclo \(sanitized.decisionIntervalSeconds)s, validità analisi \(format(sanitized.analysisIntervalMinutes, fractionDigits: 1)) min, "
-                + "timeframe \(sanitized.decisionTimeframeMinutes)m, filtro \(sanitized.kimiFilterEnabled ? "ON" : "OFF"), "
-                + "limite crediti \(sanitized.creditLimitEnabled ? format(sanitized.dailyCreditLimitUSD) + " USD" : "OFF"), "
-                + "modello \(sanitized.kimiModel)."
-        )
+        // Nel registro solo ciò che è cambiato davvero, in breve.
+        var changes: [String] = []
+        if previous.tradingMode != sanitized.tradingMode { changes.append("modalità \(sanitized.tradingMode.label) (dal prossimo START)") }
+        if previous.riskPerTradePercent != sanitized.riskPerTradePercent { changes.append("rischio \(format(sanitized.riskPerTradePercent))%") }
+        if previous.maxOpenPositions != sanitized.maxOpenPositions { changes.append("max posizioni \(sanitized.maxOpenPositions)") }
+        if previous.dailyStopPercent != sanitized.dailyStopPercent { changes.append("stop giorno \(format(sanitized.dailyStopPercent))%") }
+        if previous.creditLimitEnabled != sanitized.creditLimitEnabled || previous.dailyCreditLimitUSD != sanitized.dailyCreditLimitUSD {
+            changes.append("limite crediti \(sanitized.creditLimitEnabled ? format(sanitized.dailyCreditLimitUSD) + " USD" : "OFF")")
+        }
+        if previous.kimiModel != sanitized.kimiModel { changes.append("modello \(sanitized.kimiModel)") }
+        if previous.dailyReminder != sanitized.dailyReminder { changes.append("promemoria \(sanitized.dailyReminder ? "ON" : "OFF")") }
+        if previous.widgetShowsAmounts != sanitized.widgetShowsAmounts { changes.append("importi widget \(sanitized.widgetShowsAmounts ? "ON" : "OFF")") }
+        if previous.autoResumeOnLaunch != sanitized.autoResumeOnLaunch { changes.append("ripresa automatica \(sanitized.autoResumeOnLaunch ? "ON" : "OFF")") }
+        if previous.decisionTimeframeMinutes != sanitized.decisionTimeframeMinutes
+            || previous.kimiFilterEnabled != sanitized.kimiFilterEnabled
+            || previous.decisionIntervalSeconds != sanitized.decisionIntervalSeconds
+            || previous.analysisIntervalMinutes != sanitized.analysisIntervalMinutes {
+            changes.append("parametri modalità veloce")
+        }
+        if !changes.isEmpty {
+            log("Impostazioni: " + changes.joined(separator: ", ") + ".")
+        }
     }
 
     /// Carica dall'API Kimi la lista reale dei modelli disponibili per la
