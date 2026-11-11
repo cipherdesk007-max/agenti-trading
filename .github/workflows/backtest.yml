@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali"
         default: "tutti"
 
 jobs:
@@ -49,4 +49,8 @@ jobs:
       - name: Overnight e rimbalzo di fine giornata
         if: env.Q == 'tutti' || env.Q == 'overnight' || env.Q == 'mensile'
         run: python tools/backtest_overnight.py | tee -a backtest.md
+      - name: Batteria di regole giornaliere
+        if: env.Q == 'tutti' || env.Q == 'segnali'
+        working-directory: tools
+        run: python backtest_signals.py | tee -a ../backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
