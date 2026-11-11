@@ -534,6 +534,22 @@ actor AlpacaService {
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
     }
 
+    /// Ordine a mercato in asta (modalità notte): "cls" = asta di chiusura,
+    /// "opg" = asta di apertura. Solo azioni intere.
+    func submitAuction(symbol: String, quantity: Int, side: String, timeInForce: String,
+                       clientOrderId: String) async throws -> AlpacaOrder {
+        let body: [String: Any] = [
+            "symbol": symbol.uppercased(),
+            "qty": String(quantity),
+            "side": side,
+            "type": "market",
+            "time_in_force": timeInForce,
+            "client_order_id": clientOrderId
+        ]
+        let data = try await send(path: "/v2/orders", method: "POST", body: body)
+        return try JSONDecoder().decode(AlpacaOrder.self, from: data)
+    }
+
     /// Annulla un singolo ordine aperto (controllo manuale dal broker panel).
     func cancelOrder(id: String) async throws {
         guard let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
@@ -696,4 +712,17 @@ private struct NewsResponse: Decodable {
         let url: String?
     }
     let news: [Item]?
+}
+
+extension AlpacaBroker: NightBroker {
+    func nightClock() async throws -> (isOpen: Bool, nextClose: Date?) {
+        let c = try await service.clock()
+        return (c.isOpen, c.nextCloseDate)
+    }
+
+    func submitAuction(symbol: String, quantity: Int, side: String, timeInForce: String,
+                       clientOrderId: String) async throws -> String {
+        try await service.submitAuction(symbol: symbol, quantity: quantity, side: side,
+                                        timeInForce: timeInForce, clientOrderId: clientOrderId).id
+    }
 }

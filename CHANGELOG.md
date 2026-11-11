@@ -8,6 +8,7 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 ## [Non rilasciato]
 
 ### Aggiunto
+- **MODALITÀ NOTTE**: compra in chiusura (asta MOC) S&P 500, Nasdaq-100, Russell 2000 e oro a peso uguale e vende all'apertura del giorno dopo (asta OPG). Per ogni indice l'ETF originale o il gemello economico (SPYM, QQQM, VTWO, GLDM) secondo il saldo. Zero crediti Kimi. Due promemoria: 14:45 per la vendita, 21:15 per l'acquisto (ora italiana). Le posizioni della giornaliera non vengono mai toccate. Studio 2006–oggi: circa +8% l'anno, cali fino al −22%.
 - **TRADUCI** nelle notizie del grafico: usa la traduzione di Apple direttamente sul telefono, gratis e senza crediti Kimi, con iOS 17.4 o successivo.
 - **NASCONDI SALDO**: con l'occhio accanto al patrimonio, oppure in Sistema, saldo, P&L, capitale e importi delle posizioni diventano •••••. Le percentuali e i prezzi degli ETF restano visibili. L'impostazione resta salvata.
 - **Notizie agli agenti**: quando c'è un segnale, Brain e Reviewer ricevono i titoli delle notizie Benzinga delle ultime 48 ore sull'ETF e sul mercato (SPY e QQQ), presi dalla News API di Alpaca con le stesse chiavi, senza costi. Servono a non comprare dentro un evento che cambia il quadro (Fed, inflazione, crollo di un settore), non a inseguire le notizie. Il Reviewer boccia se una notizia spiega il calo con un cambiamento vero.

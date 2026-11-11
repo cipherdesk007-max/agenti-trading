@@ -565,16 +565,16 @@ struct TerminalDashboardView: View {
                 Spacer()
                 Text(displayedMode.label)
                     .font(.system(.caption2, design: .monospaced, weight: .black))
-                    .foregroundStyle(displayedMode == .daily ? terminalGreen : .orange)
+                    .foregroundStyle(displayedMode == .intraday ? .orange : terminalGreen)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(displayedMode == .daily ? terminalGreen : .orange, lineWidth: 1))
+                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(displayedMode == .intraday ? .orange : terminalGreen, lineWidth: 1))
             }
             Text(engine.isRunning ? engine.currentActivity : idleHint)
                 .font(.callout)
                 .foregroundStyle(.white)
                 .fixedSize(horizontal: false, vertical: true)
-            if engine.isRunning, engine.activeMode == .daily, let next = engine.nextCheckAt {
+            if engine.isRunning, engine.activeMode?.runsOnSchedule == true, let next = engine.nextCheckAt {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let left = max(0, next.timeIntervalSince(context.date))
                     VStack(alignment: .leading, spacing: 4) {
@@ -586,8 +586,10 @@ struct TerminalDashboardView: View {
                     }
                 }
             }
-            if engine.isRunning, engine.activeMode == .daily {
-                Text("Puoi lasciare l'app aperta o chiuderla: gli stop restano attivi sul broker. Riaprendola parte subito un controllo.")
+            if engine.isRunning, engine.activeMode?.runsOnSchedule == true {
+                Text(engine.activeMode == .night
+                     ? "Gli ordini d'asta restano sul broker anche ad app chiusa. Aprila la mattina entro le 15:28 (vendita all'apertura) e il pomeriggio entro le 21:50 (acquisto in chiusura)."
+                     : "Puoi lasciare l'app aperta o chiuderla: gli stop restano attivi sul broker. Riaprendola parte subito un controllo.")
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
@@ -598,7 +600,7 @@ struct TerminalDashboardView: View {
             }
             HStack(spacing: 12) {
                 if engine.isRunning {
-                    if engine.activeMode == .daily {
+                    if engine.activeMode?.runsOnSchedule == true {
                         Button("CONTROLLA ORA") {
                             engine.requestDailyCheck()
                         }
@@ -641,9 +643,14 @@ struct TerminalDashboardView: View {
     }
 
     private var idleHint: String {
-        displayedMode == .daily
-            ? "Premi START: controlla i \(DailyStrategy.basket.count) ETF, chiama Kimi solo se c'è un segnale e mette gli ordini con lo stop sul broker. Poi puoi chiudere l'app."
-            : "Modalità veloce SPERIMENTALE: nei test perde. Tieni l'app aperta: chiude tutto prima della chiusura del mercato."
+        switch displayedMode {
+        case .daily:
+            return "Premi START: controlla i \(DailyStrategy.basket.count) ETF, chiama Kimi solo se c'è un segnale e mette gli ordini con lo stop sul broker. Poi puoi chiudere l'app."
+        case .night:
+            return "Premi START: compra in chiusura S&P 500, Nasdaq-100, Russell 2000 e oro e li vende all'apertura di domani. Zero crediti Kimi. Meglio su un conto paper separato."
+        case .intraday:
+            return "Modalità veloce SPERIMENTALE: nei test perde. Tieni l'app aperta: chiude tutto prima della chiusura del mercato."
+        }
     }
 
     private var intradayInputs: some View {
@@ -1523,6 +1530,17 @@ private struct SystemSettingsView: View {
 
     /// Quanti ETF del paniere il capitale (e il rischio) impostati possono
     /// comprare con almeno 1 azione intera, sui prezzi dell'ultimo controllo.
+    static func modeDescription(_ mode: TradingMode) -> String {
+        switch mode {
+        case .daily:
+            return "Validata dal backtest 2006–oggi: batte il caso. Stop sul broker attivo anche ad app chiusa: basta aprirla qualche minuto al giorno."
+        case .night:
+            return "Studio 2006–oggi: circa +8% l'anno con cali fino al −22%. Compra in chiusura, vende all'apertura. Servono due aperture al giorno: mattina entro le 15:28, pomeriggio entro le 21:50."
+        case .intraday:
+            return "SPERIMENTALE: nei backtest perde e non batte il caso. Richiede l'app sempre aperta; chiude tutto prima della chiusura."
+        }
+    }
+
     private var buyableRow: some View {
         let snapshots = engine.basketSnapshots
         let equity = engine.account?.equityValue
@@ -1563,15 +1581,13 @@ private struct SystemSettingsView: View {
 
             Picker("Modalità", selection: $draft.tradingMode) {
                 ForEach(TradingMode.allCases, id: \.self) { mode in
-                    Text(mode.label).tag(mode)
+                    Text(mode.shortLabel).tag(mode)
                 }
             }
             .pickerStyle(.segmented)
-            Text(draft.tradingMode == .daily
-                 ? "Validata dal backtest 2006–oggi: batte il caso. Stop sul broker attivo anche ad app chiusa: basta aprirla qualche minuto al giorno."
-                 : "SPERIMENTALE: nei backtest perde e non batte il caso. Richiede l'app sempre aperta; chiude tutto prima della chiusura.")
+            Text(Self.modeDescription(draft.tradingMode))
                 .font(.caption)
-                .foregroundStyle(draft.tradingMode == .daily ? DashboardPalette.green : .orange)
+                .foregroundStyle(draft.tradingMode == .intraday ? .orange : DashboardPalette.green)
             Text("La modalità cambia al prossimo START.")
                 .font(.caption)
                 .foregroundStyle(.gray)
@@ -1613,7 +1629,7 @@ private struct SystemSettingsView: View {
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
                     .explanation()
-                buyableRow
+                if draft.tradingMode != .night { buyableRow }
                 Stepper(
                     "Rischio per trade: \(String(format: "%.2f", draft.riskPerTradePercent))% capitale",
                     value: $draft.riskPerTradePercent,
@@ -1784,7 +1800,12 @@ private struct SystemSettingsView: View {
                     : "tutto il conto") + " · impegnati \(String(format: "%.0f", engine.botExposure)) USD")
                 settingRow("STATO APPLICATO", "rischio \(String(format: "%.2f", config.riskPerTradePercent))% · max \(config.maxOpenPositions) · stop giorno \(String(format: "%.1f", config.dailyStopPercent))%")
                 settingRow("MODELLO ATTIVO", config.kimiModel)
-                if config.tradingMode == .daily {
+                if config.tradingMode == .night {
+                    settingRow("PANIERE", "S&P 500 · Nasdaq-100 · Russell 2000 · oro, peso uguale, originale o gemello secondo il saldo")
+                    settingRow("ORDINI", "acquisto in asta di chiusura (MOC), vendita in asta di apertura (OPG)")
+                    settingRow("KIMI", "non usato: 0 crediti")
+                    settingRow("APERTURE", "mattina entro le 15:28 · pomeriggio 15:30–21:50 (ora italiana)")
+                } else if config.tradingMode == .daily {
                     settingRow("SEGNALI", "15 ETF · sopra SMA200 e RSI2 < 10 · Kimi solo se c'è un segnale")
                     settingRow("ORDINI", "limite + stop \(String(format: "%.1f", DailyStrategy.stopATR)) ATR + target \(String(format: "%.0f", DailyStrategy.takeProfitATR)) ATR, GTC sul broker")
                     settingRow("USCITE", "chiusura > SMA5 o \(DailyStrategy.maxHoldingDays) giorni, solo a mercato aperto")
@@ -1799,7 +1820,7 @@ private struct SystemSettingsView: View {
                 }
                 settingRow("PAUSE AUTOMATICHE", "rete assente o batteria < 20%")
             }
-            Text(engine.strategyConfig.tradingMode == .daily
+            Text(engine.strategyConfig.tradingMode.runsOnSchedule
                  ? "Nessuna app iOS resta attiva 24/7: per questo la giornaliera mette stop e target sul broker, attivi anche ad app chiusa. Basta aprirla una volta al giorno a mercato aperto."
                  : "Nessuna app iOS resta attiva 24/7: la veloce lavora solo ad app aperta con lo schermo acceso; in background nessun nuovo ordine, le posizioni restano protette dalle gambe stop/target sul broker.")
                 .font(.caption)

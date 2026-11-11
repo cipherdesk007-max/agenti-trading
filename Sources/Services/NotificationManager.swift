@@ -86,6 +86,39 @@ final class NotificationManager: NSObject, UNUserNotificationCenterDelegate {
         }
     }
 
+    /// Promemoria della modalità notte, lun–ven (ora di New York, si adatta
+    /// da sola all'ora legale): alle 8:45 per mettere la vendita all'apertura
+    /// (14:45 in Italia) e alle 15:15 per l'acquisto in chiusura (21:15).
+    func scheduleNightReminders(enabled: Bool) {
+        let ids = (2...6).flatMap { ["quantswarm.night.sell.\($0)", "quantswarm.night.buy.\($0)"] }
+        center.removePendingNotificationRequests(withIdentifiers: ids)
+        guard enabled else { return }
+        requestAuthorizationIfNeeded()
+        let slots: [(id: String, hour: Int, minute: Int, title: String, body: String)] = [
+            ("sell", 8, 45, "QUANTSWARM · NOTTE: VENDITA",
+             "Apri l'app prima delle 15:28: mette in vendita all'apertura le posizioni della notte."),
+            ("buy", 15, 15, "QUANTSWARM · NOTTE: ACQUISTO",
+             "Apri l'app prima delle 21:50: mette l'acquisto in chiusura per stanotte.")
+        ]
+        for weekday in 2...6 {
+            for slot in slots {
+                var components = DateComponents()
+                components.calendar = Calendar(identifier: .gregorian)
+                components.timeZone = TimeZone(identifier: "America/New_York")
+                components.weekday = weekday
+                components.hour = slot.hour
+                components.minute = slot.minute
+                let content = UNMutableNotificationContent()
+                content.title = slot.title
+                content.body = slot.body
+                content.sound = .default
+                let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+                center.add(UNNotificationRequest(identifier: "quantswarm.night.\(slot.id).\(weekday)",
+                                                 content: content, trigger: trigger)) { _ in }
+            }
+        }
+    }
+
     func cancelPending(identifier: String) {
         center.removePendingNotificationRequests(withIdentifiers: [identifier])
         center.removeDeliveredNotifications(withIdentifiers: [identifier])

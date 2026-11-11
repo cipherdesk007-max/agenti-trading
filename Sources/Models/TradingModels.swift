@@ -173,13 +173,30 @@ enum TradingMode: String, Codable, Sendable, CaseIterable {
     /// Candele 15m in giornata: SPERIMENTALE, nei backtest perde e non batte
     /// il caso. Richiede l'app aperta e chiude tutto prima della chiusura.
     case intraday
+    /// Compra in chiusura (asta MOC) e vende all'apertura (asta OPG) su
+    /// S&P 500, Nasdaq-100, Russell 2000 e oro. Solo regole, zero crediti Kimi.
+    case night
 
     var label: String {
         switch self {
         case .daily: return "GIORNALIERA · ETF"
         case .intraday: return "VELOCE · SPERIMENTALE"
+        case .night: return "NOTTE · ETF"
         }
     }
+
+    /// Etichetta corta per il selettore.
+    var shortLabel: String {
+        switch self {
+        case .daily: return "GIORNALIERA"
+        case .intraday: return "VELOCE"
+        case .night: return "NOTTE"
+        }
+    }
+
+    /// Giornaliera e notte lavorano a controlli periodici con ordini che
+    /// restano sul broker: chiudere l'app è previsto.
+    var runsOnSchedule: Bool { self != .intraday }
 }
 
 struct StrategyConfig: Codable, Sendable, Equatable {

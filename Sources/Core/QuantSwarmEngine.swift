@@ -394,6 +394,7 @@ final class QuantSwarmEngine: ObservableObject {
         StrategyConfigStore.save(sanitized)
         kimiService?.setModel(sanitized.kimiModel)
         NotificationManager.shared.scheduleDailyReminder(enabled: sanitized.dailyReminder && sanitized.tradingMode == .daily)
+        NotificationManager.shared.scheduleNightReminders(enabled: sanitized.dailyReminder && sanitized.tradingMode == .night)
         applyIdleTimer()
         // Il promemoria "motore in background" si programma solo quando l'app
         // va davvero in background (handleEnteredBackground), mai ad app aperta.
@@ -491,7 +492,7 @@ final class QuantSwarmEngine: ObservableObject {
             return
         }
         guard !isRunning else { return }
-        if strategyConfig.sanitized.tradingMode == .daily {
+        if strategyConfig.sanitized.tradingMode.runsOnSchedule {
             await startDaily(credentials: credentials, kimi: kimiService)
             return
         }
@@ -626,8 +627,8 @@ final class QuantSwarmEngine: ObservableObject {
     /// al prossimo sblocco Face ID riparte la sessione sugli stessi simboli.
     private func resumeSavedSessionIfNeeded() async {
         guard strategyConfig.autoResumeOnLaunch, !isRunning else { return }
-        if strategyConfig.sanitized.tradingMode == .daily {
-            log("Ripresa automatica della modalità giornaliera sul paniere ETF.")
+        if strategyConfig.sanitized.tradingMode.runsOnSchedule {
+            log("Ripresa automatica della modalità \(strategyConfig.sanitized.tradingMode.shortLabel.lowercased()).")
             await start(symbolsText: "", news: "")
             return
         }
@@ -798,7 +799,7 @@ final class QuantSwarmEngine: ObservableObject {
             log("App in background: nuovi ordini e chiamate Kimi sospesi; posizioni protette sul broker.", agent: .system)
             // In giornaliera chiudere l'app è previsto (stop GTC sul broker):
             // nessun promemoria. In veloce invece serve l'app aperta.
-            if activeMode != .daily {
+            if activeMode == .intraday {
                 scheduleBackgroundReminder()
             }
         }
@@ -823,7 +824,7 @@ final class QuantSwarmEngine: ObservableObject {
         }
         acceptsNewOrders = true
         // Giornaliera: riaprire l'app fa partire subito un controllo.
-        if activeMode == .daily, isRunning { dailyCheckNow = true }
+        if activeMode?.runsOnSchedule == true, isRunning { dailyCheckNow = true }
     }
 
     /// Sblocco manuale dello stop drawdown: il picco viene riallineato
@@ -1976,7 +1977,7 @@ final class QuantSwarmEngine: ObservableObject {
 extension QuantSwarmEngine {
     /// Pulsante CONTROLLA ORA della modalità giornaliera.
     func requestDailyCheck() {
-        guard activeMode == .daily, isRunning else { return }
+        guard activeMode?.runsOnSchedule == true, isRunning else { return }
         dailyCheckNow = true
         currentActivity = "Controllo richiesto: parte entro pochi secondi"
     }
@@ -2004,9 +2005,12 @@ extension QuantSwarmEngine {
     }
 
     fileprivate func startDaily(credentials: StoredCredentials, kimi: KimiService) async {
-        activeMode = .daily
-        NotificationManager.shared.scheduleDailyReminder(enabled: strategyConfig.sanitized.dailyReminder)
-        configuredSymbols = DailyStrategy.basket
+        let mode = strategyConfig.sanitized.tradingMode
+        activeMode = mode
+        let night = mode == .night
+        NotificationManager.shared.scheduleDailyReminder(enabled: strategyConfig.sanitized.dailyReminder && !night)
+        NotificationManager.shared.scheduleNightReminders(enabled: strategyConfig.sanitized.dailyReminder && night)
+        configuredSymbols = night ? NightStrategy.universe : DailyStrategy.basket
         acceptsNewOrders = true
         pauseReason = nil
         maxPositionsLogged = false
@@ -2022,13 +2026,19 @@ extension QuantSwarmEngine {
         applyIdleTimer()
         NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
         sessionStartedAt = Date()
-        statusMessage = "Giornaliera \(credentials.paperTrading ? "paper" : "live") attiva"
+        statusMessage = "\(night ? "Notte" : "Giornaliera") \(credentials.paperTrading ? "paper" : "live") attiva"
         log("════════ SESSIONE AVVIATA · ORE \(Date().formatted(date: .omitted, time: .standard)) ════════")
+        if night {
+            log("Modalità NOTTE: compra in chiusura (asta MOC) S&P 500, Nasdaq-100, Russell 2000 e oro a peso uguale, "
+                + "vende all'apertura di domani (asta OPG). ETF originale o gemello economico secondo il saldo. "
+                + "Zero crediti Kimi. Apri l'app la mattina entro le 15:28 e il pomeriggio entro le 21:50.")
+        } else {
         log(
             "Modalità GIORNALIERA su \(DailyStrategy.basket.count) ETF: Trend (sopra SMA200) + Pullback (RSI2 < 10), "
                 + "stop \(DailyStrategy.stopATR) ATR sul broker (GTC, attivo anche ad app chiusa), "
                 + "uscita a chiusura > SMA5 o dopo \(DailyStrategy.maxHoldingDays) giorni. Kimi solo se c'è un segnale."
         )
+        }
         if drawdownLocked {
             log("ATTENZIONE: stop drawdown attivo da una sessione precedente; sblocco manuale nel CRUSCOTTO.", agent: .risk)
         }
@@ -2046,7 +2056,11 @@ extension QuantSwarmEngine {
         while isRunning, !Task.isCancelled {
             lastLoopBeat = Date()
             heartbeatAlerted = false
-            await runDailyCycle(kimi: kimi, credentials: credentials)
+            if activeMode == .night {
+                await runNightCycle(credentials: credentials)
+            } else {
+                await runDailyCycle(kimi: kimi, credentials: credentials)
+            }
             let next = Date().addingTimeInterval(15 * 60)
             nextCheckAt = next
             if isRunning {
@@ -2069,6 +2083,48 @@ extension QuantSwarmEngine {
             }
             dailyCheckNow = false
         }
+    }
+
+    fileprivate func runNightCycle(credentials: StoredCredentials) async {
+        let config = strategyConfig.sanitized
+        pipeline = PipelineStage.initial()
+        if let pause = computePauseReason() {
+            pauseReason = pause
+            setStage(.scout, .blocked, "motore in pausa: \(pause)")
+            skipStages(after: .scout, "pausa")
+            log("MOTORE IN PAUSA: \(pause). Nessun controllo finché non rientra.", agent: .system)
+            return
+        }
+        pauseReason = nil
+        await refreshPortfolio()
+        if let clock = try? await AlpacaService(credentials: credentials.alpaca).clock() {
+            marketClock = clock
+        }
+        var entryBlock: String?
+        if !acceptsNewOrders { entryBlock = "app in background" }
+        else if drawdownLocked { entryBlock = "stop drawdown attivo (sblocco manuale)" }
+        else if dailyStopActive { entryBlock = "stop giornaliero attivo" }
+        let bookAccount = account?.accountNumber
+        let input = NightCycleInput(book: NightBookStore.load(account: bookAccount),
+                                    today: DailyStrategy.tradingDay(Date()), now: Date(),
+                                    capitalCap: config.capitalCap, entryBlock: entryBlock)
+        let runner = NightCycleRunner(broker: AlpacaBroker(credentials: credentials.alpaca))
+        let result = await runner.run(input) { [weak self] event in
+            await self?.apply(event)
+        }
+        guard !result.aborted else { return }
+        NightBookStore.save(result.book, account: bookAccount)
+        botExposure = result.exposure
+        if result.marketOpen, let equity = result.equity {
+            let spy = try? await AlpacaService(credentials: credentials.alpaca).latestTradePrice(symbol: "SPY")
+            let key = equityAccountKey
+            let updated = EquityHistory.record(EquityHistoryStore.load(account: key),
+                                               day: input.today, equity: equity, benchmark: spy,
+                                               capital: config.capitalCap)
+            EquityHistoryStore.save(updated, account: key)
+        }
+        equityHistory = EquityHistoryStore.load(account: equityAccountKey)
+        await refreshPortfolio()
     }
 
     fileprivate func runDailyCycle(kimi: KimiService, credentials: StoredCredentials) async {
@@ -2174,7 +2230,7 @@ extension QuantSwarmEngine {
             lastLoopBeat = Date()
         }
         if let message = event.log {
-            if message.hasPrefix("Strategia:") {
+            if message.hasPrefix("Strategia:") || message.hasPrefix("Notte:") {
                 let key = "\(Self.dayKey(Date())) \(message)"
                 if key != lastStrategyLog { log(message, agent: event.agent) }
                 lastStrategyLog = key
