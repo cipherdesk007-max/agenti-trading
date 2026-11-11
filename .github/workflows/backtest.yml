@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight"
         default: "tutti"
 
 jobs:
@@ -42,4 +42,7 @@ jobs:
       - name: Intraday momentum (prima ora → ultima mezz'ora)
         if: env.Q == 'tutti' || env.Q == 'momentum'
         run: python tools/backtest_momentum.py | tee -a backtest.md
+      - name: Overnight e rimbalzo di fine giornata
+        if: env.Q == 'tutti' || env.Q == 'overnight'
+        run: python tools/backtest_overnight.py | tee -a backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
