@@ -145,3 +145,29 @@ def overnight_portfolio():
 
 if __name__ == "__main__":
     overnight_portfolio()
+
+
+def overnight_twins():
+    """Con 1.000 $ gli ETF da 250–650 $ ad azione non entrano: stessi indici con quote
+    piccole. Effetto overnight sui gemelli, dalla loro nascita, costo 0,003% e 0,01%."""
+    print("\n## 4. Overnight sui gemelli economici (per conti piccoli)\n")
+    twins = {"SPY": ["SPYM", "SPLG"], "QQQ": ["QQQM"], "IWM": ["VTWO"], "GLD": ["GLDM"]}
+    print("| indice | gemello | dal | notti | medio 0,003% (t) | medio 0,01% (t) | ultimi 2 anni 0,003% (t) |")
+    print("|---|---|---|---|---|---|---|")
+    for base, names in twins.items():
+        for name in names:
+            d = yf.download(name, start="2006-01-01", auto_adjust=False, progress=False)
+            if d.empty:
+                continue
+            if isinstance(d.columns, pd.MultiIndex):
+                d.columns = d.columns.get_level_values(0)
+            r = (d["Open"].shift(-1) / d["Close"] - 1).dropna()
+            r1, r2 = r - 0.00006, r - 0.0002
+            rec = r1[r1.index >= r1.index[-1] - pd.Timedelta(days=730)]
+            print(f"| {base} | {name} | {r.index[0].date()} | {len(r)} | {r1.mean() * 100:+.4f}% ({t_stat(r1):+.1f}) | "
+                  f"{r2.mean() * 100:+.4f}% ({t_stat(r2):+.1f}) | {rec.mean() * 100:+.4f}% ({t_stat(rec):+.1f}) |")
+            break
+
+
+if __name__ == "__main__":
+    overnight_twins()
