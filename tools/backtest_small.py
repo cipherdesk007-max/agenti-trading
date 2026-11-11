@@ -131,7 +131,11 @@ def main():
     print()
     print("| scenario | capitale | 2006–oggi CAGR / maxDD / Sharpe | 2016–oggi | trade/anno | segnali saltati per capitale |")
     print("|---|---|---|---|---|---|")
-    for label, lots in [("A. paniere attuale", lots_now), ("B. gemelli economici", twin_lots)]:
+    spy = app.ETFS.index("SPY")
+    no_spy_twin = dict(twin_lots)
+    no_spy_twin[spy] = lots_now[spy]
+    for label, lots in [("A. paniere attuale", lots_now), ("B. gemelli economici", twin_lots),
+                        ("C. gemelli tranne SPY", no_spy_twin)]:
         for cap0 in (1_000, 2_000, 5_000, 100_000):
             eq, tr, skipped, taken = simulate_lots(o, h, l, c, lots, cap0, ind)
             m1 = app.metrics(eq, "2006-01-01", None)
