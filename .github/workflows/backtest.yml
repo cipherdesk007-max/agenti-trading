@@ -1,6 +1,10 @@
 name: Backtest filtro
 
 on:
+  # Controllo mensile automatico: le strategie funzionano ancora sui dati recenti?
+  # (1° del mese, 07:17 UTC). Risultati nel riepilogo del run.
+  schedule:
+    - cron: "17 7 1 * *"
   workflow_dispatch:
     inputs:
       quale:
@@ -12,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 40
     env:
-      Q: ${{ github.event.inputs.quale || 'tutti' }}
+      Q: ${{ github.event.inputs.quale || 'mensile' }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v6
@@ -33,16 +37,16 @@ jobs:
           python tools/backtest_intraday.py | tee -a backtest.md
           BT_COST=0.00005 python tools/backtest_intraday.py | tee -a backtest.md
       - name: Regole esatte dell'app (giornaliera) + robustezza
-        if: env.Q == 'tutti' || env.Q == 'app'
+        if: env.Q == 'tutti' || env.Q == 'app' || env.Q == 'mensile'
         run: python tools/backtest_app.py | tee -a backtest.md
       - name: Conto piccolo (azioni intere ai prezzi di oggi, gemelli economici)
-        if: env.Q == 'tutti' || env.Q == 'piccolo'
+        if: env.Q == 'tutti' || env.Q == 'piccolo' || env.Q == 'mensile'
         working-directory: tools
         run: python backtest_small.py | tee -a ../backtest.md
       - name: Intraday momentum (prima ora → ultima mezz'ora)
         if: env.Q == 'tutti' || env.Q == 'momentum'
         run: python tools/backtest_momentum.py | tee -a backtest.md
       - name: Overnight e rimbalzo di fine giornata
-        if: env.Q == 'tutti' || env.Q == 'overnight'
+        if: env.Q == 'tutti' || env.Q == 'overnight' || env.Q == 'mensile'
         run: python tools/backtest_overnight.py | tee -a backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
