@@ -316,8 +316,10 @@ actor AlpacaService {
         guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
             throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
         }
+        // Stringhe calcolate prima: il formatter non è Sendable e non va catturato.
         let iso = ISO8601DateFormatter()
         let start = iso.string(from: Date().addingTimeInterval(-Double(days) * 86_400))
+        let sipEnd = iso.string(from: Date().addingTimeInterval(-16 * 60))
         func fetch(_ feed: String) async throws -> [Candle] {
             var query = [
                 URLQueryItem(name: "timeframe", value: timeframe),
@@ -328,7 +330,7 @@ actor AlpacaService {
                 URLQueryItem(name: "sort", value: "desc")
             ]
             if feed == "sip" {
-                query.append(URLQueryItem(name: "end", value: iso.string(from: Date().addingTimeInterval(-16 * 60))))
+                query.append(URLQueryItem(name: "end", value: sipEnd))
             }
             let data = try await send(baseURL: credentials.marketDataBaseURL, path: "/v2/stocks/\(escaped)/bars",
                                       method: "GET", query: query)
