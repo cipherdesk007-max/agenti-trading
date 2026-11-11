@@ -78,6 +78,10 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var botExposure: Double = 0
     /// Prezzo e volatilità dei 15 ETF all'ultimo controllo (ETF comprabili).
     @Published private(set) var basketSnapshots: [String: DailyStrategy.Snapshot] = [:]
+    /// Barre giornaliere dei 15 ETF all'ultimo controllo (vista MERCATI).
+    @Published private(set) var marketBars: [String: [Candle]] = [:]
+    /// Simboli della modalità veloce della sessione in corso.
+    @Published private(set) var intradaySymbols: [String] = []
     /// Ordini d'ingresso giornalieri: inviati, mai eseguiti, eseguiti in parte.
     @Published private(set) var entryStats = (placed: 0, unfilled: 0, partial: 0)
 
@@ -411,6 +415,7 @@ final class QuantSwarmEngine: ObservableObject {
         }
 
         configuredSymbols = parsedSymbols
+        intradaySymbols = parsedSymbols
         configuredNews = news.trimmingCharacters(in: .whitespacesAndNewlines)
         UserDefaults.standard.set(symbolsText, forKey: lastSymbolsKey)
         UserDefaults.standard.set(configuredNews, forKey: lastNewsKey)
@@ -1242,6 +1247,22 @@ final class QuantSwarmEngine: ObservableObject {
                     )
                 }
                 setStage(.strategy, .done, "\(symbol): segnale")
+                // Con un conto piccolo: se il capitale non compra almeno 1 azione
+                // (tetto 25%, rischio con lo stop minimo di 0,5 ATR) Kimi non
+                // viene chiamato, crediti risparmiati.
+                let equity = min(account?.equityValue ?? 0, config.capitalCap)
+                guard RiskRules.canBuyOneShare(price: snapshot.lastPrice,
+                                               stopDistance: RiskRules.minimumStopATR * atr,
+                                               capital: equity, freeCash: equity,
+                                               riskFraction: config.riskFraction) else {
+                    setStage(.risk, .blocked, "\(symbol): capitale insufficiente per 1 azione")
+                    skipStages(after: .risk, "capitale insufficiente · 0 crediti")
+                    if !filterSkipLogged.contains("cap-" + symbol) {
+                        filterSkipLogged.insert("cap-" + symbol)
+                        log("\(symbol): con \(format(equity, fractionDigits: 0)) USD di capitale non si compra 1 azione a \(format(snapshot.lastPrice)) entro i limiti; Kimi non chiamato. Usa simboli più economici.", agent: .risk)
+                    }
+                    continue
+                }
                 let context = candleStores[symbol]?.context()
                 // Catena agenti: se la lettura dell'Analyst è più vecchia di
                 // "validità analisi" (impostazioni), viene aggiornata PRIMA del
@@ -1418,6 +1439,14 @@ final class QuantSwarmEngine: ObservableObject {
 
     /// Rilettura post-Kimi dallo stream: prezzo fresco (≤ 10 s) già in memoria,
     /// senza un giro REST extra. Se lo stream tace, il risk agent usa il REST.
+    /// Candele della modalità veloce (timeframe decisionale) per i grafici.
+    func intradayCandles(for symbol: String) -> [Candle] {
+        candleStores[symbol]?.decisionCandles(frameSeconds: strategyConfig.sanitized.decisionFrameSeconds) ?? []
+    }
+
+    /// Ultimo prezzo dallo stream della modalità veloce.
+    func intradayLastPrice(for symbol: String) -> Double? { snapshots[symbol]?.lastPrice }
+
     private func freshStreamPrice(for symbol: String) -> Double? {
         guard let snapshot = snapshots[symbol],
               Date().timeIntervalSince(snapshot.receivedAt) <= 10 else { return nil }
@@ -1927,6 +1956,7 @@ extension QuantSwarmEngine {
         DailyBookStore.save(result.book)
         botExposure = result.botExposure
         if !result.snapshots.isEmpty { basketSnapshots = result.snapshots }
+        if !result.bars.isEmpty { marketBars = result.bars }
         if result.marketOpen, let equity = result.equity {
             // SPY in tempo reale (stesso istante del patrimonio); se manca,
             // l'ultima chiusura giornaliera.
@@ -2032,6 +2062,25 @@ extension QuantSwarmEngine {
             preview = EquityHistory.record(preview, day: day, equity: bot, benchmark: spy, capital: 10_000)
         }
         equityHistory = preview
+        var bars: [String: [Candle]] = [:]
+        for (k, symbol) in DailyStrategy.basket.enumerated() {
+            let base = [655.0, 590, 245, 470, 270, 52, 90, 140, 225, 80, 140, 82, 92, 380, 90][k % 15]
+            var price = base * 0.8
+            var list: [Candle] = []
+            for i in 0..<260 {
+                let drift = (k % 4 == 3 ? -0.0006 : 0.0009)
+                let wave = 0.012 * sin(Double(i + k * 7) / 6)
+                let open = price
+                price = max(1, price * (1 + drift + wave * 0.35 + (i > 255 && k % 5 == 0 ? -0.012 : 0)))
+                let high = max(open, price) * 1.006
+                let low = min(open, price) * 0.994
+                list.append(Candle(timestamp: Date().addingTimeInterval(Double(i - 260) * 86_400),
+                                   open: open, high: high, low: low, close: price, volume: 1_000_000))
+            }
+            bars[symbol] = list
+            if let snap = DailyStrategy.snapshot(of: list) { basketSnapshots[symbol] = snap }
+        }
+        marketBars = bars
         creditsSpentToday = 0.04
         let now = Date()
         pipeline = [

@@ -15,7 +15,7 @@ struct LoginView: View {
 
     var body: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
+            Theme.background.ignoresSafeArea()
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     VStack(alignment: .leading, spacing: 6) {
@@ -111,8 +111,8 @@ struct LoginView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .padding(12)
-                .background(Color(white: 0.08))
-                .overlay(Rectangle().stroke(terminalGreen.opacity(0.55), lineWidth: 1))
+                .background(Color(white: 0.08), in: Theme.shape(Theme.smallRadius))
+                .overlay(Theme.shape(Theme.smallRadius).strokeBorder(terminalGreen.opacity(0.55), lineWidth: 1))
         }
     }
 

@@ -118,6 +118,8 @@ struct DailyCycleResult: Sendable {
     var botExposure: Double = 0
     /// Prezzo e volatilità di ogni ETF del paniere (per "ETF comprabili").
     var snapshots: [String: DailyStrategy.Snapshot] = [:]
+    /// Barre giornaliere chiuse di ogni ETF (grafici della vista MERCATI).
+    var bars: [String: [Candle]] = [:]
 }
 
 struct DailyCycleRunner: Sendable {
@@ -174,6 +176,7 @@ struct DailyCycleRunner: Sendable {
         for (symbol, b) in bars {
             if let snap = DailyStrategy.snapshot(of: b) { result.snapshots[symbol] = snap }
         }
+        result.bars = bars
         var market: [String: DailyStrategy.Snapshot] = [:]
         for symbol in ["SPY", "QQQ", "IWM", "TLT", "GLD"] {
             if let b = bars[symbol], let s = DailyStrategy.snapshot(of: b) { market[symbol] = s }

@@ -1,0 +1,388 @@
+import Charts
+import SwiftUI
+
+/// Livelli reali sul broker per un simbolo: prezzo di carico, stop, target,
+/// ingresso in attesa. Letti da posizioni e ordini aperti (gambe comprese).
+struct BrokerLevels: Equatable {
+    var entry: Double?
+    var stop: Double?
+    var target: Double?
+    var pendingEntry: Double?
+
+    @MainActor
+    static func from(_ engine: QuantSwarmEngine, symbol: String) -> BrokerLevels {
+        let s = symbol.uppercased()
+        var levels = BrokerLevels()
+        levels.entry = engine.positions.first { $0.symbol.uppercased() == s }?.averageEntryPriceValue
+        for order in engine.openOrders.flatMap(\.withLegs) where order.symbol.uppercased() == s {
+            if order.side == "sell", order.type == "stop" || order.type == "stop_limit" {
+                levels.stop = order.stopPriceValue ?? levels.stop
+            } else if order.side == "sell", order.type == "limit" {
+                levels.target = order.limitPriceValue ?? levels.target
+            } else if order.side == "buy", order.parentOrderId == nil {
+                levels.pendingEntry = order.limitPriceValue ?? levels.pendingEntry
+            }
+        }
+        return levels
+    }
+}
+
+// MARK: - Griglia "dove opera" (CRUSCOTTO)
+
+struct MarketsPanel: View {
+    @EnvironmentObject private var engine: QuantSwarmEngine
+    @State private var selected: String?
+
+    private var isIntraday: Bool {
+        (engine.activeMode ?? engine.strategyConfig.tradingMode) == .intraday
+    }
+
+    private var capital: Double {
+        min(engine.strategyConfig.sanitized.capitalCap, engine.account?.equityValue ?? 0)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(isIntraday ? "MERCATI · MODALITÀ VELOCE" : "MERCATI · 15 ETF")
+                    .font(.system(.caption, design: .monospaced, weight: .heavy))
+                    .foregroundStyle(Theme.cyan)
+                Spacer()
+                Text("tocca per il grafico")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            if isIntraday {
+                intradayGrid
+            } else if engine.marketBars.isEmpty {
+                Text("I grafici compaiono dopo il primo controllo (START o CONTROLLA ORA).")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(Theme.textSecondary)
+            } else {
+                dailyGrid
+            }
+        }
+        .themedCard(Theme.cyan)
+        .onAppear {
+            #if DEBUG
+            let args = ProcessInfo.processInfo.arguments
+            if selected == nil, let i = args.firstIndex(of: "-QSMarket"), i + 1 < args.count { selected = args[i + 1] }
+            #endif
+        }
+        .sheet(item: Binding(get: { selected.map(SymbolID.init) }, set: { selected = $0?.id })) { item in
+            MarketDetailView(symbol: item.id, intraday: isIntraday)
+                .environmentObject(engine)
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+    }
+
+    private var columns: [GridItem] { Array(repeating: GridItem(.flexible(), spacing: 8), count: 3) }
+
+    private var dailyGrid: some View {
+        let held = Set(engine.positions.map { $0.symbol.uppercased() })
+        let risk = engine.strategyConfig.sanitized.riskFraction
+        let insights = DailyStrategy.basket.map { symbol in
+            MarketInsight.evaluate(symbol: symbol, bars: engine.marketBars[symbol] ?? [], held: held.contains(symbol),
+                                   capital: capital, riskFraction: risk)
+        }
+        return LazyVGrid(columns: columns, spacing: 8) {
+            ForEach(insights, id: \.symbol) { insight in
+                Button { selected = insight.symbol } label: { MarketTile(insight: insight) }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("market-\(insight.symbol)")
+            }
+        }
+    }
+
+    private var intradayGrid: some View {
+        Group {
+            if engine.intradaySymbols.isEmpty {
+                Text("Avvia la modalità veloce: qui compaiono i simboli scelti con le candele \(engine.strategyConfig.sanitized.decisionTimeframeMinutes)m.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(Theme.textSecondary)
+            } else {
+                TimelineView(.periodic(from: .now, by: 5)) { _ in
+                    LazyVGrid(columns: columns, spacing: 8) {
+                        ForEach(engine.intradaySymbols, id: \.self) { symbol in
+                            let candles = engine.intradayCandles(for: symbol)
+                            let last = engine.intradayLastPrice(for: symbol) ?? candles.last?.close
+                            let first = candles.first?.open
+                            let change = (last != nil && first != nil && first! > 0) ? last! / first! - 1 : nil
+                            Button { selected = symbol } label: {
+                                MarketTile(insight: MarketInsight(
+                                    symbol: symbol, state: candles.isEmpty ? .noData : .trendUp, close: last,
+                                    dayChange: change, snapshot: nil, reason: ""
+                                ), intraday: true)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct SymbolID: Identifiable { let id: String }
+
+private struct MarketTile: View {
+    let insight: MarketInsight
+    var intraday = false
+
+    private var color: Color { MarketDetailView.color(for: insight.state) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(insight.symbol)
+                .font(.system(.subheadline, design: .monospaced, weight: .heavy))
+                .foregroundStyle(Theme.textPrimary)
+            Text(insight.close.map { String(format: "%.2f", $0) } ?? "—")
+                .font(.system(.caption, design: .monospaced, weight: .semibold))
+                .foregroundStyle(Theme.textSecondary)
+                .monospacedDigit()
+            if let change = insight.dayChange {
+                Text(String(format: "%+.2f%%", change * 100))
+                    .font(.system(.caption2, design: .monospaced, weight: .bold))
+                    .foregroundStyle(Theme.signed(change))
+                    .monospacedDigit()
+            }
+            Text(intraday ? (insight.state == .noData ? "IN ATTESA" : "STREAM") : insight.state.rawValue)
+                .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+                .foregroundStyle(color)
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+        .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color.opacity(insight.state == .held || insight.state == .signal ? 0.8 : 0.2), lineWidth: 1))
+    }
+}
+
+// MARK: - Dettaglio: candele, medie, livelli
+
+struct MarketDetailView: View {
+    @EnvironmentObject private var engine: QuantSwarmEngine
+    @Environment(\.dismiss) private var dismiss
+    let symbol: String
+    let intraday: Bool
+
+    static func color(for state: MarketInsight.State) -> Color {
+        switch state {
+        case .held: return Theme.green
+        case .signal: return Theme.cyan
+        case .unaffordable: return Theme.amber
+        case .trendUp: return Theme.textSecondary
+        case .trendDown: return Theme.red
+        case .noData: return Theme.textTertiary
+        }
+    }
+
+    private var allCandles: [Candle] {
+        intraday ? engine.intradayCandles(for: symbol) : (engine.marketBars[symbol] ?? [])
+    }
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    if intraday {
+                        TimelineView(.periodic(from: .now, by: 5)) { _ in content }
+                    } else {
+                        content
+                    }
+                }
+                .padding()
+            }
+            .background(Theme.background.ignoresSafeArea())
+            .navigationTitle(symbol)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(Theme.background, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("CHIUDI") { dismiss() }
+                        .font(.system(.caption, design: .monospaced, weight: .bold))
+                        .foregroundStyle(Theme.green)
+                }
+            }
+        }
+        .preferredColorScheme(.dark)
+    }
+
+    @ViewBuilder private var content: some View {
+        let candles = allCandles
+        let visibleCount = intraday ? 60 : 90
+        let closes = candles.map(\.close)
+        let slow = MarketInsight.movingAverage(closes, period: intraday ? 20 : 200)
+        let fast = MarketInsight.movingAverage(closes, period: intraday ? 5 : 5)
+        let start = max(candles.count - visibleCount, 0)
+        let levels = BrokerLevels.from(engine, symbol: symbol)
+        let held = engine.positions.contains { $0.symbol.uppercased() == symbol.uppercased() }
+        let capital = min(engine.strategyConfig.sanitized.capitalCap, engine.account?.equityValue ?? 0)
+        let insight = MarketInsight.evaluate(symbol: symbol, bars: candles, held: held, capital: capital,
+                                             riskFraction: engine.strategyConfig.sanitized.riskFraction)
+
+        if !intraday {
+            HStack {
+                Text(insight.state.rawValue).themedChip(Self.color(for: insight.state), filled: insight.state == .held)
+                Spacer()
+                if let close = insight.close {
+                    Text(String(format: "%.2f", close))
+                        .font(.system(.title3, design: .monospaced, weight: .heavy))
+                        .monospacedDigit()
+                }
+            }
+            Text(insight.reason)
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+
+        if candles.isEmpty {
+            Text(intraday ? "In attesa delle prime candele dallo stream." : "Nessuna barra: premi CONTROLLA ORA.")
+                .font(.system(.footnote, design: .monospaced))
+                .foregroundStyle(Theme.textSecondary)
+        } else {
+            CandleChart(candles: Array(candles[start...]),
+                        slow: Array(slow[start...]), fast: Array(fast[start...]),
+                        slowLabel: intraday ? "MEDIA 20" : "SMA200", fastLabel: "MEDIA 5",
+                        levels: levels)
+                .frame(height: 300)
+                .themedCard(Theme.green, padding: 10)
+
+            legend(intraday: intraday, levels: levels)
+        }
+
+        if let snap = insight.snapshot, !intraday {
+            VStack(alignment: .leading, spacing: 8) {
+                row("Chiusura", snap.close)
+                row("Media 200 giorni", snap.sma200)
+                row("Media 5 giorni", snap.sma5)
+                row("RSI 2", snap.rsi2, digits: 1)
+                row("ATR 14 (oscillazione media)", snap.atr14)
+                row("Stop se compra (2,5 ATR)", snap.close - DailyStrategy.stopATR * snap.atr14)
+                row("Target se compra (2 ATR)", snap.close + DailyStrategy.takeProfitATR * snap.atr14)
+            }
+            .themedCard(Theme.cyan)
+
+            Text("Regola: compra se sopra la media a 200 giorni e RSI2 sotto 10 (ribasso forte in un trend che sale). Esce sopra la media a 5 giorni, dopo \(DailyStrategy.maxHoldingDays) sedute, allo stop o al target.")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func legend(intraday: Bool, levels: BrokerLevels) -> some View {
+        HStack(spacing: 12) {
+            legendItem(Theme.amber, intraday ? "MEDIA 20" : "SMA200")
+            legendItem(Theme.cyan, "MEDIA 5")
+            if levels.entry != nil || levels.pendingEntry != nil { legendItem(.white, "INGRESSO") }
+            if levels.stop != nil { legendItem(Theme.red, "STOP") }
+            if levels.target != nil { legendItem(Theme.green, "TARGET") }
+        }
+        .font(.system(.caption2, design: .monospaced, weight: .bold))
+    }
+
+    private func legendItem(_ color: Color, _ text: String) -> some View {
+        HStack(spacing: 4) {
+            Capsule().fill(color).frame(width: 12, height: 3)
+            Text(text).foregroundStyle(Theme.textSecondary)
+        }
+    }
+
+    private func row(_ label: String, _ value: Double, digits: Int = 2) -> some View {
+        HStack {
+            Text(label).foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Text(String(format: "%.\(digits)f", value)).foregroundStyle(Theme.textPrimary).monospacedDigit()
+        }
+        .font(.system(.caption, design: .monospaced, weight: .semibold))
+    }
+}
+
+/// Grafico a candele con due medie e i livelli del broker.
+private struct CandleChart: View {
+    let candles: [Candle]
+    let slow: [Double?]
+    let fast: [Double?]
+    let slowLabel: String
+    let fastLabel: String
+    let levels: BrokerLevels
+
+    private var domain: ClosedRange<Double> {
+        var values = candles.flatMap { [$0.low, $0.high] }
+        values += slow.compactMap { $0 } + fast.compactMap { $0 }
+        values += [levels.entry, levels.stop, levels.target, levels.pendingEntry].compactMap { $0 }
+        let lo = values.min() ?? 0
+        let hi = values.max() ?? 1
+        let pad = max((hi - lo) * 0.06, 0.01)
+        return (lo - pad)...(hi + pad)
+    }
+
+    var body: some View {
+        Chart {
+            ForEach(Array(candles.enumerated()), id: \.offset) { index, candle in
+                let up = candle.close >= candle.open
+                RuleMark(x: .value("Seduta", index), yStart: .value("Min", candle.low), yEnd: .value("Max", candle.high))
+                    .lineStyle(StrokeStyle(lineWidth: 1))
+                    .foregroundStyle((up ? Theme.green : Theme.red).opacity(0.8))
+                RectangleMark(x: .value("Seduta", index),
+                              yStart: .value("Apertura", min(candle.open, candle.close)),
+                              yEnd: .value("Chiusura", max(candle.open, candle.close, min(candle.open, candle.close) + 0.0001)),
+                              width: .ratio(0.65))
+                    .foregroundStyle(up ? Theme.green : Theme.red)
+            }
+            ForEach(Array(slow.enumerated()), id: \.offset) { index, value in
+                if let value {
+                    LineMark(x: .value("Seduta", index), y: .value(slowLabel, value), series: .value("Serie", slowLabel))
+                        .foregroundStyle(Theme.amber)
+                        .lineStyle(StrokeStyle(lineWidth: 1.5))
+                }
+            }
+            ForEach(Array(fast.enumerated()), id: \.offset) { index, value in
+                if let value {
+                    LineMark(x: .value("Seduta", index), y: .value(fastLabel, value), series: .value("Serie", fastLabel))
+                        .foregroundStyle(Theme.cyan.opacity(0.9))
+                        .lineStyle(StrokeStyle(lineWidth: 1))
+                }
+            }
+            if let entry = levels.entry ?? levels.pendingEntry {
+                RuleMark(y: .value("Ingresso", entry))
+                    .foregroundStyle(.white.opacity(0.8))
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .annotation(position: .top, alignment: .leading) { tag(levels.entry == nil ? "IN ATTESA" : "INGRESSO", entry, .white) }
+            }
+            if let stop = levels.stop {
+                RuleMark(y: .value("Stop", stop))
+                    .foregroundStyle(Theme.red)
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .annotation(position: .bottom, alignment: .leading) { tag("STOP", stop, Theme.red) }
+            }
+            if let target = levels.target {
+                RuleMark(y: .value("Target", target))
+                    .foregroundStyle(Theme.green)
+                    .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .annotation(position: .top, alignment: .leading) { tag("TARGET", target, Theme.green) }
+            }
+        }
+        .chartYScale(domain: domain)
+        .chartXAxis(.hidden)
+        .chartYAxis {
+            AxisMarks(position: .trailing, values: .automatic(desiredCount: 5)) { _ in
+                AxisGridLine().foregroundStyle(Theme.stroke)
+                AxisValueLabel().font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.textTertiary)
+            }
+        }
+        .accessibilityLabel("Grafico a candele")
+    }
+
+    private func tag(_ text: String, _ value: Double, _ color: Color) -> some View {
+        Text("\(text) \(String(format: "%.2f", value))")
+            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+            .foregroundStyle(color)
+            .padding(.horizontal, 4)
+            .background(Theme.background.opacity(0.8), in: Capsule())
+    }
+}

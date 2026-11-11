@@ -115,16 +115,20 @@ jobs:
           APP="$PWD/DerivedDataTests/Build/Products/Debug-iphonesimulator/QuantSwarmAlphaZero.app"
           xcrun simctl install "$SIM_UDID" "$APP"
           mkdir -p shots
-          for TAB in CRUSCOTTO DETTAGLI BROKER SISTEMA; do
+          shot() {
+            NAME="$1"; shift
             xcrun simctl terminate "$SIM_UDID" com.quantswarm.alphazero 2>/dev/null || true
             sleep 3
-            xcrun simctl launch "$SIM_UDID" com.quantswarm.alphazero -QSPreview -QSTab "$TAB" || echo "LAUNCH FALLITO $TAB"
+            xcrun simctl launch "$SIM_UDID" com.quantswarm.alphazero -QSPreview "$@" || echo "LAUNCH FALLITO $NAME"
             sleep 10
-            xcrun simctl io "$SIM_UDID" screenshot "shots/$TAB.png"
+            xcrun simctl io "$SIM_UDID" screenshot "shots/$NAME.png"
             if ! xcrun simctl spawn "$SIM_UDID" launchctl list | grep -q quantswarm; then
-              echo "::warning::APP NON IN ESECUZIONE dopo l'apertura di $TAB (crash?)"
+              echo "::warning::APP NON IN ESECUZIONE dopo $NAME (crash?)"
             fi
-          done
+          }
+          for TAB in CRUSCOTTO DETTAGLI BROKER SISTEMA; do shot "$TAB" -QSTab "$TAB"; done
+          shot MERCATI -QSTab CRUSCOTTO -QSFocusMarkets
+          shot GRAFICO -QSTab CRUSCOTTO -QSMarket XLV
           ls -la shots
           echo "===== CRASH REPORT ====="
           find ~/Library/Logs/DiagnosticReports -name "QuantSwarm*" -mmin -30 2>/dev/null | while read f; do
@@ -161,6 +165,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
             PROVISIONING_PROFILE_SPECIFIER="" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
             clean build
 
       - name: Package unsigned IPA
@@ -191,5 +196,29 @@ jobs:
           gh release delete ultima --yes --cleanup-tag 2>/dev/null || true
           gh release create ultima QuantSwarm-Alpha-Zero.ipa \
             --target "$GITHUB_SHA" --latest \
-            --title "QuantSwarm Alpha Zero (ultima)" \
+            --title "FMLAB QuantSwarm Alpha Zero (ultima)" \
             --notes "IPA non firmato. LiveContainer → + → Installa dall'URL: https://github.com/cipherdesk007-max/agenti-trading/releases/download/ultima/QuantSwarm-Alpha-Zero.ipa — se la repo resta privata: scarica questo file e usa Installa da IPA. Commit: $GITHUB_SHA"
+
+
+      # Release numerata (vX.Y.Z) con le note dal CHANGELOG: la storia delle
+      # versioni resta su GitHub; "ultima" resta l'URL fisso per LiveContainer.
+      - name: Pubblica release numerata
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -m1 'MARKETING_VERSION:' project.yml | sed -E 's/.*"([^"]+)".*/\1/')
+          TAG="v$VERSION"
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" {on=1; next}
+            on && /^## \[/ {exit}
+            on {print}
+          ' CHANGELOG.md > notes.md
+          test -s notes.md || echo "Vedi CHANGELOG.md" > notes.md
+          printf '\n\nBuild %s · commit %s\n' "$GITHUB_RUN_NUMBER" "$GITHUB_SHA" >> notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" QuantSwarm-Alpha-Zero.ipa --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" QuantSwarm-Alpha-Zero.ipa --target "$GITHUB_SHA" \
+              --title "FMLAB QuantSwarm Alpha Zero $VERSION" --notes-file notes.md --latest=false
+          fi

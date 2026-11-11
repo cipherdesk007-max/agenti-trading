@@ -10,8 +10,8 @@ private enum DashboardSection: String, CaseIterable, Identifiable, Hashable {
 }
 
 private enum DashboardPalette {
-    static let green = Color(red: 0.1, green: 1.0, blue: 0.55)
-    static let cyan = Color(red: 0.35, green: 0.85, blue: 1.0)
+    static let green = Theme.green
+    static let cyan = Theme.cyan
 }
 
 private enum Formatters {
@@ -69,6 +69,15 @@ struct TerminalDashboardView: View {
         #endif
         return .operations
     }
+
+    /// Solo per gli screenshot della CI: griglia MERCATI in cima.
+    private static var focusMarkets: Bool {
+        #if DEBUG
+        return ProcessInfo.processInfo.arguments.contains("-QSFocusMarkets")
+        #else
+        return false
+        #endif
+    }
     @State private var symbols = "SPY"
     @State private var news = ""
     @State private var showKillConfirmation = false
@@ -82,7 +91,7 @@ struct TerminalDashboardView: View {
     var body: some View {
         NavigationStack {
             ZStack {
-                Color.black.ignoresSafeArea()
+                Theme.background.ignoresSafeArea()
                 VStack(spacing: 0) {
                     statusHeader
                     Picker("Sezione", selection: $selectedSection) {
@@ -97,10 +106,12 @@ struct TerminalDashboardView: View {
                         VStack(spacing: 14) {
                             switch selectedSection {
                             case .operations:
+                                if Self.focusMarkets { MarketsPanel() }
                                 if !engine.paperTrading { liveBanner }
                                 guardPanel
                                 heroPanel
                                 todayPanel
+                                if !Self.focusMarkets { MarketsPanel() }
                                 pipelinePanel
                                 positionsPanel
                                 recentLogPanel
@@ -269,7 +280,7 @@ struct TerminalDashboardView: View {
         }
         .padding(.horizontal)
         .padding(.vertical, 10)
-        .background(Color(white: 0.05))
+        .background(Theme.surface)
     }
 
     private func elapsed(from start: Date, to end: Date) -> String {
@@ -429,7 +440,7 @@ struct TerminalDashboardView: View {
                     .foregroundStyle(displayedMode == .daily ? terminalGreen : .orange)
                     .padding(.horizontal, 6)
                     .padding(.vertical, 3)
-                    .overlay(Rectangle().stroke(displayedMode == .daily ? terminalGreen : .orange, lineWidth: 1))
+                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(displayedMode == .daily ? terminalGreen : .orange, lineWidth: 1))
             }
             Text(engine.isRunning ? engine.currentActivity : idleHint)
                 .font(.system(.callout, design: .monospaced))
@@ -504,14 +515,22 @@ struct TerminalDashboardView: View {
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
                 .padding(10)
-                .background(Color(white: 0.08))
+                .background(Theme.surfaceHigh, in: Theme.shape(Theme.smallRadius))
+            if let equity = engine.account?.equityValue, equity > 0 {
+                let capital = min(engine.strategyConfig.sanitized.capitalCap, equity)
+                Text("Con \(String(format: "%.0f", capital)) USD scegli titoli liquidi sotto \(String(format: "%.0f", capital * RiskRules.maximumPositionFraction)) USD ad azione (25% del capitale): si compra almeno 1 azione intera.")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(Theme.amber)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             Text("NOTIZIE (FACOLTATIVE, CON DATA E FONTE)")
                 .font(.system(.caption2, design: .monospaced))
                 .foregroundStyle(.gray)
             TextEditor(text: $news)
                 .font(.system(.caption, design: .monospaced))
                 .scrollContentBackground(.hidden)
-                .background(Color(white: 0.08))
+                .padding(6)
+                .background(Theme.surfaceHigh, in: Theme.shape(Theme.smallRadius))
                 .frame(height: 60)
         }
     }
@@ -573,8 +592,8 @@ struct TerminalDashboardView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(Color(white: 0.04))
-        .overlay(Rectangle().stroke(color.opacity(0.3), lineWidth: 1))
+        .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+        .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color.opacity(0.3), lineWidth: 1))
     }
 
     /// La catena degli agenti: chi sta lavorando, cosa ha deciso, cosa passa avanti.
@@ -690,9 +709,9 @@ struct TerminalDashboardView: View {
                                 .font(.system(.body, design: .monospaced, weight: .bold))
                                 .frame(maxWidth: .infinity)
                                 .padding()
-                                .background(terminalGreen.opacity(0.18))
+                                .background(terminalGreen.opacity(0.18), in: Theme.shape(Theme.smallRadius))
                                 .foregroundStyle(terminalGreen)
-                                .overlay(Rectangle().stroke(terminalGreen, lineWidth: 1))
+                                .overlay(Theme.shape(Theme.smallRadius).strokeBorder(terminalGreen, lineWidth: 1))
                         }
                         Button("ELIMINA") {
                             engine.deleteSessionReport()
@@ -847,7 +866,7 @@ struct TerminalDashboardView: View {
             .foregroundStyle(color)
             .padding(.horizontal, 6)
             .padding(.vertical, 3)
-            .overlay(Rectangle().stroke(color.opacity(0.6), lineWidth: 1))
+            .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color.opacity(0.6), lineWidth: 1))
     }
 
     /// Dataset di training: ogni decisione di Kimi (anche gli HOLD) viene
@@ -872,9 +891,9 @@ struct TerminalDashboardView: View {
                             .font(.system(.body, design: .monospaced, weight: .bold))
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(DashboardPalette.cyan.opacity(0.18))
+                            .background(DashboardPalette.cyan.opacity(0.18), in: Theme.shape(Theme.smallRadius))
                             .foregroundStyle(DashboardPalette.cyan)
-                            .overlay(Rectangle().stroke(DashboardPalette.cyan, lineWidth: 1))
+                            .overlay(Theme.shape(Theme.smallRadius).strokeBorder(DashboardPalette.cyan, lineWidth: 1))
                     }
                     Button("ELIMINA") {
                         engine.deleteDatasetExport()
@@ -893,9 +912,9 @@ struct TerminalDashboardView: View {
                             .font(.system(.body, design: .monospaced, weight: .bold))
                             .frame(maxWidth: .infinity)
                             .padding()
-                            .background(terminalGreen.opacity(0.18))
+                            .background(terminalGreen.opacity(0.18), in: Theme.shape(Theme.smallRadius))
                             .foregroundStyle(terminalGreen)
-                            .overlay(Rectangle().stroke(terminalGreen, lineWidth: 1))
+                            .overlay(Theme.shape(Theme.smallRadius).strokeBorder(terminalGreen, lineWidth: 1))
                     }
                     Button("ELIMINA") {
                         engine.deleteTradesCSV()
@@ -912,12 +931,13 @@ struct TerminalDashboardView: View {
     }
 
     private func panelHeader(_ title: String, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Rectangle()
+        HStack(spacing: 7) {
+            Capsule()
                 .fill(color)
-                .frame(width: 8, height: 8)
+                .frame(width: 3, height: 12)
             Text(title)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .font(.system(.caption, design: .monospaced, weight: .heavy))
+                .tracking(0.6)
                 .foregroundStyle(color)
         }
     }
@@ -957,8 +977,8 @@ struct TerminalDashboardView: View {
                         }
                     }
                     .padding(8)
-                    .background(Color(white: 0.04))
-                    .overlay(Rectangle().stroke(terminalGreen.opacity(0.2), lineWidth: 1))
+                    .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(terminalGreen.opacity(0.2), lineWidth: 1))
                 }
             }
         }
@@ -1003,8 +1023,8 @@ struct TerminalDashboardView: View {
                         }
                     }
                     .padding(8)
-                    .background(Color(white: 0.04))
-                    .overlay(Rectangle().stroke(DashboardPalette.cyan.opacity(0.25), lineWidth: 1))
+                    .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(DashboardPalette.cyan.opacity(0.25), lineWidth: 1))
                 }
             }
         }
@@ -1166,8 +1186,8 @@ struct TerminalDashboardView: View {
                 .foregroundStyle(.gray)
         }
         .padding(10)
-        .background(Color(white: 0.04))
-        .overlay(Rectangle().stroke(color.opacity(0.35), lineWidth: 1))
+        .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+        .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color.opacity(0.35), lineWidth: 1))
     }
 
     private func agentColor(_ agent: AgentKind) -> Color {
@@ -1256,8 +1276,8 @@ private struct BrokerControlView: View {
                         .disabled(engine.isKillInProgress)
                     }
                     .padding(8)
-                    .background(Color(white: 0.04))
-                    .overlay(Rectangle().stroke(Color.orange.opacity(0.35), lineWidth: 1))
+                    .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(Color.orange.opacity(0.35), lineWidth: 1))
                 }
             }
 
@@ -1288,8 +1308,8 @@ private struct BrokerControlView: View {
                         .disabled(engine.isKillInProgress)
                     }
                     .padding(8)
-                    .background(Color(white: 0.04))
-                    .overlay(Rectangle().stroke(Color.red.opacity(0.3), lineWidth: 1))
+                    .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(Color.red.opacity(0.3), lineWidth: 1))
                 }
             }
             Text("CHIUDI chiede ad Alpaca una chiusura a mercato della singola posizione; ANNULLA cancella il singolo ordine aperto. Per emergenza globale usa HARD KILL nel CRUSCOTTO.")
@@ -1301,12 +1321,13 @@ private struct BrokerControlView: View {
     }
 
     private func panelHeader(_ title: String, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Rectangle()
+        HStack(spacing: 7) {
+            Capsule()
                 .fill(color)
-                .frame(width: 8, height: 8)
+                .frame(width: 3, height: 12)
             Text(title)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .font(.system(.caption, design: .monospaced, weight: .heavy))
+                .tracking(0.6)
                 .foregroundStyle(color)
         }
     }
@@ -1521,6 +1542,7 @@ private struct SystemSettingsView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 let config = engine.strategyConfig
+                settingRow("VERSIONE", AppVersion.text)
                 settingRow("MODALITÀ", config.tradingMode.label)
                 settingRow("CAPITALE BOT", (config.capitalLimitEnabled
                     ? "limitato a \(String(format: "%.0f", config.botCapitalUSD)) USD"
@@ -1559,12 +1581,13 @@ private struct SystemSettingsView: View {
     }
 
     private func panelHeader(_ title: String, color: Color) -> some View {
-        HStack(spacing: 6) {
-            Rectangle()
+        HStack(spacing: 7) {
+            Capsule()
                 .fill(color)
-                .frame(width: 8, height: 8)
+                .frame(width: 3, height: 12)
             Text(title)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .font(.system(.caption, design: .monospaced, weight: .heavy))
+                .tracking(0.6)
                 .foregroundStyle(color)
         }
     }
@@ -1620,8 +1643,8 @@ private struct ComparisonChart: View {
             }
             context.stroke(botLine, with: .color(botColor), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
         }
-        .background(Color(white: 0.04))
-        .overlay(Rectangle().stroke(botColor.opacity(0.4), lineWidth: 1))
+        .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+        .overlay(Theme.shape(Theme.smallRadius).strokeBorder(botColor.opacity(0.4), lineWidth: 1))
         .accessibilityLabel("Curva del capitale del bot contro SPY")
     }
 }
@@ -1665,8 +1688,8 @@ private struct EdgeChart: View {
             }
             context.stroke(line, with: .color(color), style: StrokeStyle(lineWidth: 2, lineJoin: .round))
         }
-        .background(Color(white: 0.04))
-        .overlay(Rectangle().stroke(color.opacity(0.4), lineWidth: 1))
+        .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+        .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color.opacity(0.4), lineWidth: 1))
     }
 }
 
@@ -1680,17 +1703,14 @@ private struct TerminalButtonStyle: ButtonStyle {
             .minimumScaleFactor(0.7)
             .frame(maxWidth: .infinity)
             .padding()
-            .background(color.opacity(configuration.isPressed ? 0.35 : 0.18))
+            .background(color.opacity(configuration.isPressed ? 0.35 : 0.18), in: Theme.shape(Theme.smallRadius))
             .foregroundStyle(color)
-            .overlay(Rectangle().stroke(color, lineWidth: 1))
+            .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color, lineWidth: 1))
     }
 }
 
 private extension View {
     func panelStyle(_ color: Color) -> some View {
-        padding()
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(white: 0.06))
-            .overlay(Rectangle().stroke(color.opacity(0.35), lineWidth: 1))
+        themedCard(color)
     }
 }

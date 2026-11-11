@@ -15,6 +15,8 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
     /// serve a distinguerle dagli ordini di ingresso nel conteggio dell'esposizione.
     let parentOrderId: String?
     let stopPrice: String?
+    /// Prezzo limite (ingresso limite o gamba take-profit).
+    let limitPrice: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -29,9 +31,14 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
         case legs
         case parentOrderId = "parent_order_id"
         case stopPrice = "stop_price"
+        case limitPrice = "limit_price"
     }
 
     var stopPriceValue: Double? { stopPrice.flatMap(Double.init) }
+    var limitPriceValue: Double? { limitPrice.flatMap(Double.init) }
+
+    /// L'ordine e le sue gambe (bracket), appiattiti.
+    var withLegs: [AlpacaOrder] { [self] + (legs ?? []).flatMap(\.withLegs) }
 
     var filledQuantityValue: Double { Double(filledQuantity ?? "0") ?? 0 }
     var filledAveragePriceValue: Double? { Double(filledAveragePrice ?? "") }
