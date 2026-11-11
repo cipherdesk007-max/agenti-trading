@@ -329,7 +329,7 @@ struct TerminalDashboardView: View {
         let points = engine.equityHistory
         let summary = EquityHistory.summary(points)
         let series = EquityHistory.normalized(points)
-        let capital = engine.strategyConfig.botCapitalUSD
+        let capital = min(engine.strategyConfig.capitalCap, engine.account?.equityValue ?? 0)
         func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", $0 * 100) } ?? "—" }
         return VStack(alignment: .leading, spacing: 8) {
             panelHeader("CAPITALE BOT · CONTRO SPY", color: terminalGreen)
@@ -1332,7 +1332,7 @@ private struct SystemSettingsView: View {
     /// comprare con almeno 1 azione intera, sui prezzi dell'ultimo controllo.
     private var buyableRow: some View {
         let snapshots = engine.basketSnapshots
-        let capital = draft.sanitized.botCapitalUSD
+        let capital = min(draft.sanitized.capitalCap, engine.account?.equityValue ?? 0)
         let risk = draft.sanitized.riskFraction
         let ok = snapshots.keys.sorted().filter { symbol in
             let s = snapshots[symbol]!
@@ -1383,12 +1383,18 @@ private struct SystemSettingsView: View {
                 .foregroundStyle(.gray)
 
             Group {
-                Stepper(
-                    "Capitale bot: \(String(format: "%.0f", draft.botCapitalUSD)) USD",
-                    onIncrement: { draft.botCapitalUSD = Self.nextCapital(after: draft.botCapitalUSD) },
-                    onDecrement: { draft.botCapitalUSD = Self.previousCapital(before: draft.botCapitalUSD) }
-                )
-                Text("In USD (Alpaca lavora in dollari). Il bot non impegna mai di più; rischio e tetti si calcolano su questa cifra. Usa la stessa cifra in paper e in live.")
+                Toggle("Limita il capitale del bot", isOn: $draft.capitalLimitEnabled)
+                    .tint(DashboardPalette.green)
+                if draft.capitalLimitEnabled {
+                    Stepper(
+                        "Capitale bot: \(String(format: "%.0f", draft.botCapitalUSD)) USD",
+                        onIncrement: { draft.botCapitalUSD = Self.nextCapital(after: draft.botCapitalUSD) },
+                        onDecrement: { draft.botCapitalUSD = Self.previousCapital(before: draft.botCapitalUSD) }
+                    )
+                }
+                Text(draft.capitalLimitEnabled
+                     ? "Il bot non impegna mai più di questa cifra (USD), anche se sul conto c'è di più. Utile solo se sul conto tieni altri soldi."
+                     : "Il bot usa tutto il saldo del conto (\(String(format: "%.0f", engine.account?.equityValue ?? 0)) USD): cresce e cala da solo con guadagni e perdite. Rischio 1% e tetto 25% si ricalcolano a ogni controllo.")
                     .font(.system(.caption2, design: .monospaced, weight: .regular))
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1516,7 +1522,9 @@ private struct SystemSettingsView: View {
             VStack(alignment: .leading, spacing: 6) {
                 let config = engine.strategyConfig
                 settingRow("MODALITÀ", config.tradingMode.label)
-                settingRow("CAPITALE BOT", "\(String(format: "%.0f", config.botCapitalUSD)) USD · impegnati \(String(format: "%.0f", engine.botExposure))")
+                settingRow("CAPITALE BOT", (config.capitalLimitEnabled
+                    ? "limitato a \(String(format: "%.0f", config.botCapitalUSD)) USD"
+                    : "tutto il conto") + " · impegnati \(String(format: "%.0f", engine.botExposure)) USD")
                 settingRow("STATO APPLICATO", "rischio \(String(format: "%.2f", config.riskPerTradePercent))% · max \(config.maxOpenPositions) · stop giorno \(String(format: "%.1f", config.dailyStopPercent))%")
                 settingRow("MODELLO ATTIVO", config.kimiModel)
                 if config.tradingMode == .daily {

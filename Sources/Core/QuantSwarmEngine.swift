@@ -304,7 +304,11 @@ final class QuantSwarmEngine: ObservableObject {
         if previous.tradingMode != sanitized.tradingMode { changes.append("modalità \(sanitized.tradingMode.label) (dal prossimo START)") }
         if previous.riskPerTradePercent != sanitized.riskPerTradePercent { changes.append("rischio \(format(sanitized.riskPerTradePercent))%") }
         if previous.maxOpenPositions != sanitized.maxOpenPositions { changes.append("max posizioni \(sanitized.maxOpenPositions)") }
-        if previous.botCapitalUSD != sanitized.botCapitalUSD { changes.append("capitale bot \(format(sanitized.botCapitalUSD, fractionDigits: 0)) USD") }
+        if previous.capitalCap != sanitized.capitalCap {
+            changes.append(sanitized.capitalLimitEnabled
+                ? "capitale bot limitato a \(format(sanitized.botCapitalUSD, fractionDigits: 0)) USD"
+                : "capitale bot = tutto il conto")
+        }
         if previous.dailyStopPercent != sanitized.dailyStopPercent { changes.append("stop giorno \(format(sanitized.dailyStopPercent))%") }
         if previous.creditLimitEnabled != sanitized.creditLimitEnabled || previous.dailyCreditLimitUSD != sanitized.dailyCreditLimitUSD {
             changes.append("limite crediti \(sanitized.creditLimitEnabled ? format(sanitized.dailyCreditLimitUSD) + " USD" : "OFF")")
@@ -625,7 +629,10 @@ final class QuantSwarmEngine: ObservableObject {
     }
 
     private func capitalReportLines() -> [String] {
-        var lines = ["Capitale:      \(format(strategyConfig.botCapitalUSD, fractionDigits: 0)) USD",
+        let config = strategyConfig.sanitized
+        var lines = ["Capitale:      " + (config.capitalLimitEnabled
+                        ? "limitato a \(format(config.botCapitalUSD, fractionDigits: 0)) USD"
+                        : "tutto il conto (\(format(account?.equityValue ?? 0, fractionDigits: 0)) USD)"),
                      "Impegnato:     \(format(botExposure, fractionDigits: 0)) USD"]
         func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", $0 * 100) } ?? "—" }
         if let summary = EquityHistory.summary(equityHistory) {
@@ -1361,7 +1368,7 @@ final class QuantSwarmEngine: ObservableObject {
                         riskFraction: config.riskFraction,
                         atr: atr,
                         maxOpenPositions: config.maxOpenPositions,
-                        capitalCap: config.botCapitalUSD,
+                        capitalCap: config.capitalCap,
                         alreadyCommittedThisCycle: cycleCommittedSymbols,
                         constraints: .alpacaStock,
                         freshPrice: { [weak self] in
@@ -1618,7 +1625,7 @@ final class QuantSwarmEngine: ObservableObject {
         let dayPnL = snapshot.equityValue - lastEquity
         // Misurato sul capitale del bot: con 10.000 USD su un conto da 100.000
         // il 2% vale 200 USD, non 2.000.
-        let limit = config.dailyStopFraction * min(lastEquity, config.botCapitalUSD)
+        let limit = config.dailyStopFraction * min(lastEquity, config.capitalCap)
         guard dayPnL <= -limit, !dailyStopActive else { return }
         guardState.dailyStopDayUTC = Self.dayStampUTC()
         RiskGuardStore.save(guardState)
@@ -1644,7 +1651,7 @@ final class QuantSwarmEngine: ObservableObject {
             RiskGuardStore.save(guardState)
         }
         // Perdita dal picco misurata sul capitale del bot (stessa base del rischio).
-        let base = min(guardState.peakEquity, strategyConfig.sanitized.botCapitalUSD)
+        let base = min(guardState.peakEquity, strategyConfig.sanitized.capitalCap)
         let floor = guardState.peakEquity - base * SystemLimits.maxDrawdownFraction
         guard guardState.peakEquity > 0, equity <= floor, !guardState.drawdownLocked else { return }
         guardState.drawdownLocked = true
@@ -1910,7 +1917,7 @@ extension QuantSwarmEngine {
             riskFraction: config.riskFraction,
             maxOpenPositions: config.maxOpenPositions,
             entryBlock: entryBlock,
-            capitalCap: config.botCapitalUSD
+            capitalCap: config.capitalCap
         )
         let runner = DailyCycleRunner(broker: AlpacaBroker(credentials: credentials.alpaca), brain: kimi)
         let result = await runner.run(input) { [weak self] event in
@@ -1928,7 +1935,7 @@ extension QuantSwarmEngine {
             let key = equityAccountKey
             let updated = EquityHistory.record(EquityHistoryStore.load(account: key),
                                                day: input.today, equity: equity, benchmark: spy,
-                                               capital: config.botCapitalUSD)
+                                               capital: config.capitalCap)
             EquityHistoryStore.save(updated, account: key)
         }
         equityHistory = EquityHistoryStore.load(account: equityAccountKey)

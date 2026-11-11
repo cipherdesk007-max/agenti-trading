@@ -192,9 +192,11 @@ final class RiskRulesTests: XCTestCase {
         XCTAssertEqual(StrategyConfig(botCapitalUSD: 1_000).sanitized.botCapitalUSD, 1_000)
         XCTAssertEqual(StrategyConfig(botCapitalUSD: 1e9).sanitized.botCapitalUSD, 1_000_000)
         XCTAssertEqual(StrategyConfig(botCapitalUSD: .nan).sanitized.botCapitalUSD, 10_000)
-        // Config salvate prima di questa versione: default 10.000.
+        // Config salvate prima di questa versione: tutto il conto, nessun tetto.
         let old = try? JSONDecoder().decode(StrategyConfig.self, from: Data("{}".utf8))
-        XCTAssertEqual(old?.botCapitalUSD, 10_000)
+        XCTAssertEqual(old?.capitalLimitEnabled, false)
+        XCTAssertEqual(old?.capitalCap, Double.infinity)
+        XCTAssertEqual(StrategyConfig(capitalLimitEnabled: true, botCapitalUSD: 1_000).capitalCap, 1_000)
     }
 
     func testCanBuyOneShareMatchesSizing() {

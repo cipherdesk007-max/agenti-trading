@@ -213,9 +213,16 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     var widgetShowsAmounts: Bool
     /// Promemoria lun–ven 15:30 New York per aprire l'app (giornaliera).
     var dailyReminder: Bool
-    /// Capitale del bot in USD (paper e live): rischio e tetti si calcolano su
-    /// min(patrimonio, capitale) e il bot non impegna mai di più.
+    /// Limite manuale al capitale del bot (default spento: il bot usa tutto il
+    /// saldo del conto, che segue da solo guadagni e perdite). Serve solo se
+    /// sullo stesso conto ci sono altri soldi da non toccare.
+    var capitalLimitEnabled: Bool
+    /// Tetto in USD quando il limite è acceso: rischio e tetti si calcolano su
+    /// min(patrimonio, tetto) e il bot non impegna mai di più.
     var botCapitalUSD: Double
+
+    /// Tetto effettivo per il motore: infinito = tutto il conto.
+    var capitalCap: Double { capitalLimitEnabled ? botCapitalUSD : .infinity }
 
     static let botCapitalRange: ClosedRange<Double> = 500...1_000_000
 
@@ -234,6 +241,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         dailyCreditLimitUSD: Double = 1.0,
         widgetShowsAmounts: Bool = false,
         dailyReminder: Bool = true,
+        capitalLimitEnabled: Bool = false,
         botCapitalUSD: Double = 10_000
     ) {
         self.tradingMode = tradingMode
@@ -250,6 +258,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
         self.dailyCreditLimitUSD = dailyCreditLimitUSD
         self.widgetShowsAmounts = widgetShowsAmounts
         self.dailyReminder = dailyReminder
+        self.capitalLimitEnabled = capitalLimitEnabled
         self.botCapitalUSD = botCapitalUSD
     }
 
@@ -270,6 +279,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
             dailyCreditLimitUSD: try container.decodeIfPresent(Double.self, forKey: .dailyCreditLimitUSD) ?? 1.0,
             widgetShowsAmounts: try container.decodeIfPresent(Bool.self, forKey: .widgetShowsAmounts) ?? false,
             dailyReminder: try container.decodeIfPresent(Bool.self, forKey: .dailyReminder) ?? true,
+            capitalLimitEnabled: try container.decodeIfPresent(Bool.self, forKey: .capitalLimitEnabled) ?? false,
             botCapitalUSD: try container.decodeIfPresent(Double.self, forKey: .botCapitalUSD) ?? 10_000
         )
     }
