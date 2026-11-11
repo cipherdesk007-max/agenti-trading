@@ -359,10 +359,12 @@ struct DailyCycleRunner: Sendable {
                                      capital: botAccount.equity, freeCash: botAccount.cash,
                                      riskFraction: input.riskFraction)
         }
-        // Notizie delle ultime 48 ore (candidati + mercato): una sola richiesta.
+        // Notizie delle ultime 48 ore: candidati e mercato in due richieste
+        // separate, così le tante notizie su SPY non coprono quelle dell'ETF.
         if !fresh.isEmpty {
-            let wanted = Array(Set(fresh.map(\.symbol) + ["SPY", "QQQ"])).sorted()
-            let headlines = (try? await broker.news(symbols: wanted, hours: 48)) ?? []
+            let own = (try? await broker.news(symbols: fresh.map(\.symbol).sorted(), hours: 48)) ?? []
+            let market = (try? await broker.news(symbols: ["QQQ", "SPY"], hours: 48)) ?? []
+            let headlines = own + market
             for index in fresh.indices {
                 fresh[index].news = NewsHeadline.pick(for: fresh[index].symbol, from: headlines).map(\.compact)
             }
