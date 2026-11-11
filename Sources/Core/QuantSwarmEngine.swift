@@ -2144,6 +2144,18 @@ extension QuantSwarmEngine {
             if let snap = DailyStrategy.snapshot(of: list) { basketSnapshots[symbol] = snap }
         }
         marketBars = bars
+        marketBarsDate = Date()
+        var shadow: [ShadowEntry] = []
+        for i in 0..<36 {
+            let outcome = [ShadowEntry.bought, ShadowEntry.brainSkip, ShadowEntry.noSlot, ShadowEntry.reviewerReject][i % 4]
+            var entry = ShadowEntry(symbol: DailyStrategy.basket[i % 15], day: String(format: "2026-09-%02d", i % 28 + 1),
+                                    entry: 100, stop: 95, outcome: outcome)
+            let ret = outcome == ShadowEntry.bought ? 0.012 - 0.0004 * Double(36 - i) : (outcome == ShadowEntry.reviewerReject ? -0.006 : 0.002)
+            entry.exitPrice = 100 * (1 + ret + 0.004 * sin(Double(i)))
+            entry.exitDay = String(format: "2026-10-%02d", i % 28 + 1)
+            shadow.append(entry)
+        }
+        shadowSummary = ShadowSummary.from(shadow)
         creditsSpentToday = 0.04
         let now = Date()
         pipeline = [

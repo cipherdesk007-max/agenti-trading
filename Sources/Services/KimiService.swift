@@ -321,7 +321,9 @@ actor KimiService {
         SMA5 o dopo 10 giorni, stop a 2,5 ATR. Per ogni candidato rispondi buy o skip. Scegli \
         al massimo slots_available buy, preferendo i pullback più profondi (RSI2 più basso) e \
         la diversificazione: evita ETF quasi uguali tra loro o a quelli già in portafoglio \
-        (per esempio SPY, DIA e QQQ insieme). Usa market_overview per il contesto generale e \
+        (per esempio SPY, DIA e QQQ insieme): correlation_60d dà la correlazione dei rendimenti \
+        giornalieri a 60 sedute con le posizioni aperte e gli altri candidati; sopra 0,85 sono \
+        quasi lo stesso rischio. Usa market_overview per il contesto generale e \
         recent_closes (ultime 20 chiusure) per giudicare la forma del ribasso. Se c'è \
         past_outcomes, tienine conto: se gli ETF che scarti vanno meglio di quelli che scegli, \
         sii meno selettivo. \
@@ -342,7 +344,8 @@ actor KimiService {
                 [
                     "symbol": candidate.symbol,
                     "indicators": snap(candidate.snapshot),
-                    "recent_closes": candidate.recentCloses.map { ($0 * 100).rounded() / 100 }
+                    "recent_closes": candidate.recentCloses.map { ($0 * 100).rounded() / 100 },
+                    "correlation_60d": candidate.correlations
                 ]
             },
             "market_overview": market.mapValues(snap),
@@ -380,7 +383,8 @@ actor KimiService {
             messages: messages,
             schema: schema,
             schemaName: "daily_decisions",
-            maxTokens: 2048
+            maxTokens: 4096,
+            reasoningEffort: "medium"
         )
         let json = try extractJSONObject(from: content)
         let decoded = try JSONDecoder().decode(DailyVerdictList.self, from: Data(json.utf8))
@@ -399,7 +403,8 @@ actor KimiService {
         Sei il revisore avversario della modalità giornaliera. Assumi che l'acquisto proposto \
         sia SBAGLIATO e cerca motivi concreti nei dati per respingerlo: trend debole (prezzo \
         appena sopra la SMA200), volatilità (ATR) anomala, quadro di mercato in rottura, \
-        motivazione del Brain non coerente con gli indicatori. Approva solo se non trovi nulla \
+        motivazione del Brain non coerente con gli indicatori, correlazione sopra 0,85 con una \
+        posizione già aperta (correlation_60d). Approva solo se non trovi nulla \
         di concreto. Non usare Markdown.
         """
         let s = candidate.snapshot
@@ -410,7 +415,8 @@ actor KimiService {
                 "rationale": verdict.rationale,
                 "close": s.close, "sma200": s.sma200, "sma5": s.sma5,
                 "rsi2": s.rsi2, "atr14": s.atr14,
-                "stop_distance": candidate.stopDistance
+                "stop_distance": candidate.stopDistance,
+                "correlation_60d": candidate.correlations
             ],
             "market_overview": market.mapValues { m -> [String: Double] in
                 ["close": m.close, "sma200": m.sma200, "rsi2": m.rsi2, "atr14": m.atr14]
@@ -434,7 +440,8 @@ actor KimiService {
             messages: messages,
             schema: schema,
             schemaName: "daily_review",
-            maxTokens: 1024
+            maxTokens: 2048,
+            reasoningEffort: "medium"
         )
         let json = try extractJSONObject(from: content)
         return try JSONDecoder().decode(KimiReview.self, from: Data(json.utf8))
@@ -608,12 +615,13 @@ actor KimiService {
         messages: [[String: String]],
         schema: [String: Any],
         schemaName: String,
-        maxTokens: Int
+        maxTokens: Int,
+        reasoningEffort: String = "low"
     ) async throws -> String {
         let body: [String: Any] = [
             "model": modelBox.get(),
             "messages": messages,
-            "reasoning_effort": "low",
+            "reasoning_effort": reasoningEffort,
             "max_completion_tokens": maxTokens,
             "stream": false,
             "response_format": [

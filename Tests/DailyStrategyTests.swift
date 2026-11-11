@@ -152,3 +152,26 @@ final class DailyStrategyTests: XCTestCase {
         XCTAssertEqual(legacy?.widgetShowsAmounts, false, "Importi nel widget nascosti di default")
     }
 }
+
+final class CorrelationTests: XCTestCase {
+    private func series(_ f: (Int) -> Double, count: Int = 80) -> [Candle] {
+        let start = Date(timeIntervalSince1970: 1_735_732_800)
+        return (0..<count).map { i in
+            let c = f(i)
+            return Candle(timestamp: start.addingTimeInterval(Double(i) * 86_400), open: c, high: c, low: c, close: c, volume: 1)
+        }
+    }
+
+    func testIdenticalAndOppositeMoves() throws {
+        let a = series { 100 + sin(Double($0)) * 3 + Double($0) * 0.1 }
+        let b = series { 50 + sin(Double($0)) * 1.5 + Double($0) * 0.05 }
+        XCTAssertEqual(try XCTUnwrap(DailyStrategy.correlation(a, b)), 1, accuracy: 0.05)
+        let c = series { 100 - sin(Double($0)) * 3 }
+        XCTAssertLessThan(try XCTUnwrap(DailyStrategy.correlation(a, c)), -0.8)
+    }
+
+    func testNotEnoughCommonDays() {
+        let a = series({ 100 + Double($0) }, count: 15)
+        XCTAssertNil(DailyStrategy.correlation(a, a))
+    }
+}

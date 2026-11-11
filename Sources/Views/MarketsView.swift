@@ -51,14 +51,14 @@ struct MarketsPanel: View {
                 Text(isIntraday || engine.marketBarsDate == nil
                      ? "tocca per il grafico"
                      : "dati \(engine.marketBarsDate!.formatted(date: .omitted, time: .shortened)) · tocca")
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
             }
             if isIntraday {
                 intradayGrid
             } else if engine.marketBars.isEmpty {
                 Text("I grafici compaiono dopo il primo controllo (START o CONTROLLA ORA).")
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
             } else {
                 dailyGrid
@@ -107,7 +107,7 @@ struct MarketsPanel: View {
         Group {
             if engine.intradaySymbols.isEmpty {
                 Text("Avvia la modalità veloce: qui compaiono i simboli scelti con le candele \(engine.strategyConfig.sanitized.decisionTimeframeMinutes)m.")
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(.caption)
                     .foregroundStyle(Theme.textSecondary)
             } else {
                 TimelineView(.periodic(from: .now, by: 5)) { _ in
@@ -304,7 +304,7 @@ struct MarketDetailView: View {
                 }
             }
             Text(insight.reason)
-                .font(.system(.footnote, design: .monospaced))
+                .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -315,7 +315,7 @@ struct MarketDetailView: View {
                 Text(loading ? "Carico le candele \(interval.rawValue) dal broker…"
                      : interval == .live ? "In attesa delle prime candele dallo stream."
                      : "Candele non disponibili: controlla la connessione e le chiavi Alpaca.")
-                    .font(.system(.footnote, design: .monospaced))
+                    .font(.footnote)
                     .foregroundStyle(Theme.textSecondary)
             }
         } else {
@@ -329,7 +329,7 @@ struct MarketDetailView: View {
             legend(slowLabel: interval.slowLabel, levels: levels)
             if let last = candles.last {
                 Text("Ultima candela: \(last.timestamp.formatted(date: .abbreviated, time: interval == .day ? .omitted : .shortened))")
-                    .font(.system(.caption2, design: .monospaced))
+                    .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
             }
         }
@@ -347,7 +347,7 @@ struct MarketDetailView: View {
             .themedCard(Theme.cyan)
 
             Text("Regola: compra se sopra la media a 200 giorni e RSI2 sotto 10 (ribasso forte in un trend che sale). Esce sopra la media a 5 giorni, dopo \(DailyStrategy.maxHoldingDays) sedute, allo stop o al target.")
-                .font(.system(.caption2, design: .monospaced))
+                .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
         }

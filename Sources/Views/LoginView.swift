@@ -23,7 +23,7 @@ struct LoginView: View {
                             .font(.system(.title2, design: .monospaced, weight: .bold))
                             .foregroundStyle(terminalGreen)
                         Text("KIMI DECISION CORE · ALPACA EXECUTION")
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.caption)
                             .foregroundStyle(.gray)
                     }
 
@@ -60,13 +60,13 @@ struct LoginView: View {
                         Text(paperTrading
                              ? "Ordini inviati all'ambiente paper Alpaca."
                              : "ATTENZIONE: ordini su capitale reale. Verifica prima in paper trading.")
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.caption)
                             .foregroundStyle(paperTrading ? .gray : .red)
                     }
 
                     if let errorMessage {
                         Text(errorMessage)
-                            .font(.system(.caption, design: .monospaced))
+                            .font(.caption)
                             .foregroundStyle(.red)
                             .textSelection(.enabled)
                     }
@@ -93,7 +93,7 @@ struct LoginView: View {
                     .opacity(validating ? 0.6 : 1)
 
                     Text("Le credenziali sono salvate come generic password nel Keychain con protezione biometrica e accessibilità ThisDeviceOnly. Il Keychain non rende le API key chiavi private del Secure Enclave.")
-                        .font(.system(.caption2, design: .monospaced))
+                        .font(.caption)
                         .foregroundStyle(.gray)
                 }
                 .padding(24)

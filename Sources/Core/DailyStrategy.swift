@@ -37,6 +37,10 @@ enum DailyStrategy {
         let snapshot: Snapshot
         /// Ultime 20 chiusure, per il contesto del Brain.
         var recentCloses: [Double] = []
+        /// Correlazione dei rendimenti giornalieri (60 sedute) con le posizioni
+        /// aperte e con gli altri candidati: Brain e Reviewer vedono il numero
+        /// invece di indovinare quali ETF si muovono insieme.
+        var correlations: [String: Double] = [:]
         /// Stop teorico sulla chiusura (quello reale si ricalcola sul prezzo d'ingresso).
         var stopDistance: Double { DailyStrategy.stopATR * snapshot.atr14 }
     }
@@ -85,6 +89,36 @@ enum DailyStrategy {
             return bars
         }
         return Array(bars.dropLast())
+    }
+
+    /// Correlazione di Pearson dei rendimenti giornalieri sulle ultime `days`
+    /// sedute in comune (allineate per giorno di borsa). nil se mancano dati.
+    static func correlation(_ a: [Candle], _ b: [Candle], days: Int = 60) -> Double? {
+        let mapB = Dictionary(b.map { (tradingDay($0.timestamp), $0.close) }, uniquingKeysWith: { _, last in last })
+        let common = a.compactMap { candle -> (Double, Double)? in
+            mapB[tradingDay(candle.timestamp)].map { (candle.close, $0) }
+        }
+        let window = Array(common.suffix(days + 1))
+        guard window.count >= 21 else { return nil }
+        var ra: [Double] = []
+        var rb: [Double] = []
+        for i in 1..<window.count {
+            guard window[i - 1].0 > 0, window[i - 1].1 > 0 else { continue }
+            ra.append(window[i].0 / window[i - 1].0 - 1)
+            rb.append(window[i].1 / window[i - 1].1 - 1)
+        }
+        let n = Double(ra.count)
+        guard n >= 20 else { return nil }
+        let ma = ra.reduce(0, +) / n
+        let mb = rb.reduce(0, +) / n
+        var cov = 0.0, va = 0.0, vb = 0.0
+        for i in 0..<ra.count {
+            cov += (ra[i] - ma) * (rb[i] - mb)
+            va += (ra[i] - ma) * (ra[i] - ma)
+            vb += (rb[i] - mb) * (rb[i] - mb)
+        }
+        guard va > 0, vb > 0 else { return nil }
+        return cov / (va.squareRoot() * vb.squareRoot())
     }
 
     static func tradingDay(_ date: Date) -> String {

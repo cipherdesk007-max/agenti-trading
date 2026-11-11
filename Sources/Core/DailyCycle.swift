@@ -317,10 +317,21 @@ struct DailyCycleRunner: Sendable {
         // Solo i candidati di cui il capitale del bot può comprare almeno 1 azione
         // (contante libero, tetto per posizione, rischio per trade) arrivano a
         // Kimi: niente crediti spesi per ordini che il Rischio boccerebbe.
-        let fresh = undecided.filter { c in
+        var fresh = undecided.filter { c in
             RiskRules.canBuyOneShare(price: c.snapshot.close, stopDistance: c.stopDistance,
                                      capital: botAccount.equity, freeCash: botAccount.cash,
                                      riskFraction: input.riskFraction)
+        }
+        // Correlazioni con le posizioni aperte e tra i candidati (60 sedute).
+        let others = Array(held.keys) + fresh.map(\.symbol)
+        for index in fresh.indices {
+            let symbol = fresh[index].symbol
+            guard let mine = bars[symbol] else { continue }
+            for other in Set(others) where other != symbol {
+                if let theirs = bars[other], let rho = DailyStrategy.correlation(mine, theirs) {
+                    fresh[index].correlations[other] = (rho * 100).rounded() / 100
+                }
+            }
         }
         let capitalBlock = fresh.isEmpty
             ? "capitale bot insufficiente per 1 azione (libero \(fmt(botAccount.cash)) su \(fmt(botAccount.equity)) USD, impegnati \(fmt(exposure)))"

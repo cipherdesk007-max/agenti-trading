@@ -131,15 +131,15 @@ jobs:
             xcrun simctl terminate "$SIM_UDID" com.quantswarm.alphazero 2>/dev/null || true
             sleep 3
             xcrun simctl launch "$SIM_UDID" com.quantswarm.alphazero -QSPreview "$@" || echo "LAUNCH FALLITO $NAME"
-            sleep 10
+            sleep 14
             xcrun simctl io "$SIM_UDID" screenshot "shots/$NAME.png"
             if ! xcrun simctl spawn "$SIM_UDID" launchctl list | grep -q quantswarm; then
               echo "::warning::APP NON IN ESECUZIONE dopo $NAME (crash?)"
             fi
           }
           for TAB in CRUSCOTTO DETTAGLI BROKER SISTEMA; do shot "$TAB" -QSTab "$TAB"; done
-          shot MERCATI -QSTab CRUSCOTTO -QSFocusMarkets
-          shot GRAFICO -QSTab CRUSCOTTO -QSMarket XLF
+          shot MERCATI -QSTab MERCATI
+          shot GRAFICO -QSTab MERCATI -QSMarket XLF
           ls -la shots
           echo "===== CRASH REPORT ====="
           find ~/Library/Logs/DiagnosticReports -name "QuantSwarm*" -mmin -30 2>/dev/null | while read f; do

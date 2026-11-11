@@ -7,6 +7,17 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- **Barra delle sezioni in basso** con icone (Cruscotto, Mercati, Dettagli, Broker, Sistema), alla portata del pollice. MERCATI diventa una sezione sua, con la legenda degli stati.
+- **Intestazione nuova**: patrimonio in grande, risultato del giorno in dollari e in percentuale, PAPER/LIVE e mercato aperto/chiuso come etichette, stato del motore in una riga.
+- **Conto alla rovescia** del prossimo controllo, con barra di avanzamento.
+- Vibrazione leggera al cambio di sezione e all'avvio o arresto del motore.
+- **Agenti**: Brain e Reviewer ricevono la **correlazione a 60 sedute** di ogni candidato con le posizioni aperte e con gli altri candidati. Prima il prompt chiedeva di evitare ETF quasi uguali senza dare i numeri. Il Reviewer boccia sopra 0,85 con una posizione già aperta.
+- **Agenti**: ragionamento "medio" per Brain e Reviewer della giornaliera, che fanno poche chiamate al giorno ma importanti; resta "basso" per la modalità veloce.
+
+### Cambiato
+- Testi descrittivi in carattere di sistema, più leggibile; numeri ed etichette restano in stile terminale.
+
 ## [1.2.0] - 2026-11-11
 
 ### Aggiunto
