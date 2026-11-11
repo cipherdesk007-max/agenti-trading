@@ -1,5 +1,8 @@
 import Charts
 import SwiftUI
+#if canImport(Translation)
+import Translation
+#endif
 
 /// Livelli reali sul broker per un simbolo: prezzo di carico, stop, target,
 /// ingresso in attesa. Letti da posizioni e ordini aperti (gambe comprese).
@@ -204,6 +207,7 @@ struct MarketDetailView: View {
     @State private var fetched: [Candle]?
     @State private var loading = false
     @State private var news: [NewsHeadline]?
+    @State private var showTranslation = false
 
     init(symbol: String, intraday: Bool) {
         self.symbol = symbol
@@ -361,9 +365,22 @@ struct MarketDetailView: View {
     /// Notizie Benzinga delle ultime 48 ore (le stesse che riceve Kimi).
     @ViewBuilder private var newsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("NOTIZIE · 48 ORE")
-                .font(.system(.caption, design: .monospaced, weight: .heavy))
-                .foregroundStyle(Theme.cyan)
+            HStack {
+                Text("NOTIZIE · 48 ORE")
+                    .font(.system(.caption, design: .monospaced, weight: .heavy))
+                    .foregroundStyle(Theme.cyan)
+                Spacer()
+                if let news, !news.isEmpty, translationAvailable {
+                    Button {
+                        showTranslation = true
+                    } label: {
+                        Label("TRADUCI", systemImage: "character.bubble")
+                            .font(.system(.caption, design: .monospaced, weight: .bold))
+                            .foregroundStyle(Theme.cyan)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
             if let news {
                 if news.isEmpty {
                     Text("Nessuna notizia su \(symbol) nelle ultime 48 ore.")
@@ -384,6 +401,14 @@ struct MarketDetailView: View {
             }
         }
         .themedCard(Theme.cyan)
+        .modifier(NewsTranslation(isPresented: $showTranslation,
+                                  text: (news ?? []).prefix(8).map(\.headline).joined(separator: "\n\n")))
+    }
+
+    /// Traduzione di Apple (sul telefono, gratis, niente crediti): iOS 17.4+.
+    private var translationAvailable: Bool {
+        if #available(iOS 17.4, *) { return true }
+        return false
     }
 
     private func legend(slowLabel: String, levels: BrokerLevels) -> some View {
@@ -499,5 +524,25 @@ private struct CandleChart: View {
             .foregroundStyle(color)
             .padding(.horizontal, 4)
             .background(Theme.background.opacity(0.8), in: Capsule())
+    }
+}
+
+
+/// Foglio di traduzione di sistema per i titoli delle notizie (iOS 17.4+):
+/// lingua rilevata da sola, traduzione nella lingua del telefono.
+private struct NewsTranslation: ViewModifier {
+    @Binding var isPresented: Bool
+    let text: String
+
+    func body(content: Content) -> some View {
+        #if canImport(Translation)
+        if #available(iOS 17.4, *) {
+            content.translationPresentation(isPresented: $isPresented, text: text)
+        } else {
+            content
+        }
+        #else
+        content
+        #endif
     }
 }

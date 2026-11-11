@@ -8,6 +8,7 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 ## [Non rilasciato]
 
 ### Aggiunto
+- **TRADUCI** nelle notizie del grafico: usa la traduzione di Apple direttamente sul telefono, gratis e senza crediti Kimi, con iOS 17.4 o successivo.
 - **NASCONDI SALDO**: con l'occhio accanto al patrimonio, oppure in Sistema, saldo, P&L, capitale e importi delle posizioni diventano •••••. Le percentuali e i prezzi degli ETF restano visibili. L'impostazione resta salvata.
 - **Notizie agli agenti**: quando c'è un segnale, Brain e Reviewer ricevono i titoli delle notizie Benzinga delle ultime 48 ore sull'ETF e sul mercato (SPY e QQQ), presi dalla News API di Alpaca con le stesse chiavi, senza costi. Servono a non comprare dentro un evento che cambia il quadro (Fed, inflazione, crollo di un settore), non a inseguire le notizie. Il Reviewer boccia se una notizia spiega il calo con un cambiamento vero.
 - Nel grafico di ogni ETF c'è la sezione **NOTIZIE · 48 ORE**, con le stesse notizie che riceve Kimi.
@@ -33,6 +34,7 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ### Studiato (tools/)
 - **Conto piccolo** (`backtest_small.py`): azioni intere ai prezzi di oggi. Con 1.000 $ la giornaliera rende circa +1,8% l'anno, contro +2,2% con 100.000 $, con perdita massima −6%/−7%. Gli ETF "gemelli" economici (QQQM, VTWO, GLDM, SPYM) fanno saltare meno segnali, ma in due esecuzioni il rendimento è cambiato di segno rispetto al paniere attuale: differenza dentro il rumore, quindi il paniere resta com'è.
+- **Regole giornaliere a confronto** (`backtest_signals.py`), con le stesse uscite dell'app: RSI2 sotto 10 (quella in uso), IBS, minimo a 7 giorni, 3 cali di fila, la loro unione e "almeno due insieme". RSI2 resta la migliore: Sharpe 0,43 dal 2006 e +7,4% l'anno negli ultimi 3 anni. Aggiungere regole dà più segnali ma peggiora il risultato (l'unione scende a Sharpe 0,26), quindi la regola non cambia.
 - **Intraday momentum** (`backtest_momentum.py`): verifica sui dati recenti dello studio Gao, Han, Li e Zhou (JFE 2018) per la modalità veloce.
 
 ### Corretto

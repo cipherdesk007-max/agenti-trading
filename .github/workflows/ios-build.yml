@@ -146,6 +146,10 @@ jobs:
               echo "::warning::APP NON IN ESECUZIONE dopo $NAME (crash?)"
             fi
           }
+          # Primo avvio a vuoto: il primo lancio dopo l'installazione è lento
+          # (schermata bianca di avvio), non va fotografato.
+          xcrun simctl launch "$SIM_UDID" com.quantswarm.alphazero -QSPreview || true
+          sleep 20
           for TAB in CRUSCOTTO DETTAGLI BROKER SISTEMA; do shot "$TAB" -QSTab "$TAB"; done
           shot MERCATI -QSTab MERCATI
           shot GRAFICO -QSTab MERCATI -QSMarket XLF

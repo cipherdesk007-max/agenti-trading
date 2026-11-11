@@ -2048,6 +2048,13 @@ extension QuantSwarmEngine {
                 } catch {
                     return
                 }
+                // La pausa (rete o batteria) si ricontrolla ogni 5 secondi: se finisce,
+                // per esempio perché il telefono va in carica, il controllo riparte subito.
+                if let current = pauseReason, computePauseReason() == nil {
+                    pauseReason = nil
+                    log("Pausa finita (\(current.lowercased())): controllo subito.")
+                    dailyCheckNow = true
+                }
             }
             dailyCheckNow = false
         }
