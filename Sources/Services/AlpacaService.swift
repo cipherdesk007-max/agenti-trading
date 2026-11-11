@@ -309,6 +309,36 @@ actor AlpacaService {
             .sorted { $0.timestamp < $1.timestamp }
     }
 
+    /// Candele per i grafici (1Hour, 15Min, 5Min…), anche a mercato chiuso:
+    /// ultimi `days` giorni, le più recenti. Prima SIP (tutte le borse, gratis
+    /// se la richiesta finisce ad almeno 15 minuti fa), poi IEX.
+    func chartBars(symbol: String, timeframe: String, days: Int, limit: Int = 300) async throws -> [Candle] {
+        guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+            throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
+        }
+        let iso = ISO8601DateFormatter()
+        let start = iso.string(from: Date().addingTimeInterval(-Double(days) * 86_400))
+        func fetch(_ feed: String) async throws -> [Candle] {
+            var query = [
+                URLQueryItem(name: "timeframe", value: timeframe),
+                URLQueryItem(name: "start", value: start),
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "feed", value: feed),
+                URLQueryItem(name: "adjustment", value: "all"),
+                URLQueryItem(name: "sort", value: "desc")
+            ]
+            if feed == "sip" {
+                query.append(URLQueryItem(name: "end", value: iso.string(from: Date().addingTimeInterval(-16 * 60))))
+            }
+            let data = try await send(baseURL: credentials.marketDataBaseURL, path: "/v2/stocks/\(escaped)/bars",
+                                      method: "GET", query: query)
+            let response = try JSONDecoder().decode(BarsResponse.self, from: data)
+            return (response.bars ?? []).compactMap(\.candle).sorted { $0.timestamp < $1.timestamp }
+        }
+        if let sip = try? await fetch("sip"), !sip.isEmpty { return sip }
+        return try await fetch("iex")
+    }
+
     /// Barre GIORNALIERE per la modalità swing: ~420 giorni di calendario
     /// (oltre 260 sedute) per avere SMA200 + RSI + ATR. Rettificate per
     /// dividendi e split, come nel backtest.

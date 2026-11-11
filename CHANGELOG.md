@@ -17,6 +17,8 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 - Le release non partono più da sole: di default l'IPA va in una bozza privata e viene consegnata a mano. `ultima`, `vX.Y.Z` e gli aggiornamenti dall'app partono solo con "pubblica".
 - CI più veloce: a ogni modifica girano solo i test sulla logica, che bloccano l'IPA se falliscono. I test dell'interfaccia e gli screenshot partono su richiesta, prima delle release.
 
+- **Grafici a più intervalli** (1G, 1H, 15M, 5M, e LIVE in modalità veloce), anche a mercato chiuso: le candele arrivano dallo storico del broker (feed SIP, con IEX come riserva), senza crediti Kimi.
+- **Pagella agenti** in DETTAGLI: confronta le regole da sole (tutti i segnali) con gli scelti e gli scartati da Kimi e con i bocciati dal Reviewer. Per ognuno mostra numero, rendimento medio e quota in guadagno, più il **valore di Kimi** in punti, la **tendenza** tra esiti vecchi e recenti e un giudizio che arriva solo dopo 30 esiti.
 - MERCATI compare subito all'apertura con le ultime barre salvate, con l'ora dei dati; il primo controllo le aggiorna.
 - DETTAGLI mostra solo ciò che serve alla modalità attiva: analisi a richiesta, dataset di training, edge e calibrazione restano nella modalità veloce. L'esportazione CSV dei trade ha un pannello suo.
 

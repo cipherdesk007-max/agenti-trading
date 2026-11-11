@@ -170,11 +170,49 @@ private struct MarketTile: View {
 
 // MARK: - Dettaglio: candele, medie, livelli
 
+/// Intervallo del grafico. Tutti funzionano anche a mercato chiuso (storico
+/// del broker); LIVE sono le candele dello stream della modalità veloce.
+enum ChartInterval: String, CaseIterable, Identifiable {
+    case live = "LIVE"
+    case day = "1G"
+    case hour = "1H"
+    case m15 = "15M"
+    case m5 = "5M"
+
+    var id: String { rawValue }
+    /// Timeframe Alpaca e giorni di storico da chiedere.
+    var request: (timeframe: String, days: Int)? {
+        switch self {
+        case .live: return nil
+        case .day: return ("1Day", 450)
+        case .hour: return ("1Hour", 30)
+        case .m15: return ("15Min", 10)
+        case .m5: return ("5Min", 4)
+        }
+    }
+    var slowPeriod: Int { self == .day ? 200 : 20 }
+    var slowLabel: String { self == .day ? "SMA200" : "MEDIA 20" }
+    var visible: Int { self == .day ? 90 : 80 }
+}
+
 struct MarketDetailView: View {
     @EnvironmentObject private var engine: QuantSwarmEngine
     @Environment(\.dismiss) private var dismiss
     let symbol: String
     let intraday: Bool
+    @State private var interval: ChartInterval
+    @State private var fetched: [Candle]?
+    @State private var loading = false
+
+    init(symbol: String, intraday: Bool) {
+        self.symbol = symbol
+        self.intraday = intraday
+        _interval = State(initialValue: intraday ? .live : .day)
+    }
+
+    private var intervals: [ChartInterval] {
+        intraday ? [.live, .m5, .m15, .hour, .day] : [.day, .hour, .m15, .m5]
+    }
 
     static func color(for state: MarketInsight.State) -> Color {
         switch state {
@@ -187,21 +225,42 @@ struct MarketDetailView: View {
         }
     }
 
+    /// Barre giornaliere del paniere già scaricate dal controllo (subito, anche dalla cache).
+    private var basketDaily: [Candle]? {
+        let bars = engine.marketBars[symbol] ?? []
+        return bars.isEmpty ? nil : bars
+    }
+
     private var allCandles: [Candle] {
-        intraday ? engine.intradayCandles(for: symbol) : (engine.marketBars[symbol] ?? [])
+        switch interval {
+        case .live: return engine.intradayCandles(for: symbol)
+        case .day: return basketDaily ?? fetched ?? []
+        default: return fetched ?? []
+        }
     }
 
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
-                    if intraday {
+                    Picker("Intervallo", selection: $interval) {
+                        ForEach(intervals) { Text($0.rawValue).tag($0) }
+                    }
+                    .pickerStyle(.segmented)
+                    if interval == .live {
                         TimelineView(.periodic(from: .now, by: 5)) { _ in content }
                     } else {
                         content
                     }
                 }
                 .padding()
+            }
+            .task(id: interval) {
+                fetched = nil
+                guard let request = interval.request, !(interval == .day && basketDaily != nil) else { return }
+                loading = true
+                fetched = await engine.chartCandles(symbol: symbol, timeframe: request.timeframe, days: request.days)
+                loading = false
             }
             .background(Theme.background.ignoresSafeArea())
             .navigationTitle(symbol)
@@ -221,10 +280,12 @@ struct MarketDetailView: View {
 
     @ViewBuilder private var content: some View {
         let candles = allCandles
-        let visibleCount = intraday ? 60 : 90
+        let visibleCount = interval.visible
         let closes = candles.map(\.close)
-        let slow = MarketInsight.movingAverage(closes, period: intraday ? 20 : 200)
-        let fast = MarketInsight.movingAverage(closes, period: intraday ? 5 : 5)
+        let slow = MarketInsight.movingAverage(closes, period: interval.slowPeriod)
+        let fast = MarketInsight.movingAverage(closes, period: 5)
+        // Spiegazione della regola solo sul giornaliero dei 15 ETF (è lì che decide).
+        let explains = interval == .day && DailyStrategy.basket.contains(symbol.uppercased())
         let start = max(candles.count - visibleCount, 0)
         let levels = BrokerLevels.from(engine, symbol: symbol)
         let held = engine.positions.contains { $0.symbol.uppercased() == symbol.uppercased() }
@@ -232,7 +293,7 @@ struct MarketDetailView: View {
         let insight = MarketInsight.evaluate(symbol: symbol, bars: candles, held: held, capital: capital,
                                              riskFraction: engine.strategyConfig.sanitized.riskFraction)
 
-        if !intraday {
+        if explains {
             HStack {
                 Text(insight.state.rawValue).themedChip(Self.color(for: insight.state), filled: insight.state == .held)
                 Spacer()
@@ -249,21 +310,31 @@ struct MarketDetailView: View {
         }
 
         if candles.isEmpty {
-            Text(intraday ? "In attesa delle prime candele dallo stream." : "Nessuna barra: premi CONTROLLA ORA.")
-                .font(.system(.footnote, design: .monospaced))
-                .foregroundStyle(Theme.textSecondary)
+            HStack(spacing: 8) {
+                if loading { ProgressView().tint(Theme.green) }
+                Text(loading ? "Carico le candele \(interval.rawValue) dal broker…"
+                     : interval == .live ? "In attesa delle prime candele dallo stream."
+                     : "Candele non disponibili: controlla la connessione e le chiavi Alpaca.")
+                    .font(.system(.footnote, design: .monospaced))
+                    .foregroundStyle(Theme.textSecondary)
+            }
         } else {
             CandleChart(candles: Array(candles[start...]),
                         slow: Array(slow[start...]), fast: Array(fast[start...]),
-                        slowLabel: intraday ? "MEDIA 20" : "SMA200", fastLabel: "MEDIA 5",
+                        slowLabel: interval.slowLabel, fastLabel: "MEDIA 5",
                         levels: levels)
                 .frame(height: 300)
                 .themedCard(Theme.green, padding: 10)
 
-            legend(intraday: intraday, levels: levels)
+            legend(slowLabel: interval.slowLabel, levels: levels)
+            if let last = candles.last {
+                Text("Ultima candela: \(last.timestamp.formatted(date: .abbreviated, time: interval == .day ? .omitted : .shortened))")
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(Theme.textTertiary)
+            }
         }
 
-        if let snap = insight.snapshot, !intraday {
+        if let snap = insight.snapshot, explains {
             VStack(alignment: .leading, spacing: 8) {
                 row("Chiusura", snap.close)
                 row("Media 200 giorni", snap.sma200)
@@ -282,9 +353,9 @@ struct MarketDetailView: View {
         }
     }
 
-    private func legend(intraday: Bool, levels: BrokerLevels) -> some View {
+    private func legend(slowLabel: String, levels: BrokerLevels) -> some View {
         HStack(spacing: 12) {
-            legendItem(Theme.amber, intraday ? "MEDIA 20" : "SMA200")
+            legendItem(Theme.amber, slowLabel)
             legendItem(Theme.cyan, "MEDIA 5")
             if levels.entry != nil || levels.pendingEntry != nil { legendItem(.white, "INGRESSO") }
             if levels.stop != nil { legendItem(Theme.red, "STOP") }

@@ -214,11 +214,61 @@ enum ShadowEvaluator {
 }
 
 struct ShadowSummary: Sendable, Equatable {
+    /// Un gruppo di esiti: quanti, rendimento medio, quota in guadagno.
+    struct Group: Sendable, Equatable {
+        var count = 0
+        var average: Double?
+        var winRate: Double?
+
+        init(_ returns: [Double] = []) {
+            count = returns.count
+            guard !returns.isEmpty else { return }
+            average = returns.reduce(0, +) / Double(returns.count)
+            winRate = Double(returns.filter { $0 > 0 }.count) / Double(returns.count)
+        }
+    }
+
+    /// Esiti necessari per un giudizio affidabile.
+    static let minimumForVerdict = 30
+
     var chosenCount = 0
     var chosenAverage: Double?
     var skippedCount = 0
     var skippedAverage: Double?
     var pending = 0
+    /// Tutti i segnali delle regole, qualunque cosa abbia deciso Kimi:
+    /// è ciò che farebbero le regole da sole.
+    var rules = Group()
+    var chosen = Group()
+    var skipped = Group()
+    var reviewerRejected = Group()
+    /// Valore di Kimi nella metà più vecchia e in quella più recente degli
+    /// esiti (scelti meno tutti i segnali): dice se sta migliorando.
+    var olderEdge: Double?
+    var recentEdge: Double?
+
+    /// Quanto le scelte di Kimi rendono in più (o in meno) delle regole da sole.
+    var kimiEdge: Double? {
+        guard let c = chosen.average, let r = rules.average else { return nil }
+        return c - r
+    }
+
+    enum Verdict: Sendable, Equatable {
+        case notEnoughData(have: Int, need: Int)
+        case kimiAddsValue
+        case kimiNeutral
+        case kimiHurts
+    }
+
+    var verdict: Verdict {
+        let resolved = rules.count
+        guard resolved >= Self.minimumForVerdict, chosen.count >= 5, let edge = kimiEdge else {
+            return .notEnoughData(have: resolved, need: Self.minimumForVerdict)
+        }
+        if edge > 0.002 { return .kimiAddsValue }
+        if edge < -0.002 { return .kimiHurts }
+        return .kimiNeutral
+    }
 
     static func from(_ entries: [ShadowEntry]) -> ShadowSummary {
         var summary = ShadowSummary()
@@ -231,6 +281,23 @@ struct ShadowSummary: Sendable, Equatable {
         summary.skippedCount = skipped.count
         summary.chosenAverage = chosen.isEmpty ? nil : chosen.reduce(0, +) / Double(chosen.count)
         summary.skippedAverage = skipped.isEmpty ? nil : skipped.reduce(0, +) / Double(skipped.count)
+        summary.rules = Group(resolved.compactMap(\.ret))
+        summary.chosen = Group(chosen)
+        summary.skipped = Group(skipped)
+        summary.reviewerRejected = Group(resolved.filter { $0.outcome == ShadowEntry.reviewerReject }.compactMap(\.ret))
+        // Tendenza: esiti in ordine di uscita, divisi a metà.
+        let ordered = resolved.sorted { ($0.exitDay ?? $0.day, $0.symbol) < ($1.exitDay ?? $1.day, $1.symbol) }
+        if ordered.count >= 10 {
+            let half = ordered.count / 2
+            func edge(_ part: ArraySlice<ShadowEntry>) -> Double? {
+                let all = part.compactMap(\.ret)
+                let picked = part.filter(\.chosen).compactMap(\.ret)
+                guard !all.isEmpty, !picked.isEmpty else { return nil }
+                return picked.reduce(0, +) / Double(picked.count) - all.reduce(0, +) / Double(all.count)
+            }
+            summary.olderEdge = edge(ordered[..<half])
+            summary.recentEdge = edge(ordered[half...])
+        }
         return summary
     }
 

@@ -377,25 +377,47 @@ struct TerminalDashboardView: View {
         .panelStyle(terminalGreen)
     }
 
+    /// Pagella degli agenti: le regole da sole contro le scelte di Kimi, sugli
+    /// stessi segnali e con le stesse uscite dell'app (esiti ipotetici).
     private var shadowPanel: some View {
         let s = engine.shadowSummary
         let stats = engine.entryStats
         func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", $0 * 100) } ?? "—" }
-        return VStack(alignment: .leading, spacing: 8) {
-            panelHeader("KIMI · SCELTI VS SCARTATI", color: DashboardPalette.cyan)
-            portfolioRow("SCELTI DA KIMI", "\(s.chosenCount) · medio \(pct(s.chosenAverage))", color: .white)
-            portfolioRow("SCARTATI", "\(s.skippedCount) · medio \(pct(s.skippedAverage))", color: .white)
-            portfolioRow("IN CORSO", "\(s.pending)", color: .gray)
-            if let c = s.chosenAverage, let k = s.skippedAverage, s.chosenCount + s.skippedCount >= 10 {
-                Text(c >= k ? "Finora le scelte di Kimi vanno meglio degli scartati." : "ATTENZIONE: gli scartati vanno meglio delle scelte di Kimi.")
-                    .font(.system(.caption2, design: .monospaced, weight: .bold))
-                    .foregroundStyle(c >= k ? terminalGreen : .orange)
-            } else {
-                Text("Servono almeno 10 esiti per un giudizio. Gli esiti sono ipotetici, con le stesse regole di uscita dell'app.")
-                    .font(.system(.caption2, design: .monospaced))
-                    .foregroundStyle(.gray)
-                    .fixedSize(horizontal: false, vertical: true)
+        func win(_ v: Double?) -> String { v.map { String(format: "%.0f%% in guadagno", $0 * 100) } ?? "—" }
+        func group(_ g: ShadowSummary.Group) -> String { g.count == 0 ? "—" : "\(g.count) · \(pct(g.average)) · \(win(g.winRate))" }
+        let verdict: (String, Color) = {
+            switch s.verdict {
+            case .notEnoughData(let have, let need):
+                return ("GIUDIZIO: servono \(need) esiti, ora \(have). Fino ad allora i numeri sono rumore.", .gray)
+            case .kimiAddsValue:
+                return ("GIUDIZIO: Kimi aggiunge valore, le sue scelte rendono più delle regole da sole.", terminalGreen)
+            case .kimiNeutral:
+                return ("GIUDIZIO: Kimi non cambia il risultato; le regole da sole basterebbero (e costano zero).", .orange)
+            case .kimiHurts:
+                return ("GIUDIZIO: Kimi peggiora il risultato. Va corretto il prompt o lasciato decidere alle regole.", .red)
             }
+        }()
+        return VStack(alignment: .leading, spacing: 8) {
+            panelHeader("PAGELLA AGENTI · KIMI CONTRO REGOLE", color: DashboardPalette.cyan)
+            stackedRow("REGOLE DA SOLE (tutti i segnali)", group(s.rules))
+            stackedRow("SCELTI DA KIMI", group(s.chosen))
+            stackedRow("SCARTATI DA KIMI", group(s.skipped))
+            stackedRow("BOCCIATI DAL REVIEWER", group(s.reviewerRejected))
+            portfolioRow("VALORE DI KIMI", s.kimiEdge.map { String(format: "%+.2f punti", $0 * 100) } ?? "—",
+                         color: (s.kimiEdge ?? 0) >= 0 ? terminalGreen : .red)
+            if let older = s.olderEdge, let recent = s.recentEdge {
+                portfolioRow("TENDENZA (prima → ora)", String(format: "%+.2f → %+.2f punti", older * 100, recent * 100),
+                             color: recent >= older ? terminalGreen : .orange)
+            }
+            portfolioRow("IN CORSO", "\(s.pending)", color: .gray)
+            Text(verdict.0)
+                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .foregroundStyle(verdict.1)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Come leggerla: VALORE DI KIMI è quanto rendono in media le sue scelte rispetto a tutti i segnali delle regole. Sopra zero aiuta, sotto zero danneggia. Il Reviewer lavora bene se i bocciati rendono meno degli scelti. TENDENZA confronta la metà più vecchia degli esiti con quella recente: se sale, gli agenti stanno migliorando.")
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+                .fixedSize(horizontal: false, vertical: true)
             Divider().overlay(Color.gray.opacity(0.3))
             let filled = max(stats.placed - stats.unfilled - stats.partial, 0)
             portfolioRow(
@@ -780,6 +802,20 @@ struct TerminalDashboardView: View {
         .task {
             await engine.refreshPortfolio()
         }
+    }
+
+    /// Riga su due livelli per valori lunghi (etichetta sopra, numeri sotto).
+    private func stackedRow(_ label: String, _ value: String, color: Color = .white) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(.caption2, design: .monospaced))
+                .foregroundStyle(.gray)
+            Text(value)
+                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .foregroundStyle(color)
+                .monospacedDigit()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func portfolioRow(_ label: String, _ value: String, color: Color) -> some View {

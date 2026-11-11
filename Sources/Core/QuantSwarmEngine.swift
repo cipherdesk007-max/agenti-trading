@@ -1471,6 +1471,20 @@ final class QuantSwarmEngine: ObservableObject {
 
     /// Rilettura post-Kimi dallo stream: prezzo fresco (≤ 10 s) già in memoria,
     /// senza un giro REST extra. Se lo stream tace, il risk agent usa il REST.
+    /// Candele dei grafici per intervallo (1 ora, 15 e 5 minuti), anche a
+    /// mercato chiuso. Tenute in memoria 60 secondi: niente richieste doppie.
+    private var chartCache: [String: (at: Date, candles: [Candle])] = [:]
+
+    func chartCandles(symbol: String, timeframe: String, days: Int) async -> [Candle]? {
+        let key = "\(symbol)|\(timeframe)"
+        if let hit = chartCache[key], Date().timeIntervalSince(hit.at) < 60 { return hit.candles }
+        guard let credentials else { return nil }
+        guard let candles = try? await AlpacaService(credentials: credentials.alpaca)
+            .chartBars(symbol: symbol, timeframe: timeframe, days: days) else { return nil }
+        chartCache[key] = (Date(), candles)
+        return candles
+    }
+
     /// Candele della modalità veloce (timeframe decisionale) per i grafici.
     func intradayCandles(for symbol: String) -> [Candle] {
         candleStores[symbol]?.decisionCandles(frameSeconds: strategyConfig.sanitized.decisionFrameSeconds) ?? []
