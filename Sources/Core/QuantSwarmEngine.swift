@@ -76,6 +76,8 @@ final class QuantSwarmEngine: ObservableObject {
     /// il bot ha impegnato all'ultimo controllo.
     @Published private(set) var equityHistory: [EquityPoint] = []
     @Published private(set) var botExposure: Double = 0
+    /// Prezzo e volatilità dei 15 ETF all'ultimo controllo (ETF comprabili).
+    @Published private(set) var basketSnapshots: [String: DailyStrategy.Snapshot] = [:]
     /// Ordini d'ingresso giornalieri: inviati, mai eseguiti, eseguiti in parte.
     @Published private(set) var entryStats = (placed: 0, unfilled: 0, partial: 0)
 
@@ -1917,6 +1919,7 @@ extension QuantSwarmEngine {
         guard !result.aborted else { return }
         DailyBookStore.save(result.book)
         botExposure = result.botExposure
+        if !result.snapshots.isEmpty { basketSnapshots = result.snapshots }
         if result.marketOpen, let equity = result.equity {
             // SPY in tempo reale (stesso istante del patrimonio); se manca,
             // l'ultima chiusura giornaliera.
@@ -2007,6 +2010,13 @@ extension QuantSwarmEngine {
         nextCheckAt = Date().addingTimeInterval(780)
         kimiCallsToday = 3
         botExposure = 4_356
+        basketSnapshots = [
+            "SPY": .init(close: 655, sma200: 600, sma5: 650, rsi2: 40, atr14: 7.5),
+            "QQQ": .init(close: 590, sma200: 540, sma5: 585, rsi2: 35, atr14: 8.0),
+            "XLF": .init(close: 52, sma200: 49, sma5: 52, rsi2: 50, atr14: 0.8),
+            "XLU": .init(close: 82, sma200: 78, sma5: 81, rsi2: 55, atr14: 1.1),
+            "TLT": .init(close: 90, sma200: 92, sma5: 90, rsi2: 45, atr14: 1.0)
+        ]
         var preview: [EquityPoint] = []
         for i in 0..<40 {
             let day = DailyStrategy.tradingDay(Date().addingTimeInterval(Double(i - 40) * 86_400))

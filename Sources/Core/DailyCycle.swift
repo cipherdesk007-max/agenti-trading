@@ -116,6 +116,8 @@ struct DailyCycleResult: Sendable {
     var benchmarkClose: Double?
     /// Valore impegnato dal bot (posizioni + ingressi pendenti) dopo le uscite.
     var botExposure: Double = 0
+    /// Prezzo e volatilità di ogni ETF del paniere (per "ETF comprabili").
+    var snapshots: [String: DailyStrategy.Snapshot] = [:]
 }
 
 struct DailyCycleRunner: Sendable {
@@ -169,6 +171,9 @@ struct DailyCycleRunner: Sendable {
                             + (missing.isEmpty ? "" : " · mancano \(missing.joined(separator: ", "))")
                             + " · mercato \(marketOpen ? "aperto" : "chiuso")"))
         result.benchmarkClose = bars["SPY"]?.last?.close
+        for (symbol, b) in bars {
+            if let snap = DailyStrategy.snapshot(of: b) { result.snapshots[symbol] = snap }
+        }
         var market: [String: DailyStrategy.Snapshot] = [:]
         for symbol in ["SPY", "QQQ", "IWM", "TLT", "GLD"] {
             if let b = bars[symbol], let s = DailyStrategy.snapshot(of: b) { market[symbol] = s }
@@ -309,11 +314,10 @@ struct DailyCycleRunner: Sendable {
         // Solo i candidati di cui il capitale del bot può comprare almeno 1 azione
         // (contante libero, tetto per posizione, rischio per trade) arrivano a
         // Kimi: niente crediti spesi per ordini che il Rischio boccerebbe.
-        let positionCap = min(botAccount.cash, botAccount.equity * RiskRules.maximumPositionFraction)
-        let riskBudget = botAccount.equity * input.riskFraction
         let fresh = undecided.filter { c in
-            let price = c.snapshot.close * (1 + RiskRules.entryLimitSlippage)
-            return positionCap >= price && riskBudget >= c.stopDistance + 0.01
+            RiskRules.canBuyOneShare(price: c.snapshot.close, stopDistance: c.stopDistance,
+                                     capital: botAccount.equity, freeCash: botAccount.cash,
+                                     riskFraction: input.riskFraction)
         }
         let capitalBlock = fresh.isEmpty
             ? "capitale bot insufficiente per 1 azione (libero \(fmt(botAccount.cash)) su \(fmt(botAccount.equity)) USD, impegnati \(fmt(exposure)))"

@@ -1319,13 +1319,40 @@ private struct SystemSettingsView: View {
     @State private var draft = StrategyConfig()
 
     /// Gradini del capitale del bot (USD).
-    static let capitalSteps: [Double] = [2_000, 3_000, 5_000, 7_500, 10_000, 15_000, 20_000, 25_000,
+    static let capitalSteps: [Double] = [500, 750, 1_000, 1_500, 2_000, 3_000, 5_000, 7_500, 10_000, 15_000, 20_000, 25_000,
                                          50_000, 75_000, 100_000, 250_000, 500_000, 1_000_000]
     static func nextCapital(after value: Double) -> Double {
         capitalSteps.first { $0 > value + 0.5 } ?? capitalSteps[capitalSteps.count - 1]
     }
     static func previousCapital(before value: Double) -> Double {
         capitalSteps.last { $0 < value - 0.5 } ?? capitalSteps[0]
+    }
+
+    /// Quanti ETF del paniere il capitale (e il rischio) impostati possono
+    /// comprare con almeno 1 azione intera, sui prezzi dell'ultimo controllo.
+    private var buyableRow: some View {
+        let snapshots = engine.basketSnapshots
+        let capital = draft.sanitized.botCapitalUSD
+        let risk = draft.sanitized.riskFraction
+        let ok = snapshots.keys.sorted().filter { symbol in
+            let s = snapshots[symbol]!
+            return RiskRules.canBuyOneShare(price: s.close, stopDistance: DailyStrategy.stopATR * s.atr14,
+                                            capital: capital, freeCash: capital, riskFraction: risk)
+        }
+        let missing = snapshots.keys.sorted().filter { !ok.contains($0) }
+        let text: String
+        if snapshots.isEmpty {
+            text = "ETF COMPRABILI: si calcola al primo controllo (START o CONTROLLA ORA)."
+        } else {
+            text = "ETF COMPRABILI: \(ok.count)/\(snapshots.count)"
+                + (missing.isEmpty ? "" : " · esclusi \(missing.joined(separator: ", "))")
+        }
+        let color: Color = snapshots.isEmpty ? .gray : (ok.count >= 8 ? DashboardPalette.green : (ok.count >= 4 ? .orange : .red))
+        return Text(text)
+            .font(.system(.caption2, design: .monospaced, weight: .bold))
+            .foregroundStyle(color)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("buyableETF")
     }
 
     var body: some View {
@@ -1361,12 +1388,11 @@ private struct SystemSettingsView: View {
                     onIncrement: { draft.botCapitalUSD = Self.nextCapital(after: draft.botCapitalUSD) },
                     onDecrement: { draft.botCapitalUSD = Self.previousCapital(before: draft.botCapitalUSD) }
                 )
-                Text(draft.botCapitalUSD < 5_000
-                     ? "Sotto 5.000 USD gli ETF più cari (SPY, QQQ) spesso non entrano: si compra almeno 1 azione intera."
-                     : "Il bot non impegna mai più di questa cifra; rischio e tetti si calcolano su questa, non sull'intero conto. Vale in paper e live: in paper usa la cifra che userai in live.")
+                Text("In USD (Alpaca lavora in dollari). Il bot non impegna mai di più; rischio e tetti si calcolano su questa cifra. Usa la stessa cifra in paper e in live.")
                     .font(.system(.caption2, design: .monospaced, weight: .regular))
-                    .foregroundStyle(draft.botCapitalUSD < 5_000 ? .orange : .gray)
+                    .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
+                buyableRow
                 Stepper(
                     "Rischio per trade: \(String(format: "%.2f", draft.riskPerTradePercent))% capitale",
                     value: $draft.riskPerTradePercent,

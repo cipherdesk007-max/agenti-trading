@@ -217,7 +217,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     /// min(patrimonio, capitale) e il bot non impegna mai di più.
     var botCapitalUSD: Double
 
-    static let botCapitalRange: ClosedRange<Double> = 2_000...1_000_000
+    static let botCapitalRange: ClosedRange<Double> = 500...1_000_000
 
     init(
         tradingMode: TradingMode = .daily,

@@ -227,6 +227,18 @@ enum RiskRules {
                        buyingPower: max(min(account.buyingPower, free), 0))
     }
 
+    /// Il capitale basta per almeno 1 azione intera? Stesse regole del
+    /// dimensionamento: prezzo entro il tetto per posizione (e il contante
+    /// libero) e perdita fino allo stop entro il rischio per trade. Serve sia a
+    /// non chiamare Kimi per niente sia a mostrare "ETF comprabili" in SISTEMA.
+    static func canBuyOneShare(price: Double, stopDistance: Double, capital: Double,
+                               freeCash: Double, riskFraction: Double) -> Bool {
+        guard [price, stopDistance, capital, freeCash].allSatisfy({ $0.isFinite }), price > 0, capital > 0 else { return false }
+        let limit = price * (1 + entryLimitSlippage)
+        let risk = capital * min(max(riskFraction, 0.000_1), 0.05)
+        return min(freeCash, capital * maximumPositionFraction) >= limit && risk >= stopDistance + 0.01
+    }
+
     static func roundUp(_ value: Double, tick: Double) -> Double {
         guard tick > 0 else { return value }
         return ((value / tick) - 1e-9).rounded(.up) * tick

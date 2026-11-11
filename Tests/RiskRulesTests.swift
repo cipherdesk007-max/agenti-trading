@@ -188,12 +188,29 @@ final class RiskRulesTests: XCTestCase {
     }
 
     func testConfigClampsBotCapital() {
-        XCTAssertEqual(StrategyConfig(botCapitalUSD: 10).sanitized.botCapitalUSD, 2_000)
+        XCTAssertEqual(StrategyConfig(botCapitalUSD: 10).sanitized.botCapitalUSD, 500)
+        XCTAssertEqual(StrategyConfig(botCapitalUSD: 1_000).sanitized.botCapitalUSD, 1_000)
         XCTAssertEqual(StrategyConfig(botCapitalUSD: 1e9).sanitized.botCapitalUSD, 1_000_000)
         XCTAssertEqual(StrategyConfig(botCapitalUSD: .nan).sanitized.botCapitalUSD, 10_000)
         // Config salvate prima di questa versione: default 10.000.
         let old = try? JSONDecoder().decode(StrategyConfig.self, from: Data("{}".utf8))
         XCTAssertEqual(old?.botCapitalUSD, 10_000)
+    }
+
+    func testCanBuyOneShareMatchesSizing() {
+        // 1.000 USD, rischio 1%: XLF a 52 con stop a 2 USD sì; SPY a 655 no (oltre il 25%).
+        XCTAssertTrue(RiskRules.canBuyOneShare(price: 52, stopDistance: 2, capital: 1_000, freeCash: 1_000, riskFraction: 0.01))
+        XCTAssertFalse(RiskRules.canBuyOneShare(price: 655, stopDistance: 18, capital: 1_000, freeCash: 1_000, riskFraction: 0.01))
+        // Stop troppo largo per il rischio (11 USD > 10 USD di rischio).
+        XCTAssertFalse(RiskRules.canBuyOneShare(price: 100, stopDistance: 11, capital: 1_000, freeCash: 1_000, riskFraction: 0.01))
+        // Contante libero finito: no.
+        XCTAssertFalse(RiskRules.canBuyOneShare(price: 52, stopDistance: 2, capital: 1_000, freeCash: 40, riskFraction: 0.01))
+        XCTAssertFalse(RiskRules.canBuyOneShare(price: .nan, stopDistance: 2, capital: 1_000, freeCash: 1_000, riskFraction: 0.01))
+        // Coerenza: quando dice sì, il dimensionamento vero trova almeno 1 azione.
+        let account = RiskRules.Account(equity: 1_000, cash: 1_000, buyingPower: 1_000)
+        let sizing = RiskRules.sizeStopOnly(currentPrice: 52, stopDistance: 2, account: account,
+                                            riskFraction: 0.01, constraints: .alpacaStock)
+        XCTAssertGreaterThanOrEqual((try? sizing.get())?.quantity ?? 0, 1)
     }
 
     // MARK: - Cambio di conto
