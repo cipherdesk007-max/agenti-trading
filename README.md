@@ -1,4 +1,6 @@
-# QuantSwarm-Alpha-Zero
+# FMLAB · QuantSwarm Alpha Zero
+
+Versione corrente: vedi [CHANGELOG.md](CHANGELOG.md) e, nell'app, **SISTEMA → VERSIONE**.
 
 App iOS 17+ (Swift 6, SwiftUI, SwiftData) di trading con agenti AI: Kimi via API sceglie e contesta, il codice decide quantità e rischio, Alpaca esegue. Nessuna credenziale nel repository.
 
@@ -8,6 +10,15 @@ App iOS 17+ (Swift 6, SwiftUI, SwiftData) di trading con agenti AI: Kimi via API
 |---|---|---|
 | **GIORNALIERA · ETF** (default) | 15 ETF (SPY, QQQ, IWM, DIA, 9 settori, GLD, TLT). Ingresso se chiusura > SMA200 e RSI(2) < 10. Stop a 2,5 ATR **sul broker, GTC**: resta attivo ad app chiusa. Uscita a chiusura > SMA5 o dopo 10 giorni. Un controllo subito, poi ogni 15 minuti ad app aperta, e a ogni riapertura. | Validata: batte ingressi casuali nel backtest 2006–oggi |
 | **VELOCE · SPERIMENTALE** | Candele 15m, filtro long, bracket in giornata, chiusura totale 10 minuti prima della fine della seduta. Serve l'app sempre aperta. | Nei backtest perde e non batte il caso |
+
+## Schermate
+
+- **CRUSCOTTO**: stato del motore, numeri di oggi, **MERCATI** (i 15 ETF con stato; tocca per il grafico a candele con medie, ingresso, stop e target reali dal broker), catena agenti, posizioni, eventi.
+- **DETTAGLI**: curva del capitale contro SPY, decisioni di Kimi, scelti contro scartati, analisi, metriche.
+- **BROKER**: ordini e posizioni con annullo e chiusura manuali.
+- **SISTEMA**: versione, modalità, capitale del bot, ETF comprabili, rischio, limiti di Kimi.
+
+Conto piccolo (es. 1.000 $): si comprano azioni intere, quindi entrano solo gli ETF con prezzo entro il 25% del capitale; l'app li indica e non chiama Kimi per gli altri. La regola PDT dei 25.000 $ non esiste più dal 4 giugno 2026.
 
 ## Catena agenti
 
@@ -26,8 +37,9 @@ Scout (dati, conto, posizioni) → Strategia (segnali a regole, zero crediti) �
 ## Build e IPA
 
 1. Push su `main` con modifiche a `Sources/`, `Tests/`, `project.yml` o al workflow: GitHub Actions genera il progetto con XcodeGen, esegue i test su simulatore e, solo se passano, compila l'IPA non firmata.
-2. L'IPA viene pubblicata nella release `ultima` (`QuantSwarm-Alpha-Zero.ipa`).
-3. Screenshot dell'interfaccia: Actions → "Unsigned iOS IPA" → Run workflow con "screenshot" attivo; finiscono nella release `screenshot`.
+2. L'IPA viene pubblicata nella release `ultima` (`QuantSwarm-Alpha-Zero.ipa`, URL fisso) e nella release numerata `vX.Y.Z`, con le note prese dal CHANGELOG.
+3. Per una nuova versione: aggiorna `MARKETING_VERSION` in `project.yml` (app e widget) e aggiungi la sezione in `CHANGELOG.md`.
+4. Screenshot dell'interfaccia (anche MERCATI e grafico): Actions → "Unsigned iOS IPA" → Run workflow con "screenshot" attivo; finiscono nella release `screenshot`.
 
 Build locale su macOS:
 
