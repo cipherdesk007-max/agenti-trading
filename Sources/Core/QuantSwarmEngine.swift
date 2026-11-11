@@ -74,7 +74,7 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var shadowSummary = ShadowSummary.from(DailyBookStore.load().shadow)
     /// Curva del capitale del conto attivo (un punto per seduta) e valore che
     /// il bot ha impegnato all'ultimo controllo.
-    @Published private(set) var equityHistory: [EquityPoint] = EquityHistoryStore.load(paper: true)
+    @Published private(set) var equityHistory: [EquityPoint] = []
     @Published private(set) var botExposure: Double = 0
     /// Ordini d'ingresso giornalieri: inviati, mai eseguiti, eseguiti in parte.
     @Published private(set) var entryStats = (placed: 0, unfilled: 0, partial: 0)
@@ -950,7 +950,6 @@ final class QuantSwarmEngine: ObservableObject {
         service.setModel(strategyConfig.kimiModel)
         kimiService = service
         paperTrading = stored.paperTrading
-        equityHistory = EquityHistoryStore.load(paper: stored.paperTrading)
         isConfigured = true
         statusMessage = "Pronto in modalità \(stored.paperTrading ? "paper" : "live")"
     }
@@ -1582,6 +1581,31 @@ final class QuantSwarmEngine: ObservableObject {
         )
     }
 
+    /// Curva del capitale del conto attivo: per numero di conto Alpaca.
+    private var equityAccountKey: String {
+        account?.accountNumber ?? (paperTrading ? "paper" : "live")
+    }
+
+    /// Nuovo conto (es. nuovo conto paper con meno soldi): protezioni e curva
+    /// ripartono dal suo patrimonio invece di confrontarlo col conto vecchio.
+    private func adoptAccountIdentity(_ snapshot: AccountSnapshot) {
+        let previousKey = guardState.accountNumber
+        let (state, changed) = guardState.adopting(account: snapshot.accountNumber, equity: snapshot.equityValue)
+        guard state.accountNumber != previousKey else {
+            if equityHistory.isEmpty { equityHistory = EquityHistoryStore.load(account: equityAccountKey) }
+            return
+        }
+        guardState = state
+        RiskGuardStore.save(guardState)
+        drawdownLocked = guardState.drawdownLocked
+        if changed {
+            dailyStopOn = false
+            baselineEquity = snapshot.equityValue
+            log("CONTO CAMBIATO (\(snapshot.accountNumber ?? "?")): picco, stop giornaliero e drawdown ripartono da \(format(snapshot.equityValue)) USD; curva del capitale nuova.", agent: .risk)
+        }
+        equityHistory = EquityHistoryStore.load(account: equityAccountKey)
+    }
+
     /// Circuit breaker giornaliero: P&L oltre la soglia impostata = nuovi
     /// segnali sospesi fino alla mezzanotte UTC. Persistito su disco: un
     /// riavvio dell'app non azzera il blocco. Le posizioni aperte restano
@@ -1641,6 +1665,7 @@ final class QuantSwarmEngine: ObservableObject {
         do {
             let snapshot = try await service.account()
             account = snapshot
+            adoptAccountIdentity(snapshot)
             checkDailyLoss(snapshot)
             updateDrawdownGuard(equity: snapshot.equityValue)
             if baselineEquity == nil { baselineEquity = snapshot.equityValue }
@@ -1692,6 +1717,7 @@ final class QuantSwarmEngine: ObservableObject {
         do {
             let snapshot = try await service.account()
             account = snapshot
+            adoptAccountIdentity(snapshot)
             checkDailyLoss(snapshot)
             updateDrawdownGuard(equity: snapshot.equityValue)
             if baselineEquity == nil { baselineEquity = snapshot.equityValue }
@@ -1896,12 +1922,13 @@ extension QuantSwarmEngine {
             // l'ultima chiusura giornaliera.
             let spy = (try? await AlpacaService(credentials: credentials.alpaca).latestTradePrice(symbol: "SPY"))
                 ?? result.benchmarkClose
-            let updated = EquityHistory.record(EquityHistoryStore.load(paper: paperTrading),
+            let key = equityAccountKey
+            let updated = EquityHistory.record(EquityHistoryStore.load(account: key),
                                                day: input.today, equity: equity, benchmark: spy,
                                                capital: config.botCapitalUSD)
-            EquityHistoryStore.save(updated, paper: paperTrading)
+            EquityHistoryStore.save(updated, account: key)
         }
-        equityHistory = EquityHistoryStore.load(paper: paperTrading)
+        equityHistory = EquityHistoryStore.load(account: equityAccountKey)
         shadowSummary = ShadowSummary.from(result.book.shadow)
         entryStats = (result.book.placedEntries, result.book.unfilledEntries, result.book.partialEntries)
         dailyCandidates = result.candidates

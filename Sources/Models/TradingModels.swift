@@ -90,8 +90,28 @@ struct RiskGuardState: Codable, Sendable {
     var dailyStopDayUTC: String?
     var peakEquity: Double
     var drawdownLocked: Bool
+    /// Conto a cui si riferiscono picco e blocchi (nil = versioni precedenti).
+    var accountNumber: String?
 
     static let empty = RiskGuardState(dailyStopDayUTC: nil, peakEquity: 0, drawdownLocked: false)
+
+    /// Il conto letto dal broker è diverso da quello delle protezioni salvate?
+    /// Allora picco e blocchi ripartono dal patrimonio del nuovo conto (un
+    /// nuovo conto paper da 10.000 non deve far scattare il drawdown di uno da
+    /// 100.000). Al primo avvio dopo l'aggiornamento il conto viene solo
+    /// registrato e il picco riallineato; un blocco già attivo resta.
+    func adopting(account: String?, equity: Double) -> (state: RiskGuardState, changed: Bool) {
+        guard let account, !account.isEmpty, account != accountNumber else { return (self, false) }
+        var copy = self
+        let changed = accountNumber != nil
+        copy.accountNumber = account
+        copy.peakEquity = max(equity, 0)
+        if changed {
+            copy.drawdownLocked = false
+            copy.dailyStopDayUTC = nil
+        }
+        return (copy, changed)
+    }
 }
 
 enum RiskGuardStore {
@@ -446,8 +466,11 @@ struct AccountSnapshot: Decodable, Sendable {
     let lastEquity: String?
     let tradingBlocked: Bool
     let tradeSuspendedByEmail: Bool
+    /// Numero del conto Alpaca: cambia quando si crea un nuovo conto paper.
+    let accountNumber: String?
 
     enum CodingKeys: String, CodingKey {
+        case accountNumber = "account_number"
         case cash
         case equity
         case buyingPower = "buying_power"
@@ -464,6 +487,7 @@ struct AccountSnapshot: Decodable, Sendable {
         lastEquity = try container.decodeIfPresent(String.self, forKey: .lastEquity)
         tradingBlocked = try container.decodeIfPresent(Bool.self, forKey: .tradingBlocked) ?? false
         tradeSuspendedByEmail = try container.decodeIfPresent(Bool.self, forKey: .tradeSuspendedByEmail) ?? false
+        accountNumber = try container.decodeIfPresent(String.self, forKey: .accountNumber)
     }
 
     var cashValue: Double { Double(cash) ?? 0 }

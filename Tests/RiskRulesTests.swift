@@ -195,4 +195,43 @@ final class RiskRulesTests: XCTestCase {
         let old = try? JSONDecoder().decode(StrategyConfig.self, from: Data("{}".utf8))
         XCTAssertEqual(old?.botCapitalUSD, 10_000)
     }
+
+    // MARK: - Cambio di conto
+
+    func testNewPaperAccountResetsPeakAndLocks() {
+        var old = RiskGuardState(dailyStopDayUTC: "2026-11-10", peakEquity: 100_000, drawdownLocked: true)
+        old.accountNumber = "PA111"
+        let (state, changed) = old.adopting(account: "PA222", equity: 10_000)
+        XCTAssertTrue(changed)
+        XCTAssertEqual(state.peakEquity, 10_000, "Il nuovo conto da 10.000 non va confrontato col picco di 100.000")
+        XCTAssertFalse(state.drawdownLocked)
+        XCTAssertNil(state.dailyStopDayUTC)
+        XCTAssertEqual(state.accountNumber, "PA222")
+    }
+
+    func testSameAccountKeepsState() {
+        var old = RiskGuardState(dailyStopDayUTC: nil, peakEquity: 100_000, drawdownLocked: true)
+        old.accountNumber = "PA111"
+        let (state, changed) = old.adopting(account: "PA111", equity: 85_000)
+        XCTAssertFalse(changed)
+        XCTAssertEqual(state.peakEquity, 100_000)
+        XCTAssertTrue(state.drawdownLocked)
+        // Numero mancante nella risposta: nulla cambia.
+        XCTAssertEqual(old.adopting(account: nil, equity: 1).state.peakEquity, 100_000)
+    }
+
+    func testFirstRunAfterUpdateRegistersAccountButKeepsLock() {
+        let old = RiskGuardState(dailyStopDayUTC: nil, peakEquity: 100_000, drawdownLocked: true)
+        let (state, changed) = old.adopting(account: "PA222", equity: 10_000)
+        XCTAssertFalse(changed)
+        XCTAssertEqual(state.accountNumber, "PA222")
+        XCTAssertEqual(state.peakEquity, 10_000)
+        XCTAssertTrue(state.drawdownLocked, "Un blocco già attivo si toglie solo a mano")
+    }
+
+    func testAccountNumberIsDecoded() throws {
+        let json = #"{"account_number":"PA333","cash":"10000","equity":"10000","buying_power":"20000","trading_blocked":false,"trade_suspended_by_email":false}"#
+        let snapshot = try JSONDecoder().decode(AccountSnapshot.self, from: Data(json.utf8))
+        XCTAssertEqual(snapshot.accountNumber, "PA333")
+    }
 }

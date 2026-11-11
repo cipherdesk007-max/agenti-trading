@@ -80,24 +80,21 @@ enum EquityHistory {
     }
 }
 
-/// Una curva per conto: paper e live non si mescolano mai.
+/// Una curva per conto Alpaca (numero del conto): paper, live e ogni nuovo
+/// conto paper non si mescolano mai.
 enum EquityHistoryStore {
-    private static func key(paper: Bool) -> String {
-        "com.quantswarm.alphazero.equityHistory.\(paper ? "paper" : "live")"
+    private static func key(_ account: String) -> String {
+        "com.quantswarm.alphazero.equityHistory.\(account)"
     }
 
-    static func load(paper: Bool) -> [EquityPoint] {
-        guard let data = UserDefaults.standard.data(forKey: key(paper: paper)),
+    static func load(account: String) -> [EquityPoint] {
+        guard let data = UserDefaults.standard.data(forKey: key(account)),
               let points = try? JSONDecoder().decode([EquityPoint].self, from: data) else { return [] }
         return points
     }
 
-    static func save(_ points: [EquityPoint], paper: Bool) {
+    static func save(_ points: [EquityPoint], account: String) {
         guard let data = try? JSONEncoder().encode(points) else { return }
-        UserDefaults.standard.set(data, forKey: key(paper: paper))
-    }
-
-    static func reset(paper: Bool) {
-        UserDefaults.standard.removeObject(forKey: key(paper: paper))
+        UserDefaults.standard.set(data, forKey: key(account))
     }
 }
