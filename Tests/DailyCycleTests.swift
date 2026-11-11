@@ -15,6 +15,9 @@ private actor FakeBroker: BrokerClient {
     var price: Double = 142
     var failClose = false
     var timeoutButCreated = false
+    var newsItems: [NewsHeadline] = []
+    func news(symbols: [String], hours: Int) async throws -> [NewsHeadline] { newsItems }
+    func set(news: [NewsHeadline]) { newsItems = news }
 
     var entryCalls: [(symbol: String, qty: Double, limit: Double, stop: Double)] = []
     var stopCalls: [(symbol: String, qty: Double, stop: Double)] = []
@@ -80,6 +83,7 @@ private actor FakeBrain: DailyBrain {
     var reviewApproves = true
     var decideCalls = 0
     var reviewCalls = 0
+    var lastCandidates: [DailyStrategy.Candidate] = []
 
     func set(decideError: Bool) { self.decideError = decideError }
     func set(reviewApproves: Bool) { self.reviewApproves = reviewApproves }
@@ -87,6 +91,7 @@ private actor FakeBrain: DailyBrain {
     func decide(candidates: [DailyStrategy.Candidate], market: [String: DailyStrategy.Snapshot],
                 openPositions: [String], slots: Int, feedback: String?) async throws -> [DailyVerdict] {
         decideCalls += 1
+        lastCandidates = candidates
         if decideError { throw FakeError() }
         return candidates.map { DailyVerdict(symbol: $0.symbol, action: "buy", confidence: 0.8, rationale: "test") }
     }
@@ -408,6 +413,17 @@ final class DailyCycleTests: XCTestCase {
         XCTAssertNotNil(result.benchmarkClose)
     }
 
+    func testCandidatesReachBrainWithNews() async {
+        let broker = FakeBroker(bars: ["SPY": pullback])
+        await broker.set(news: [NewsHeadline(id: 1, headline: "Fed tiene i tassi", createdAt: Date(),
+                                             symbols: ["SPY"], source: "benzinga", url: nil)])
+        let brain = FakeBrain()
+        _ = await runner(broker, brain).run(input()) { _ in }
+        let candidates = await brain.lastCandidates
+        XCTAssertEqual(candidates.first?.news.count, 1)
+        XCTAssertTrue(candidates.first?.news.first?.contains("Fed tiene i tassi") ?? false)
+    }
+
     func testZeroCreditsOnlyOnKimiStages() async {
         let broker = FakeBroker(bars: ["SPY": rising])
         let collector = EventCollector()
@@ -418,6 +434,25 @@ final class DailyCycleTests: XCTestCase {
             let kimi = event.stage?.usesKimi ?? false
             XCTAssertEqual(event.detail.contains("crediti"), kimi, "\(String(describing: event.stage)): \(event.detail)")
         }
+    }
+}
+
+final class NewsTests: XCTestCase {
+    private func item(_ id: Int, _ symbols: [String], minutesAgo: Double) -> NewsHeadline {
+        NewsHeadline(id: id, headline: "N\(id)", createdAt: Date().addingTimeInterval(-minutesAgo * 60),
+                     symbols: symbols, source: "benzinga", url: nil)
+    }
+
+    func testPickPutsOwnNewsFirstThenMarketWithoutDuplicates() {
+        let all = [item(1, ["SPY"], minutesAgo: 5), item(2, ["XLF"], minutesAgo: 30),
+                   item(3, ["XLF", "SPY"], minutesAgo: 10), item(4, ["AAPL"], minutesAgo: 1)]
+        let picked = NewsHeadline.pick(for: "XLF", from: all)
+        XCTAssertEqual(picked.map(\.id), [3, 2, 1], "Prima le notizie sull'ETF, poi il mercato; AAPL esclusa")
+        XCTAssertEqual(NewsHeadline.pick(for: "XLF", from: all, limit: 1).count, 1)
+    }
+
+    func testCompactLineHasTimeAndTitle() {
+        XCTAssertTrue(item(9, ["SPY"], minutesAgo: 0).compact.hasSuffix("ET · N9"))
     }
 }
 

@@ -41,6 +41,8 @@ enum DailyStrategy {
         /// aperte e con gli altri candidati: Brain e Reviewer vedono il numero
         /// invece di indovinare quali ETF si muovono insieme.
         var correlations: [String: Double] = [:]
+        /// Titoli delle notizie delle ultime 48 ore sull'ETF e sul mercato.
+        var news: [String] = []
         /// Stop teorico sulla chiusura (quello reale si ricalcola sul prezzo d'ingresso).
         var stopDistance: Double { DailyStrategy.stopATR * snapshot.atr14 }
     }

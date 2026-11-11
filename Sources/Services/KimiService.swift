@@ -323,7 +323,10 @@ actor KimiService {
         la diversificazione: evita ETF quasi uguali tra loro o a quelli già in portafoglio \
         (per esempio SPY, DIA e QQQ insieme): correlation_60d dà la correlazione dei rendimenti \
         giornalieri a 60 sedute con le posizioni aperte e gli altri candidati; sopra 0,85 sono \
-        quasi lo stesso rischio. Usa market_overview per il contesto generale e \
+        quasi lo stesso rischio. news_48h sono i titoli delle notizie delle ultime 48 ore \
+        (Benzinga) sull'ETF e sul mercato: usale per evitare di comprare dentro un evento \
+        che può cambiare il quadro (decisione della Fed, dati sull'inflazione, crollo di un \
+        settore), non per inseguire una notizia. Usa market_overview per il contesto generale e \
         recent_closes (ultime 20 chiusure) per giudicare la forma del ribasso. Se c'è \
         past_outcomes, tienine conto: se gli ETF che scarti vanno meglio di quelli che scegli, \
         sii meno selettivo. \
@@ -345,7 +348,8 @@ actor KimiService {
                     "symbol": candidate.symbol,
                     "indicators": snap(candidate.snapshot),
                     "recent_closes": candidate.recentCloses.map { ($0 * 100).rounded() / 100 },
-                    "correlation_60d": candidate.correlations
+                    "correlation_60d": candidate.correlations,
+                    "news_48h": candidate.news
                 ]
             },
             "market_overview": market.mapValues(snap),
@@ -404,7 +408,8 @@ actor KimiService {
         sia SBAGLIATO e cerca motivi concreti nei dati per respingerlo: trend debole (prezzo \
         appena sopra la SMA200), volatilità (ATR) anomala, quadro di mercato in rottura, \
         motivazione del Brain non coerente con gli indicatori, correlazione sopra 0,85 con una \
-        posizione già aperta (correlation_60d). Approva solo se non trovi nulla \
+        posizione già aperta (correlation_60d), notizie in news_48h che spiegano il calo con \
+        un cambiamento vero (non un normale ribasso) o un evento imminente ad alto rischio. Approva solo se non trovi nulla \
         di concreto. Non usare Markdown.
         """
         let s = candidate.snapshot
@@ -416,7 +421,8 @@ actor KimiService {
                 "close": s.close, "sma200": s.sma200, "sma5": s.sma5,
                 "rsi2": s.rsi2, "atr14": s.atr14,
                 "stop_distance": candidate.stopDistance,
-                "correlation_60d": candidate.correlations
+                "correlation_60d": candidate.correlations,
+                "news_48h": candidate.news
             ],
             "market_overview": market.mapValues { m -> [String: Double] in
                 ["close": m.close, "sma200": m.sma200, "rsi2": m.rsi2, "atr14": m.atr14]

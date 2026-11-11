@@ -309,6 +309,30 @@ actor AlpacaService {
             .sorted { $0.timestamp < $1.timestamp }
     }
 
+    /// Notizie Benzinga (News API di Alpaca, stesse chiavi): ultime `hours` ore,
+    /// le più recenti prima, solo titoli.
+    func news(symbols: [String], hours: Int, limit: Int = 50) async throws -> [NewsHeadline] {
+        let iso = ISO8601DateFormatter()
+        let query = [
+            URLQueryItem(name: "symbols", value: symbols.joined(separator: ",")),
+            URLQueryItem(name: "start", value: iso.string(from: Date().addingTimeInterval(-Double(hours) * 3_600))),
+            URLQueryItem(name: "limit", value: String(min(max(limit, 1), 50))),
+            URLQueryItem(name: "sort", value: "desc"),
+            URLQueryItem(name: "include_content", value: "false")
+        ]
+        let data = try await send(baseURL: credentials.marketDataBaseURL, path: "/v1beta1/news", method: "GET", query: query)
+        let parser = ISO8601DateFormatter()
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return (try JSONDecoder().decode(NewsResponse.self, from: data).news ?? []).compactMap { item in
+            guard let date = parser.date(from: item.created_at) ?? fractional.date(from: item.created_at) else { return nil }
+            let title = item.headline.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !title.isEmpty else { return nil }
+            return NewsHeadline(id: item.id, headline: String(title.prefix(220)), createdAt: date,
+                                symbols: item.symbols ?? [], source: item.source ?? "benzinga", url: item.url)
+        }
+    }
+
     /// Candele per i grafici (1Hour, 15Min, 5Min…), anche a mercato chiuso:
     /// ultimi `days` giorni, le più recenti. Prima SIP (tutte le borse, gratis
     /// se la richiesta finisce ad almeno 15 minuti fa), poi IEX.
@@ -656,4 +680,20 @@ struct AlpacaBroker: BrokerClient {
     func filledAveragePrice(orderId: String) async throws -> Double? {
         try await service.order(id: orderId).filledAveragePriceValue
     }
+
+    func news(symbols: [String], hours: Int) async throws -> [NewsHeadline] {
+        try await service.news(symbols: symbols, hours: hours)
+    }
+}
+
+private struct NewsResponse: Decodable {
+    struct Item: Decodable {
+        let id: Int
+        let headline: String
+        let created_at: String
+        let symbols: [String]?
+        let source: String?
+        let url: String?
+    }
+    let news: [Item]?
 }

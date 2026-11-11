@@ -1538,6 +1538,18 @@ final class QuantSwarmEngine: ObservableObject {
     /// mercato chiuso. Tenute in memoria 60 secondi: niente richieste doppie.
     private var chartCache: [String: (at: Date, candles: [Candle])] = [:]
 
+    private var newsCache: [String: (at: Date, items: [NewsHeadline])] = [:]
+
+    /// Notizie delle ultime 48 ore per il grafico di un ETF (5 minuti in memoria).
+    func headlines(symbol: String) async -> [NewsHeadline]? {
+        if let hit = newsCache[symbol], Date().timeIntervalSince(hit.at) < 300 { return hit.items }
+        guard let credentials else { return nil }
+        guard let items = try? await AlpacaService(credentials: credentials.alpaca)
+            .news(symbols: [symbol], hours: 48, limit: 15) else { return nil }
+        newsCache[symbol] = (Date(), items)
+        return items
+    }
+
     func chartCandles(symbol: String, timeframe: String, days: Int) async -> [Candle]? {
         let key = "\(symbol)|\(timeframe)"
         if let hit = chartCache[key], Date().timeIntervalSince(hit.at) < 60 { return hit.candles }

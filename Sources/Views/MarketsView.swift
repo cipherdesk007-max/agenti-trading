@@ -203,6 +203,7 @@ struct MarketDetailView: View {
     @State private var interval: ChartInterval
     @State private var fetched: [Candle]?
     @State private var loading = false
+    @State private var news: [NewsHeadline]?
 
     init(symbol: String, intraday: Bool) {
         self.symbol = symbol
@@ -255,6 +256,7 @@ struct MarketDetailView: View {
                 }
                 .padding()
             }
+            .task { news = await engine.headlines(symbol: symbol) }
             .task(id: interval) {
                 fetched = nil
                 guard let request = interval.request, !(interval == .day && basketDaily != nil) else { return }
@@ -334,6 +336,8 @@ struct MarketDetailView: View {
             }
         }
 
+        newsSection
+
         if let snap = insight.snapshot, explains {
             VStack(alignment: .leading, spacing: 8) {
                 row("Chiusura", snap.close)
@@ -352,6 +356,34 @@ struct MarketDetailView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .explanation()
         }
+    }
+
+    /// Notizie Benzinga delle ultime 48 ore (le stesse che riceve Kimi).
+    @ViewBuilder private var newsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("NOTIZIE · 48 ORE")
+                .font(.system(.caption, design: .monospaced, weight: .heavy))
+                .foregroundStyle(Theme.cyan)
+            if let news {
+                if news.isEmpty {
+                    Text("Nessuna notizia su \(symbol) nelle ultime 48 ore.")
+                        .font(.caption).foregroundStyle(Theme.textSecondary)
+                } else {
+                    ForEach(news.prefix(8)) { item in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(item.headline).font(.footnote).foregroundStyle(Theme.textPrimary)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Text(item.createdAt.formatted(date: .abbreviated, time: .shortened) + " · " + item.source.capitalized)
+                                .font(.caption2).foregroundStyle(Theme.textTertiary)
+                        }
+                    }
+                }
+            } else {
+                Text("Notizie non disponibili (connessione o chiavi Alpaca).")
+                    .font(.caption).foregroundStyle(Theme.textSecondary)
+            }
+        }
+        .themedCard(Theme.cyan)
     }
 
     private func legend(slowLabel: String, levels: BrokerLevels) -> some View {

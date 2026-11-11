@@ -7,6 +7,10 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+### Aggiunto
+- **Notizie agli agenti**: quando c'è un segnale, Brain e Reviewer ricevono i titoli delle notizie Benzinga delle ultime 48 ore sull'ETF e sul mercato (SPY e QQQ), presi dalla News API di Alpaca con le stesse chiavi, senza costi. Servono a non comprare dentro un evento che cambia il quadro (Fed, inflazione, crollo di un settore), non a inseguire le notizie. Il Reviewer boccia se una notizia spiega il calo con un cambiamento vero.
+- Nel grafico di ogni ETF c'è la sezione **NOTIZIE · 48 ORE**, con le stesse notizie che riceve Kimi.
+
 ### Corretto
 - Catena agenti: "0 crediti" compariva anche su Rischio ed Esecutore, che sono codice e non usano mai Kimi. Ora compare solo su Analyst, Brain e Reviewer.
 

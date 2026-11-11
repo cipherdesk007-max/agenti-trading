@@ -50,6 +50,43 @@ protocol BrokerClient: Sendable {
     func submitStop(symbol: String, quantity: Double, stopPrice: Double) async throws -> String
     func orderId(byClientOrderId: String) async throws -> String?
     func filledAveragePrice(orderId: String) async throws -> Double?
+    /// Titoli delle notizie recenti (Benzinga via Alpaca) per i simboli dati.
+    func news(symbols: [String], hours: Int) async throws -> [NewsHeadline]
+}
+
+extension BrokerClient {
+    /// Di base nessuna notizia (es. broker finti nei test).
+    func news(symbols: [String], hours: Int) async throws -> [NewsHeadline] { [] }
+}
+
+/// Una notizia: titolo, quando, a quali simboli si riferisce.
+struct NewsHeadline: Sendable, Equatable, Identifiable {
+    let id: Int
+    let headline: String
+    let createdAt: Date
+    let symbols: [String]
+    let source: String
+    let url: String?
+
+    /// Riga compatta per Kimi: "11/11 14:05 · titolo".
+    var compact: String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "America/New_York")
+        f.dateFormat = "MM/dd HH:mm"
+        return "\(f.string(from: createdAt)) ET · \(headline)"
+    }
+
+    /// Fino a `limit` notizie per un candidato: prima quelle sul suo simbolo,
+    /// poi quelle sul mercato (SPY, QQQ), senza doppioni, le più recenti prima.
+    static func pick(for symbol: String, from all: [NewsHeadline], market: Set<String> = ["SPY", "QQQ"],
+                     limit: Int = 8) -> [NewsHeadline] {
+        let sorted = all.sorted { $0.createdAt > $1.createdAt }
+        let own = sorted.filter { $0.symbols.contains(symbol) }
+        let general = sorted.filter { !$0.symbols.contains(symbol) && !market.isDisjoint(with: $0.symbols) }
+        var seen = Set<Int>()
+        return (own + general).filter { seen.insert($0.id).inserted }.prefix(limit).map { $0 }
+    }
 }
 
 /// Brain e Reviewer della modalità giornaliera (Kimi).
@@ -321,6 +358,14 @@ struct DailyCycleRunner: Sendable {
             RiskRules.canBuyOneShare(price: c.snapshot.close, stopDistance: c.stopDistance,
                                      capital: botAccount.equity, freeCash: botAccount.cash,
                                      riskFraction: input.riskFraction)
+        }
+        // Notizie delle ultime 48 ore (candidati + mercato): una sola richiesta.
+        if !fresh.isEmpty {
+            let wanted = Array(Set(fresh.map(\.symbol) + ["SPY", "QQQ"])).sorted()
+            let headlines = (try? await broker.news(symbols: wanted, hours: 48)) ?? []
+            for index in fresh.indices {
+                fresh[index].news = NewsHeadline.pick(for: fresh[index].symbol, from: headlines).map(\.compact)
+            }
         }
         // Correlazioni con le posizioni aperte e tra i candidati (60 sedute).
         let others = Array(held.keys) + fresh.map(\.symbol)
