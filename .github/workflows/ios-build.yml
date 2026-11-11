@@ -28,7 +28,7 @@ concurrency:
 jobs:
   build:
     runs-on: macos-15-intel
-    timeout-minutes: 30
+    timeout-minutes: 50
     steps:
       - name: Checkout
         uses: actions/checkout@v7

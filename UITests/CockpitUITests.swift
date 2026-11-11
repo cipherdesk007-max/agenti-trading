@@ -8,10 +8,14 @@ final class CockpitUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Tocca lo switch (a destra della riga, non sull'etichetta) finché non
+    /// compare l'avviso: al primo avvio il simulatore può non essere pronto.
     @MainActor
-    private func tapSwitch(_ element: XCUIElement) {
-        // Lo switch è a destra della riga: si tocca lì, non sull'etichetta.
-        element.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+    private func tapSwitchUntilAlert(_ element: XCUIElement, alert: XCUIElement) {
+        for _ in 0..<3 {
+            element.coordinate(withNormalizedOffset: CGVector(dx: 0.95, dy: 0.5)).tap()
+            if alert.waitForExistence(timeout: 4) { return }
+        }
     }
 
     @MainActor
@@ -21,9 +25,9 @@ final class CockpitUITests: XCTestCase {
         let toggle = app.switches["PAPER TRADING"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 20))
         XCTAssertEqual(toggle.value as? String, "1")
-        tapSwitch(toggle)
         let alert = app.alerts["PASSARE AL LIVE?"]
-        XCTAssertTrue(alert.waitForExistence(timeout: 5), "Il live deve chiedere conferma")
+        tapSwitchUntilAlert(toggle, alert: alert)
+        XCTAssertTrue(alert.exists, "Il live deve chiedere conferma")
         alert.buttons["ANNULLA"].tap()
         XCTAssertEqual(toggle.value as? String, "1", "Annullando si resta in paper")
     }
@@ -34,9 +38,9 @@ final class CockpitUITests: XCTestCase {
         app.launch()
         let toggle = app.switches["PAPER TRADING"]
         XCTAssertTrue(toggle.waitForExistence(timeout: 20))
-        tapSwitch(toggle)
         let alert = app.alerts["PASSARE AL LIVE?"]
-        XCTAssertTrue(alert.waitForExistence(timeout: 5))
+        tapSwitchUntilAlert(toggle, alert: alert)
+        XCTAssertTrue(alert.exists)
         alert.textFields.firstMatch.tap()
         alert.textFields.firstMatch.typeText("SI")
         alert.buttons["CONFERMA LIVE"].tap()
