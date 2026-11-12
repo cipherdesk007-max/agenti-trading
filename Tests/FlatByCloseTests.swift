@@ -77,13 +77,15 @@ final class FlatByCloseTests: XCTestCase {
         await broker.setPositionQty(5)
         let closed = await FlatByClose.closeSymbol(broker: broker, symbol: "SPY",
                                                    emergencyStopPrice: 90, day: "2026-11-12") { _ in }
-        XCTAssertTrue(closed)
         let events = await broker.events
+        let stops = await broker.stops
+        let open = try await broker.openOrders()
+        XCTAssertTrue(closed)
         XCTAssertTrue(events.contains("cancel leg-stop"), "la gamba stop del bracket va annullata")
         XCTAssertTrue(events.contains("cancel leg-tp"), "la gamba take-profit va annullata")
         XCTAssertTrue(events.contains("close SPY"))
-        XCTAssertTrue((await broker.stops).isEmpty, "posizione chiusa: nessuno stop d'emergenza")
-        XCTAssertTrue((await broker.openOrders()).isEmpty, "nessun ordine residuo")
+        XCTAssertTrue(stops.isEmpty, "posizione chiusa: nessuno stop d'emergenza")
+        XCTAssertTrue(open.isEmpty, "nessun ordine residuo")
     }
 
     /// Chiusura fallita: lo stop d'emergenza viene rimesso subito, con il
@@ -94,13 +96,13 @@ final class FlatByCloseTests: XCTestCase {
         await broker.setFailClose(true)
         let closed = await FlatByClose.closeSymbol(broker: broker, symbol: "SPY",
                                                    emergencyStopPrice: 90, day: "2026-11-12") { _ in }
-        XCTAssertFalse(closed)
         let stops = await broker.stops
+        let open = try await broker.openOrders()
+        XCTAssertFalse(closed)
         XCTAssertEqual(stops.count, 1)
         XCTAssertEqual(stops.first?.clientId, "qsv-emg-SPY-2026-11-12")
         XCTAssertEqual(stops.first?.qty, 5)
         XCTAssertEqual(stops.first?.price, 90)
-        let open = await broker.openOrders()
         XCTAssertEqual(open.count, 1)
         XCTAssertTrue(open.first?.isEmergencyStop ?? false, "lo stop si riconosce dal client_order_id, non dal tipo")
     }
@@ -113,17 +115,20 @@ final class FlatByCloseTests: XCTestCase {
         await broker.setFailClose(true)
         let first = await FlatByClose.closeSymbol(broker: broker, symbol: "SPY",
                                                   emergencyStopPrice: 90, day: "2026-11-12") { _ in }
-        XCTAssertFalse(first)
-        XCTAssertEqual((await broker.stops).count, 1)
+        let stopsAfterFirst = await broker.stops
         // Secondo tentativo: la chiusura ora riesce.
         await broker.setFailClose(false)
         let second = await FlatByClose.closeSymbol(broker: broker, symbol: "SPY",
                                                    emergencyStopPrice: 90, day: "2026-11-12") { _ in }
-        XCTAssertTrue(second)
         let events = await broker.events
+        let stops = await broker.stops
+        let open = try await broker.openOrders()
+        XCTAssertFalse(first)
+        XCTAssertEqual(stopsAfterFirst.count, 1)
+        XCTAssertTrue(second)
         XCTAssertTrue(events.contains("cancel emg-SPY"), "il retry annulla anche lo stop d'emergenza")
-        XCTAssertEqual((await broker.stops).count, 1, "niente secondo stop d'emergenza dopo la chiusura riuscita")
-        XCTAssertTrue((await broker.openOrders()).isEmpty, "nessun ordine residuo a fine tentativo")
+        XCTAssertEqual(stops.count, 1, "niente secondo stop d'emergenza dopo la chiusura riuscita")
+        XCTAssertTrue(open.isEmpty, "nessun ordine residuo a fine tentativo")
     }
 
     /// Mai due stop d'emergenza insieme: se qsv-emg-… è già aperto (e il suo annullo
@@ -137,9 +142,10 @@ final class FlatByCloseTests: XCTestCase {
         await broker.setFailCancelIds(["old-emg"])
         let closed = await FlatByClose.closeSymbol(broker: broker, symbol: "SPY",
                                                    emergencyStopPrice: 90, day: "2026-11-12") { _ in }
+        let stops = await broker.stops
+        let open = try await broker.openOrders()
         XCTAssertFalse(closed)
-        XCTAssertTrue((await broker.stops).isEmpty, "stop d'emergenza già presente: non ne viene messo un altro")
-        let open = await broker.openOrders()
+        XCTAssertTrue(stops.isEmpty, "stop d'emergenza già presente: non ne viene messo un altro")
         XCTAssertEqual(open.count, 1)
         XCTAssertEqual(open.first?.clientOrderId, emgId)
     }
