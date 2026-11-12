@@ -257,7 +257,8 @@ final class NightCycleTests: XCTestCase {
         // nuovo tutto il detenuto, anche le azioni della giornaliera sullo stesso simbolo).
         _ = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
             .run(NightCycleInput(book: result.book, today: "2026-11-11", now: et(21))) { _ in }
-        XCTAssertEqual(await broker.submitted.count, 1, "nessun re-invio per voce legacy")
+        let sentAfter = await broker.submitted
+        XCTAssertEqual(sentAfter.count, 1, "nessun re-invio per voce legacy")
     }
 
     func testLeftoverClosesOnlyNightSharesNotDailyOnes() async {
