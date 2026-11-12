@@ -62,20 +62,25 @@ final class EngineGuardsTests: XCTestCase {
     }
 
     func testDrawdownFloorMeasuredOnBotCapital() {
-        // Tetto 10.000: il pavimento è picco − 1.000, non picco − 10.000.
-        let check = RiskRules.drawdownCheck(equity: 120_000, peak: 140_000,
+        // Tetto 10.000: tolleranza = 10% del capitale bot = 1.000, quindi il
+        // pavimento è 139.000 (picco − 1.000), non picco − 10.000.
+        let check = RiskRules.drawdownCheck(equity: 139_500, peak: 140_000,
                                             maxDrawdownFraction: 0.10, capitalCap: 10_000)
         XCTAssertEqual(check?.floor ?? 0, 139_000, accuracy: 1e-6)
-        XCTAssertEqual(check?.shouldLock, false, "il conto può anche dimezzare: il tetto protegge il capitale bot")
+        XCTAssertEqual(check?.shouldLock, false, "sopra il pavimento di 139.000 il bot continua")
+        let locked = RiskRules.drawdownCheck(equity: 138_500, peak: 140_000,
+                                             maxDrawdownFraction: 0.10, capitalCap: 10_000)
+        XCTAssertEqual(locked?.shouldLock, true, "sotto il pavimento il bot si blocca")
     }
 
     // MARK: - Bug B6: il prefilter guarda il contante libero, non il capitale
 
     func testCanBuyOneShareUsesFreeCashNotCapital() {
-        // Capitale bot 100.000 ma tutto già investito (contante libero 1.000):
-        // SPY a 760 non è comprabile e Kimi non va chiamato.
+        // Capitale bot 100.000 ma quasi tutto già investito (contante libero 500):
+        // SPY a 760 (limite 760,38) non è comprabile e Kimi non va chiamato,
+        // anche se il capitale sarebbe più che sufficiente.
         XCTAssertFalse(RiskRules.canBuyOneShare(price: 760, stopDistance: 5,
-                                                capital: 100_000, freeCash: 1_000, riskFraction: 0.01))
+                                                capital: 100_000, freeCash: 500, riskFraction: 0.01))
         // Stesso conto con contante libero: passa.
         XCTAssertTrue(RiskRules.canBuyOneShare(price: 760, stopDistance: 5,
                                                capital: 100_000, freeCash: 100_000, riskFraction: 0.01))
