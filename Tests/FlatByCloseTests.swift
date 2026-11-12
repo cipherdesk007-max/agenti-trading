@@ -98,9 +98,11 @@ final class FlatByCloseTests: XCTestCase {
         await broker.setFailClose(true)
         let closed = await FlatByClose.closeSymbol(broker: broker, symbol: "SPY",
                                                    emergencyStopPrice: 90, day: "2026-11-12") { _ in }
+        let events = await broker.events
         let stops = await broker.stops
         let open = try await broker.openOrders()
         XCTAssertFalse(closed)
+        XCTAssertTrue(events.contains("close SPY"), "la chiusura a mercato va tentata prima di rimettere lo stop")
         XCTAssertEqual(stops.count, 1)
         XCTAssertEqual(stops.first?.clientId, "qsv-emg-SPY-2026-11-12")
         XCTAssertEqual(stops.first?.qty, 5)
