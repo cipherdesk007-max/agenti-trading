@@ -1,6 +1,6 @@
 # Stato del progetto · QuantSwarm Alpha Zero
 
-Aggiornato al 11/11/2026, versione **1.3.0 build 130** (commit su `main`).
+Aggiornato al 12/11/2026, versione **1.4.0 build 137** (commit su `main`).
 Questo file è per chi studia o rivede il progetto (persone o AI): cosa fa l'app, come è collegata, cosa è già stato deciso con i dati e cosa resta aperto.
 
 ## Vincoli che non cambiano
@@ -52,21 +52,24 @@ Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia 
 - **B6 · prefilter della veloce sul contante libero vero** (capitale meno esposizione aperta): meno chiamate Kimi a vuoto.
 - **R5 · l'esito dell'uscita si registra fino a 200 posizioni indietro** (prima 50, con filtro in memoria).
 - **R6 · rimosso `riskRewardRatio`** (codice morto).
-- **R7 · OPG annullata all'asta = residuo chiuso, non azioni orfane.** Dopo l'invio dell'OPG la posizione resta nel registro con `sellQueuedDay`/`sellQueuedHeld` e viene cancellata solo quando il detenuto scende di almeno la quantità; se l'ordine sparisce senza eseguirsi, la fase di acquisto la chiude a mercato (solo la quantità della notte) e i nuovi acquisti non si sommano al residuo. Test in `Tests/NightCycleTests.swift`.
+- **R7 · OPG annullata all'asta = residuo chiuso, non azioni orfane.** Dopo l'invio dell'OPG la posizione resta nel registro con `sellQueuedDay`/`sellQueuedHeld` e viene cancellata solo quando il detenuto scende di almeno la quantità; se l'ordine sparisce senza eseguirsi, la fase di acquisto la chiude a mercato (solo la quantità della notte) e i nuovi acquisti non si sommano al residuo. La voce legacy (senza quantità) resta a una sola vendita: esce subito dopo l'invio dell'OPG. Test in `Tests/NightCycleTests.swift`.
 - Studio `tools/backtest_overnight_fraction.py` (runner `overnight`, incluso nel controllo mensile): quanto CAGR e perdita massima **sul conto** cambiano se la NOTTE investisse solo una frazione f del capitale ogni notte (f = 97% è il comportamento attuale, cashBuffer 3%). Tabella attesa: f, CAGR, perdita max, Sharpe, CAGR/|perdita| per f in {97%, 75%, 50%, 25%, 10%}, più la variante sugli ultimi 2 anni. **Criterio di decisione** (dal docstring dello script): tenere la frazione più piccola che mantiene il CAGR sul conto almeno metà di quello a frazione piena dopo i costi; scartare le frazioni con CAGR ≈ 0 dopo i costi; la perdita massima sul conto deve scendere almeno in proporzione a f. **Attenzione al multi-testing**: con 5 frazioni provate lo Sharpe massimo è gonfiato (Deflated Sharpe, Bailey & López de Prado 2014, https://ssrn.com/abstract=2460551), quindi la scelta si fa sul rapporto CAGR/perdita massima sull'intero periodo e sul sotto-periodo recente, non sul picco di Sharpe. **Stato**: lo script non ha ancora girato in CI (il controllo mensile parte il 1° dicembre; il dispatch manuale con il token in uso dà 403 — va lanciato a mano da Actions → "Backtest filtro" → `quale` = `overnight`). Fino ad allora la frazione resta 97%: la protezione resta il tetto del capitale.
 
 ## Da verificare sul telefono o sul conto vero
 
+- Checklist pronta in [VERIFICHE.md](VERIFICHE.md): 10 controlli con passo nell'app, cosa guardare su Alpaca, atteso e "se è diverso" (MOC/OPG, stop GTC, riapertura, cambio conto, pausa batteria, TRADUCI, registro vecchio, `reasoning_effort`, segnali di oggi).
 - La NOTTE è testata con broker finto: va confermato che Alpaca paper accetti gli ordini `cls` e `opg` e li esegua alle aste.
 - Con R7, se una OPG in coda viene annullata senza eseguirsi le azioni restano nel registro marcate "in coda" e il giorno dopo vengono chiuse a mercato (solo la quantità della notte) prima di ricomprare. Da confermare su paper che non produca doppie vendite.
-- Che il registro notte scritto dalla versione precedente (senza quantità) si rilegga: vende tutto il detenuto del simbolo finché non passa una notte.
+- Che il registro notte scritto dalla versione precedente (senza quantità) si rilegga: vende tutto il detenuto del simbolo **una sola volta**, poi il registro passa al formato nuovo con quantità.
+- Tabella dello studio R1 (frazione NOTTE): primo run in CI il **1° dicembre** (cron mensile) o dispatch manuale di `overnight` da Actions. Fino ad allora la frazione resta 97%; criterio di decisione e Deflated Sharpe documentati sopra.
 - `reasoning_effort` medium accettato dal modello Kimi in uso (altrimenti l'app passa da sola a low).
 - Il foglio TRADUCI di Apple (non si apre sul simulatore).
 - Durata reale della prova: con 1.000 $ circa un segnale a settimana nella giornaliera; servono 20–30 trade chiusi prima di giudicare.
+- Documenti di sessione e proposte: [REVISIONE-AI.md](REVISIONE-AI.md) (cosa è stato fatto e cosa non si è potuto verificare) e [PROPOSTE.md](PROPOSTE.md) (5 idee non implementate, solo le 3 API).
 
 ## Come verificare in modo indipendente
 
-- Test: GitHub Actions → "Unsigned iOS IPA" (a ogni push).
+- Test: 132 unitari (CI a ogni push, "Unsigned iOS IPA") + 3 di interfaccia in `UITests/` (solo a mano, opzione `uitest`).
 - Strategie: Actions → "Backtest filtro" → `quale` = `app`, `piccolo`, `overnight`, `segnali`, `oggi`.
 - Ordini: confronta il report di sessione dell'app con lo storico ordini di Alpaca.
 - Indicatori: SMA200 e RSI(2) di Wilder su TradingView o Yahoo devono coincidere con la tabella di `oggi`.

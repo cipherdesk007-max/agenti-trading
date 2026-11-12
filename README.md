@@ -1,6 +1,6 @@
 # FMLAB · QuantSwarm Alpha Zero
 
-Versione corrente: **1.3.0 build 130** (vedi [CHANGELOG.md](CHANGELOG.md) e, nell'app, **SISTEMA → VERSIONE**).
+Versione corrente: **1.4.0 build 137** (vedi [CHANGELOG.md](CHANGELOG.md) e, nell'app, **SISTEMA → VERSIONE**).
 Per revisori umani o AI: lo stato del progetto, le decisioni prese e i numeri degli studi sono in [docs/STATO.md](docs/STATO.md).
 
 App iOS 17+ (Swift 6, SwiftUI, SwiftData) di trading con agenti AI: Kimi via API sceglie e contesta, il codice decide quantità e rischio, Alpaca esegue. Nessuna credenziale nel repository.
