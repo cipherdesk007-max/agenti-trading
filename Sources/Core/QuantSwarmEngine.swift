@@ -1496,7 +1496,7 @@ final class QuantSwarmEngine: ObservableObject {
                 )
                 let councilDivergence = CouncilDivergence.assess(councilReports)
                 if let note = councilDivergence.note {
-                    log("\(symbol): \(note)", agent: .analyst)
+                    log("\(symbol): \(note)", agent: .brain)
                 }
                 // Catena agenti: se la lettura dell'Analyst è più vecchia di
                 // "validità analisi" (impostazioni), viene aggiornata PRIMA del
