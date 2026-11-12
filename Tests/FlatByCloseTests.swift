@@ -75,8 +75,9 @@ final class FlatByCloseTests: XCTestCase {
             order(id: "leg-tp", side: "sell", type: "limit", parent: "e1")
         ])
         await broker.setPositionQty(5)
+        let box = LogBox()
         let closed = await FlatByClose.closeSymbol(broker: broker, symbol: "SPY",
-                                                   emergencyStopPrice: 90, day: "2026-11-12") { _ in }
+                                                   emergencyStopPrice: 90, day: "2026-11-12") { box.append($0) }
         let events = await broker.events
         let stops = await broker.stops
         let open = try await broker.openOrders()
@@ -86,6 +87,7 @@ final class FlatByCloseTests: XCTestCase {
         XCTAssertTrue(events.contains("close SPY"))
         XCTAssertTrue(stops.isEmpty, "posizione chiusa: nessuno stop d'emergenza")
         XCTAssertTrue(open.isEmpty, "nessun ordine residuo")
+        XCTAssertFalse(box.lines.contains { $0.contains("restano") }, "annulli riusciti: nessun residuo da segnalare")
     }
 
     /// Chiusura fallita: lo stop d'emergenza viene rimesso subito, con il
