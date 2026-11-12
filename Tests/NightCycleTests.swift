@@ -20,6 +20,8 @@ private actor FakeNightBroker: NightBroker {
     var known: [String: String] = [:]
     /// Se true, submitAuction lancia e registra l'ordine come rifiutato.
     var rejectAuction = false
+    /// Calendario di borsa finto: nil = endpoint non disponibile (il ciclo usa solo clock).
+    var calendar: [TradingDay]? = nil
 
     init(isOpen: Bool, nextClose: Date?) {
         self.isOpen = isOpen
@@ -31,6 +33,7 @@ private actor FakeNightBroker: NightBroker {
     func set(isOpen: Bool, nextClose: Date?) { self.isOpen = isOpen; self.nextClose = nextClose }
     func set(account: BrokerAccount) { acct = account }
     func set(rejectAuction: Bool) { self.rejectAuction = rejectAuction }
+    func set(calendar: [TradingDay]?) { self.calendar = calendar }
 
     func nightClock() async throws -> (isOpen: Bool, nextClose: Date?) { (isOpen, nextClose) }
     func account() async throws -> BrokerAccount { acct }
@@ -79,6 +82,10 @@ private actor FakeNightBroker: NightBroker {
     func orderRef(byClientOrderId id: String) async throws -> BrokerOrderRef? {
         known[id].map { BrokerOrderRef(id: "broker-\(id)", status: $0) }
     }
+    func tradingDays(from: Date, to: Date) async throws -> [TradingDay] {
+        if let calendar { return calendar }
+        throw NightFakeError()
+    }
 }
 
 final class NightCycleTests: XCTestCase {
@@ -98,18 +105,57 @@ final class NightCycleTests: XCTestCase {
     // MARK: - Finestre di Alpaca
 
     func testPhases() {
-        XCTAssertEqual(NightStrategy.phase(now: et(12), isOpen: true, nextClose: et(16)), .buyWindow)
-        if case .wait = NightStrategy.phase(now: et(15, 55), isOpen: true, nextClose: et(16)) {} else {
+        XCTAssertEqual(NightStrategy.phase(now: et(12), isOpen: true, nextClose: et(16), calendar: nil, today: "2026-11-11"), .buyWindow)
+        if case .wait = NightStrategy.phase(now: et(15, 55), isOpen: true, nextClose: et(16), calendar: nil, today: "2026-11-11") {} else {
             XCTFail("Troppo vicino alla chiusura")
         }
-        XCTAssertEqual(NightStrategy.phase(now: et(8), isOpen: false, nextClose: nil), .sellWindow)
-        XCTAssertEqual(NightStrategy.phase(now: et(20), isOpen: false, nextClose: nil), .sellWindow)
-        if case .wait = NightStrategy.phase(now: et(9, 29), isOpen: false, nextClose: nil) {} else {
+        XCTAssertEqual(NightStrategy.phase(now: et(8), isOpen: false, nextClose: nil, calendar: nil, today: "2026-11-11"), .sellWindow)
+        XCTAssertEqual(NightStrategy.phase(now: et(20), isOpen: false, nextClose: nil, calendar: nil, today: "2026-11-11"), .sellWindow)
+        if case .wait = NightStrategy.phase(now: et(9, 29), isOpen: false, nextClose: nil, calendar: nil, today: "2026-11-11") {} else {
             XCTFail("OPG rifiutate dalle 9:28")
         }
-        if case .wait = NightStrategy.phase(now: et(17), isOpen: false, nextClose: nil) {} else {
+        if case .wait = NightStrategy.phase(now: et(17), isOpen: false, nextClose: nil, calendar: nil, today: "2026-11-11") {} else {
             XCTFail("OPG rifiutate fra le 16 e le 19")
         }
+    }
+
+    // MARK: - Calendario di borsa (GET /v2/calendar)
+
+    func testPhaseHolidayBlocksAuctionOrders() {
+        // Calendario disponibile e oggi (11/11) NON è giorno di borsa: festivo.
+        let calendar = [TradingDay(date: "2026-11-12", close: et(day: 12, 16))]
+        if case .wait(let why) = NightStrategy.phase(now: et(20), isOpen: false, nextClose: nil,
+                                                      calendar: calendar, today: "2026-11-11") {
+            XCTAssertTrue(why.contains("festivo"), "il wait deve dire che è festivo")
+        } else {
+            XCTFail("nei festivi niente ordini d'asta")
+        }
+    }
+
+    func testPhaseEarlyCloseUsesCalendarClose() {
+        // Mezza giornata: il calendario dice chiusura 13:00 ET, l'orologio 16:00.
+        let calendar = [TradingDay(date: "2026-11-11", close: et(13))]
+        // A 12:55 mancano 5 minuti alla chiusura reale: niente MOC (l'orologio da solo direbbe il contrario).
+        if case .wait = NightStrategy.phase(now: et(12, 55), isOpen: true, nextClose: et(16),
+                                            calendar: calendar, today: "2026-11-11") {} else {
+            XCTFail("la chiusura esatta del calendario deve vincere su nextClose")
+        }
+        XCTAssertEqual(NightStrategy.phase(now: et(10), isOpen: true, nextClose: et(16),
+                                           calendar: calendar, today: "2026-11-11"), .buyWindow)
+    }
+
+    func testHolidayCyclePlacesNoOrders() async {
+        // Sera di festivo con posizione in registro: il calendario dice che oggi
+        // non si negozia, quindi nessuna OPG.
+        let broker = FakeNightBroker(isOpen: false, nextClose: nil)
+        await broker.set(calendar: [TradingDay(date: "2026-11-12", close: et(day: 12, 16))])
+        await broker.set(held: [BrokerPosition(symbol: "SPYM", quantity: 2, averageEntryPrice: 89, unrealizedPL: 0)])
+        var book = NightBook()
+        book.positions["SPYM"] = NightPosition(day: "2026-11-10", quantity: 2)
+        _ = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: book, today: "2026-11-11", now: et(20))) { _ in }
+        let sent = await broker.submitted
+        XCTAssertTrue(sent.isEmpty, "nei festivi nessuna OPG/MOC")
     }
 
     // MARK: - Divisione del capitale

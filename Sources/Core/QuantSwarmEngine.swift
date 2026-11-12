@@ -393,8 +393,7 @@ final class QuantSwarmEngine: ObservableObject {
         strategyConfig = sanitized
         StrategyConfigStore.save(sanitized)
         kimiService?.setModel(sanitized.kimiModel)
-        NotificationManager.shared.scheduleDailyReminder(enabled: sanitized.dailyReminder && sanitized.tradingMode == .daily)
-        NotificationManager.shared.scheduleNightReminders(enabled: sanitized.dailyReminder && sanitized.tradingMode == .night)
+        Task { await rescheduleReminders() }
         applyIdleTimer()
         // Il promemoria "motore in background" si programma solo quando l'app
         // va davvero in background (handleEnteredBackground), mai ad app aperta.
@@ -2062,12 +2061,33 @@ extension QuantSwarmEngine {
         }
     }
 
+    /// Giorni di borsa USA dei prossimi 21 giorni dal calendario Alpaca
+    /// (GET /v2/calendar). nil se il calendario non risponde o mancano le chiavi:
+    /// in quel caso i promemoria restano a ripetizione settimanale, come prima.
+    private func upcomingTradingDays() async -> [String]? {
+        guard let credentials else { return nil }
+        let now = Date()
+        let days = try? await AlpacaService(credentials: credentials.alpaca)
+            .calendar(start: now, end: now.addingTimeInterval(21 * 86_400))
+        return days?.map(\.date)
+    }
+
+    /// Promemoria nei soli giorni di borsa (calendario Alpaca): niente promemoria
+    /// nei festivi. Senza calendario ripiega sulla ripetizione settimanale.
+    private func rescheduleReminders() async {
+        let sanitized = strategyConfig.sanitized
+        let days = await upcomingTradingDays()
+        NotificationManager.shared.scheduleDailyReminder(enabled: sanitized.dailyReminder && sanitized.tradingMode == .daily,
+                                                        tradingDays: days)
+        NotificationManager.shared.scheduleNightReminders(enabled: sanitized.dailyReminder && sanitized.tradingMode == .night,
+                                                          tradingDays: days)
+    }
+
     fileprivate func startDaily(credentials: StoredCredentials, kimi: KimiService) async {
         let mode = strategyConfig.sanitized.tradingMode
         activeMode = mode
         let night = mode == .night
-        NotificationManager.shared.scheduleDailyReminder(enabled: strategyConfig.sanitized.dailyReminder && !night)
-        NotificationManager.shared.scheduleNightReminders(enabled: strategyConfig.sanitized.dailyReminder && night)
+        await rescheduleReminders()
         configuredSymbols = night ? NightStrategy.universe : DailyStrategy.basket
         acceptsNewOrders = true
         pauseReason = nil

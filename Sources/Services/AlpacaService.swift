@@ -149,6 +149,28 @@ struct AlpacaClock: Decodable, Sendable {
     var nextCloseDate: Date? { Self.parse(nextClose) }
 }
 
+/// Giorno di borsa dal calendario USA (GET /v2/calendar): open/close in ora di
+/// New York, con le chiusure anticipate (mezze giornate) già applicate.
+struct AlpacaCalendarDay: Decodable, Sendable, Equatable {
+    let date: String
+    let open: String?
+    let close: String?
+
+    /// Chiusura esatta del giorno come Date (fuso America/New_York).
+    var closeDate: Date? {
+        guard let close else { return nil }
+        let d = date.split(separator: "-").compactMap { Int($0) }
+        let t = close.split(separator: ":").compactMap { Int($0) }
+        guard d.count == 3, t.count >= 2 else { return nil }
+        var c = DateComponents()
+        c.calendar = Calendar(identifier: .gregorian)
+        c.timeZone = TimeZone(identifier: "America/New_York")
+        c.year = d[0]; c.month = d[1]; c.day = d[2]
+        c.hour = t[0]; c.minute = t[1]
+        return c.date
+    }
+}
+
 /// Barra storica dal market data REST di Alpaca (backfill candele per Kimi).
 struct AlpacaBar: Decodable, Sendable {
     let timestamp: String
@@ -256,6 +278,23 @@ actor AlpacaService {
     func clock() async throws -> AlpacaClock {
         let data = try await send(path: "/v2/clock", method: "GET")
         return try JSONDecoder().decode(AlpacaClock.self, from: data)
+    }
+
+    /// Calendario di borsa USA (GET /v2/calendar): stesso piano e stesso limite
+    /// della Trading API (200 req/min per conto). Mai obbligatoria: in caso di
+    /// errore l'app resta su clock() come prima.
+    func calendar(start: Date, end: Date) async throws -> [AlpacaCalendarDay] {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
+        fmt.timeZone = TimeZone(identifier: "America/New_York")
+        fmt.dateFormat = "yyyy-MM-dd"
+        let data = try await send(
+            path: "/v2/calendar",
+            method: "GET",
+            query: [URLQueryItem(name: "start", value: fmt.string(from: start)),
+                    URLQueryItem(name: "end", value: fmt.string(from: end))]
+        )
+        return try JSONDecoder().decode([AlpacaCalendarDay].self, from: data)
     }
 
     func order(id: String) async throws -> AlpacaOrder {
@@ -746,6 +785,14 @@ extension AlpacaBroker: NightBroker {
     func nightClock() async throws -> (isOpen: Bool, nextClose: Date?) {
         let c = try await service.clock()
         return (c.isOpen, c.nextCloseDate)
+    }
+
+    func tradingDays(from: Date, to: Date) async throws -> [TradingDay] {
+        let days = try await service.calendar(start: from, end: to)
+        return days.compactMap { day in
+            guard let close = day.closeDate else { return nil }
+            return TradingDay(date: day.date, close: close)
+        }
     }
 
     func submitAuction(symbol: String, quantity: Int, side: String, timeInForce: String,

@@ -29,6 +29,15 @@ enum NightStrategy {
     /// Ultimo invio utile prima della chiusura (Alpaca rifiuta le MOC dopo le 15:50).
     static let closeCutoffMinutes = 10.0
 
+    /// Minuti dalla mezzanotte di New York del giorno di borsa (yyyy-MM-dd, fuso ET).
+    static func dayStampET(_ date: Date) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = TimeZone(identifier: "America/New_York")
+        f.dateFormat = "yyyy-MM-dd"
+        return f.string(from: date)
+    }
+
     enum Phase: Equatable, Sendable {
         /// Mercato chiuso: si può mettere la vendita all'apertura (OPG).
         case sellWindow
@@ -45,11 +54,18 @@ enum NightStrategy {
     }
 
     /// Regole di Alpaca: le OPG si accettano dalle 19:00 alle 9:28 di New York,
-    /// le MOC fino alle 15:50 (qui con 10 minuti di margine sulla chiusura,
-    /// così vale anche nei giorni a orario ridotto).
-    static func phase(now: Date, isOpen: Bool, nextClose: Date?) -> Phase {
+    /// le MOC fino alle 15:50 (qui con 10 minuti di margine sulla chiusura).
+    /// `calendar` (GET /v2/calendar) dà la chiusura esatta del giorno — anche
+    /// nelle mezze jornadas — e i festivi: niente ordini d'asta nei festivi.
+    /// Se il calendario non risponde (nil) ci si comporta come prima (solo clock).
+    static func phase(now: Date, isOpen: Bool, nextClose: Date?, calendar: [TradingDay]?, today: String) -> Phase {
+        let todayDay = calendar?.first { $0.date == today }
+        if let calendar, todayDay == nil, !isOpen {
+            return .wait("oggi la borsa USA è chiusa (festivo): nessuna asta")
+        }
         if isOpen {
-            if let close = nextClose, close.timeIntervalSince(now) > closeCutoffMinutes * 60 {
+            let close = todayDay?.close ?? nextClose
+            if let close, close.timeIntervalSince(now) > closeCutoffMinutes * 60 {
                 return .buyWindow
             }
             return .wait("troppo vicino alla chiusura per l'asta: si compra domani")
@@ -98,6 +114,14 @@ enum NightStrategy {
             qty[i] > 0 ? Pick(symbol: chosen[i].symbol, quantity: qty[i], price: chosen[i].price) : nil
         }
     }
+}
+
+/// Giorno di borsa dal calendario Alpaca (GET /v2/calendar): `close` è la
+/// chiusura esatta del giorno (fuso New York), incluse le mezze jornadas.
+struct TradingDay: Sendable, Equatable {
+    /// yyyy-MM-dd del giorno di borsa, fuso America/New_York.
+    let date: String
+    let close: Date
 }
 
 /// Posizione della modalità notte nel registro locale.
@@ -182,6 +206,10 @@ protocol NightBroker: Sendable {
     /// Ordine a mercato in asta: "cls" (chiusura) o "opg" (apertura).
     func submitAuction(symbol: String, quantity: Int, side: String, timeInForce: String,
                        clientOrderId: String) async throws -> String
+    /// Calendario di borsa (GET /v2/calendar) per la finestra: chiusura esatta
+    /// del giorno e festivi. L'errore = calendario non disponibile: il ciclo
+    /// si comporta come prima, solo con l'orologio del broker.
+    func tradingDays(from: Date, to: Date) async throws -> [TradingDay]
     /// Recupero per client_order_id: conta solo se l'ordine è vivo (non
     /// rifiutato/annullato/scaduto).
     func orderRef(byClientOrderId: String) async throws -> BrokerOrderRef?
@@ -269,7 +297,12 @@ struct NightCycleRunner: Sendable {
             }
         }
 
-        let phase = NightStrategy.phase(now: input.now, isOpen: clock.isOpen, nextClose: clock.nextClose)
+        // Calendario di borsa (mai obbligatorio: se non risponde, nil e si usa solo clock).
+        let calendar: [TradingDay]? = try? await broker.tradingDays(
+            from: input.now.addingTimeInterval(-3 * 86_400),
+            to: input.now.addingTimeInterval(3 * 86_400))
+        let phase = NightStrategy.phase(now: input.now, isOpen: clock.isOpen, nextClose: clock.nextClose,
+                                        calendar: calendar, today: input.today)
         await emit(.init(stage: .analyst, state: .done, detail: "solo regole · 0 crediti"))
         await emit(.init(stage: .brain, state: .skipped, detail: "Kimi non serve di notte · 0 crediti"))
         await emit(.init(stage: .reviewer, state: .skipped, detail: "Kimi non serve di notte · 0 crediti"))
