@@ -7,7 +7,9 @@ import XCTest
 final class AlpacaServiceTests: XCTestCase {
 
     private final class MockURLProtocol: URLProtocol {
-        static var handler: ((URLRequest) throws -> (URLResponse, Data))?
+        // I test impostano l'handler prima di ogni chiamata e non girano in
+        // parallelo: unsafe è intenzionale e isolato dentro questa classe.
+        nonisolated(unsafe) static var handler: ((URLRequest) throws -> (URLResponse, Data))?
 
         override class func canInit(with request: URLRequest) -> Bool { true }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
