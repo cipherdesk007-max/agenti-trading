@@ -121,17 +121,29 @@ struct ValueRow: View {
 }
 
 /// Pillola di stato con un solo colore semantico (verde/rosso stati, arancione avvisi).
+/// Maiuscole solo alla prima lettera e sempre una riga: nelle tile della griglia
+/// l'etichetta non deve andare a capo (altezze diverse delle caselle).
 struct StatusChip: View {
     let text: String
     let color: Color
     var filled = false
     var body: some View {
-        Text(text)
+        Text(text.capitalizedFirstLetter)
             .font(.caption2.weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
             .foregroundStyle(filled ? Theme.background : color)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(filled ? color : color.opacity(0.14), in: Capsule())
+    }
+}
+
+extension String {
+    /// Prima lettera maiuscola, resto invariato (niente "In Posizione"/"Trend Su").
+    var capitalizedFirstLetter: String {
+        guard let first = first else { return self }
+        return String(first).uppercased() + dropFirst()
     }
 }
 
@@ -207,7 +219,21 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Pulsante di avvertenza (arancione, il colore degli avvisi): STOP si distingue
+/// dall'azione primaria. Area ≥ 44 pt.
+struct WarningButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundStyle(Theme.background)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.horizontal, Layout.paddingM)
+            .background(Theme.amber.opacity(configuration.isPressed ? 0.8 : 1), in: Theme.shape())
+    }
+}
+
 extension View {
     func primaryButton() -> some View { buttonStyle(PrimaryButtonStyle()) }
     func secondaryButton() -> some View { buttonStyle(SecondaryButtonStyle()) }
+    func warningButton() -> some View { buttonStyle(WarningButtonStyle()) }
 }

@@ -55,9 +55,9 @@ nel Keychain protetto da Face ID.
 - **Atteso**: al rientro (carica > 20% o rete tornata) il ciclo riparte da solo; gli stop GTC sul broker restano attivi per tutto il tempo.
 - **Se è diverso**: ordini inviati durante la pausa → bug della pausa, segnala.
 
-## 7 · TRADUCI nelle notizie
+## 7 · Traduci nelle notizie
 
-- **Nell'app**: MERCATI → tocca un ETF → grafico → sezione **NOTIZIE · 48 ORE** → tocca "Traduci" (richiede iOS 17.4+).
+- **Nell'app**: MERCATI → tocca un ETF → grafico → sezione **Notizie · 48 ore** → tocca "Traduci" (richiede iOS 17.4+).
 - **Atteso**: si apre il foglio di traduzione di Apple con il testo in italiano, gratis e senza crediti Kimi.
 - **Se è diverso**: sul simulatore il foglio non si apre (limite noto, vedi STATO.md). Sul dispositivo reale, se non appare → controlla la versione di iOS.
 

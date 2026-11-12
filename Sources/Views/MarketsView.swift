@@ -152,17 +152,17 @@ private struct MarketTile: View {
             Text(insight.close.map { String(format: "%.2f", $0) } ?? "—")
                 .tabularNumber(.caption, .semibold)
                 .foregroundStyle(Theme.textSecondary)
-            if let change = insight.dayChange {
-                Text(String(format: "%+.2f%%", change * 100))
-                    .font(.caption2.weight(.bold))
-                    .monospacedDigit()
-                    .foregroundStyle(Theme.signed(change))
-            }
-            StatusChip(text: intraday ? (insight.state == .noData ? "In attesa" : "Stream") : insight.state.rawValue.capitalized,
+            // Riga sempre presente (segnaposto invisibile senza variazione):
+            // tutte le tile della griglia restano alte uguali.
+            Text(insight.dayChange.map { String(format: "%+.2f%%", $0 * 100) } ?? " ")
+                .font(.caption2.weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(insight.dayChange.map(Theme.signed) ?? .clear)
+            StatusChip(text: intraday ? (insight.state == .noData ? "In attesa" : "Stream") : insight.state.rawValue,
                        color: color)
         }
         .padding(Layout.paddingS)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, minHeight: 100, maxHeight: .infinity, alignment: .leading)
         .background(Theme.surfaceHigh, in: Theme.shape(Theme.smallRadius))
     }
 }
@@ -302,7 +302,7 @@ struct MarketDetailView: View {
         let fallbackPrice = engine.intradayLastPrice(for: symbol) ?? engine.marketBars[symbol]?.last?.close
         if explains {
             HStack {
-                StatusChip(text: insight.state.rawValue.capitalized,
+                StatusChip(text: insight.state.rawValue,
                            color: Self.color(for: insight.state),
                            filled: insight.state == .held)
                 Spacer()
@@ -399,7 +399,7 @@ struct MarketDetailView: View {
                     Button {
                         showTranslation = true
                     } label: {
-                        Label("TRADUCI", systemImage: "character.bubble")
+                        Label("Traduci", systemImage: "character.bubble")
                             .font(.caption.weight(.bold))
                             .foregroundStyle(Theme.accent)
                     }

@@ -371,7 +371,7 @@ struct TerminalDashboardView: View {
                 (.unaffordable, "il capitale non compra 1 azione entro i limiti")
             ], id: \.0.rawValue) { state, text in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    StatusChip(text: state.rawValue.capitalized, color: MarketDetailView.color(for: state))
+                    StatusChip(text: state.rawValue, color: MarketDetailView.color(for: state))
                     Text(text).font(.caption).foregroundStyle(Theme.textSecondary)
                 }
             }
@@ -611,12 +611,12 @@ struct TerminalDashboardView: View {
                         Button("CONTROLLA ORA") {
                             engine.requestDailyCheck()
                         }
-                        .secondaryButton()
+                        .primaryButton()
                     }
                     Button("STOP") {
                         Task { await engine.stop() }
                     }
-                    .secondaryButton()
+                    .warningButton()
                     .disabled(engine.isKillInProgress)
                 } else {
                     Button(engine.paperTrading ? "START" : "START LIVE") {
@@ -1291,7 +1291,7 @@ struct TerminalDashboardView: View {
                                 .monospacedDigit()
                                 .foregroundStyle(Theme.textTertiary)
                         }
-                        Text(order.status)
+                        Text(brokerStatusLabel(order.status))
                             .foregroundStyle(statusColor(order.status))
                     }
                     .font(.caption)
@@ -1427,7 +1427,7 @@ private struct BrokerControlView: View {
                             Text("\(order.side) \(order.symbol) x\(Formatters.trimmed(order.quantity ?? "0"))")
                                 .font(.body.weight(.semibold))
                                 .foregroundStyle(Theme.textPrimary)
-                            Text("\(order.status) · \(Formatters.time(order.submittedDate))")
+                            Text("\(brokerStatusLabel(order.status)) · \(brokerTypeLabel(order))")
                                 .font(.caption)
                                 .foregroundStyle(Theme.textTertiary)
                         }
@@ -1556,18 +1556,13 @@ private struct SystemSettingsView: View {
                 }
             }
             .pickerStyle(.segmented)
-            Text(Self.modeDescription(draft.tradingMode))
-                .font(.caption)
-                .foregroundStyle(draft.tradingMode == .intraday ? Theme.amber : Theme.accent)
-            Text("La modalità cambia al prossimo START.")
-                .font(.caption)
-                .foregroundStyle(Theme.textTertiary)
-            if draft.tradingMode != .intraday {
-                Text("In giornaliera Kimi viene chiamato solo se un ETF è in trend (sopra SMA200) con RSI2 sotto 10. Nessun segnale = zero crediti.")
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("La modalità cambia al prossimo START.")
                     .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .explanation()
+                InfoButton(text: Self.modeDescription(draft.tradingMode) + " " + (draft.tradingMode != .intraday
+                    ? "In giornaliera Kimi viene chiamato solo se un ETF è in trend (sopra SMA200) con RSI2 sotto 10. Nessun segnale = zero crediti."
+                    : "Nella veloce Kimi decide alla chiusura della candela; il filtro gratuito pre-Kimi blocca le chiamate a vuoto."))
             }
 
             Group {
@@ -1947,6 +1942,31 @@ private extension View {
             .padding(Layout.paddingM)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Theme.surface, in: Theme.shape())
+    }
+}
+
+/// Stato di un ordine Alpaca in italiano leggibile (invece di "held"/"new").
+private func brokerStatusLabel(_ status: String) -> String {
+    switch status {
+    case "new", "accepted", "pending_new", "held": return "in attesa"
+    case "partially_filled": return "in parte eseguito"
+    case "filled": return "eseguito"
+    case "canceled": return "annullato"
+    case "rejected": return "rifiutato"
+    case "expired": return "scaduto"
+    case "done_for_day": return "chiuso per oggi"
+    default: return status
+    }
+}
+
+/// Tipo e prezzo dell'ordine (stop 47,85 / limite 51,40) invece di "n/d".
+private func brokerTypeLabel(_ order: AlpacaOrder) -> String {
+    switch order.type {
+    case "stop": return "stop \(Formatters.money(order.stopPriceValue ?? 0))"
+    case "stop_limit": return "stop limite \(Formatters.money(order.stopPriceValue ?? 0))"
+    case "limit": return "limite \(Formatters.money(order.limitPriceValue ?? 0))"
+    case "market": return "mercato"
+    default: return order.type
     }
 }
 
