@@ -14,6 +14,8 @@ private actor FakeNightBroker: NightBroker {
     var submitted: [(symbol: String, qty: Int, side: String, tif: String, id: String)] = []
     var marketSells: [(symbol: String, qty: Int, id: String)] = []
     var closed: [String] = []
+    /// Ordine cronologico delle azioni sul broker finto, per verificare l'ordine degli invii.
+    var events: [String] = []
     /// client_order_id → status dell'ordine "sul broker".
     var known: [String: String] = [:]
     /// Se true, submitAuction lancia e registra l'ordine come rifiutato.
@@ -26,6 +28,7 @@ private actor FakeNightBroker: NightBroker {
 
     func set(held: [BrokerPosition]) { self.held = held }
     func set(orders: [BrokerOrder]) { self.orders = orders }
+    func set(isOpen: Bool, nextClose: Date?) { self.isOpen = isOpen; self.nextClose = nextClose }
     func set(account: BrokerAccount) { acct = account }
     func set(rejectAuction: Bool) { self.rejectAuction = rejectAuction }
 
@@ -39,12 +42,14 @@ private actor FakeNightBroker: NightBroker {
     }
     func closePosition(symbol: String) async throws -> String? {
         closed.append(symbol)
+        events.append("close \(symbol)")
         held.removeAll { $0.symbol == symbol }
         return "c-\(symbol)"
     }
     func submitMarket(symbol: String, quantity: Int, side: String,
                       clientOrderId: String) async throws -> String {
         marketSells.append((symbol, quantity, clientOrderId))
+        events.append("sell-market \(symbol) \(quantity)")
         if let i = held.firstIndex(where: { $0.symbol.uppercased() == symbol.uppercased() }) {
             let rest = held[i].quantity - Double(quantity)
             var updated = held
@@ -62,6 +67,7 @@ private actor FakeNightBroker: NightBroker {
     func submitAuction(symbol: String, quantity: Int, side: String, timeInForce: String,
                        clientOrderId: String) async throws -> String {
         submitted.append((symbol, quantity, side, timeInForce, clientOrderId))
+        events.append("auction \(side) \(timeInForce) \(symbol) \(quantity)")
         if rejectAuction {
             // Il broker ha registrato l'ordine ma lo ha rifiutato.
             known[clientOrderId] = "rejected"
@@ -78,10 +84,14 @@ private actor FakeNightBroker: NightBroker {
 final class NightCycleTests: XCTestCase {
     /// 11/11/2026 alle ore indicate di New York.
     private func et(_ hour: Int, _ minute: Int = 0) -> Date {
+        et(day: 11, hour, minute)
+    }
+
+    private func et(day: Int, _ hour: Int, _ minute: Int = 0) -> Date {
         var c = DateComponents()
         c.calendar = Calendar(identifier: .gregorian)
         c.timeZone = TimeZone(identifier: "America/New_York")
-        c.year = 2026; c.month = 11; c.day = 11; c.hour = hour; c.minute = minute
+        c.year = 2026; c.month = 11; c.day = day; c.hour = hour; c.minute = minute
         return c.date!
     }
 
@@ -158,7 +168,11 @@ final class NightCycleTests: XCTestCase {
         XCTAssertEqual(sent.first?.tif, "opg")
         XCTAssertEqual(sent.first?.qty, 2)
         XCTAssertEqual(result.sells, ["SPYM"])
-        XCTAssertNil(result.book.positions["SPYM"], "la posizione esce dal registro appena la vendita OPG è in coda")
+        let kept = result.book.positions["SPYM"]
+        XCTAssertEqual(kept?.day, "2026-11-10")
+        XCTAssertEqual(kept?.quantity, 2)
+        XCTAssertEqual(kept?.sellQueuedDay, "2026-11-11", "la posizione resta nel registro, marcata in coda")
+        XCTAssertEqual(kept?.sellQueuedHeld, 2)
     }
 
     func testDailyPositionsAreNeverTouched() async {
@@ -221,7 +235,9 @@ final class NightCycleTests: XCTestCase {
         XCTAssertEqual(sent.first?.side, "sell")
         XCTAssertEqual(sent.first?.tif, "opg")
         XCTAssertEqual(sent.first?.qty, 2, "solo le azioni della notte, mai quelle della giornaliera")
-        XCTAssertNil(result.book.positions["SPY"])
+        XCTAssertEqual(result.book.positions["SPY"]?.sellQueuedDay, "2026-11-11")
+        XCTAssertEqual(result.book.positions["SPY"]?.quantity, 2, "la quantità resta: serve per cancellarla quando l'asta la esegue")
+        XCTAssertEqual(result.book.positions["SPY"]?.sellQueuedHeld, 6)
     }
 
     func testSellWindowLegacyEntryWithoutQuantitySellsAllHeld() async {
@@ -270,6 +286,7 @@ final class NightCycleTests: XCTestCase {
         XCTAssertTrue(result.sells.isEmpty, "una vendita rifiutata non è una vendita riuscita")
         XCTAssertEqual(result.book.positions["SPYM"]?.day, "2026-11-10",
                        "la posizione resta nel registro: si ritenta alla prossima finestra utile")
+        XCTAssertNil(result.book.positions["SPYM"]?.sellQueuedDay, "invio fallito: niente coda")
     }
 
     // MARK: - Registro: retrocompatibilità del formato
@@ -283,5 +300,72 @@ final class NightCycleTests: XCTestCase {
         let reencoded = try JSONEncoder().encode(book)
         let again = try JSONDecoder().decode(NightBook.self, from: reencoded)
         XCTAssertEqual(again, book, "il formato nuovo si codifica e si rilegge identico")
+        // Formato di B1 (day + quantity, senza coda): resta leggibile.
+        let b1 = #"{"positions":{"SPY":{"day":"2026-11-10","quantity":2}},"nights":1}"#
+        let b1Book = try JSONDecoder().decode(NightBook.self, from: Data(b1.utf8))
+        XCTAssertEqual(b1Book.positions["SPY"]?.quantity, 2)
+        XCTAssertNil(b1Book.positions["SPY"]?.sellQueuedDay)
+        // Il campo "in coda" codifica e si rilegge.
+        var modern = NightBook()
+        modern.positions["SPY"] = NightPosition(day: "2026-11-11", quantity: 2,
+                                                sellQueuedDay: "2026-11-11", sellQueuedHeld: 6)
+        let data = try JSONEncoder().encode(modern)
+        XCTAssertEqual(try JSONDecoder().decode(NightBook.self, from: data), modern)
+    }
+
+    // MARK: - OPG annullata all'asta: niente azioni orfane
+
+    func testCanceledOPGIsClosedNextDayAndNotStacked() async {
+        // Sera 11/11: OPG in coda, la posizione resta nel registro marcata.
+        let broker = FakeNightBroker(isOpen: false, nextClose: nil)
+        await broker.set(held: [BrokerPosition(symbol: "SPYM", quantity: 2, averageEntryPrice: 89, unrealizedPL: 0)])
+        var book = NightBook()
+        book.positions["SPYM"] = NightPosition(day: "2026-11-10", quantity: 2)
+        let evening = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: book, today: "2026-11-11", now: et(20))) { _ in }
+        XCTAssertEqual(evening.book.positions["SPYM"]?.sellQueuedDay, "2026-11-11")
+        // L'OPG viene annullata all'asta: le azioni restano, nessun ordine aperto.
+        await broker.set(orders: [])
+        await broker.set(isOpen: true, nextClose: et(day: 12, 16))
+        // Mattina dopo (12/11, mercato aperto): il residuo si chiude a mercato,
+        // SOLO quella quantità, e solo dopo si ricompra in chiusura.
+        let morning = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: evening.book, today: "2026-11-12",
+                                 now: et(day: 12, 10))) { _ in }
+        let closed = await broker.closed
+        XCTAssertEqual(closed, ["SPYM"], "il residuo viene chiuso a mercato il giorno dopo")
+        XCTAssertTrue(morning.sells.contains("SPYM"))
+        XCTAssertTrue(morning.book.positions.values.allSatisfy { $0.day == "2026-11-12" },
+                      "nessun residuo del giorno prima resta nel registro")
+        let events = await broker.events
+        let closeIdx = events.firstIndex { $0 == "close SPYM" }
+        let buyIdx = events.firstIndex { $0.hasPrefix("auction buy") }
+        XCTAssertNotNil(closeIdx)
+        XCTAssertNotNil(buyIdx)
+        XCTAssertLessThan(closeIdx!, buyIdx!, "prima si vende il residuo, poi si ricompra: niente doppia esposizione")
+        // Un secondo controllo lo stesso giorno non compra di nuovo.
+        let again = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: morning.book, today: "2026-11-12", now: et(day: 12, 11))) { _ in }
+        XCTAssertTrue(again.buys.isEmpty)
+    }
+
+    func testExecutedOPGWithSharedSymbolClearsTheBook() async {
+        // SPY: 2 azioni della notte + 4 della giornaliera. Sera 11/11: OPG in
+        // coda con detenuto 6. L'asta esegue: vende le 2 della notte, restano 4.
+        let broker = FakeNightBroker(isOpen: false, nextClose: nil)
+        await broker.set(held: [BrokerPosition(symbol: "SPY", quantity: 6, averageEntryPrice: 700, unrealizedPL: 0)])
+        var book = NightBook()
+        book.positions["SPY"] = NightPosition(day: "2026-11-10", quantity: 2)
+        let evening = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: book, today: "2026-11-11", now: et(20))) { _ in }
+        XCTAssertEqual(evening.book.positions["SPY"]?.sellQueuedHeld, 6)
+        await broker.set(held: [BrokerPosition(symbol: "SPY", quantity: 4, averageEntryPrice: 700, unrealizedPL: 0)])
+        await broker.set(orders: [])
+        let next = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: evening.book, today: "2026-11-12", now: et(day: 12, 20))) { _ in }
+        XCTAssertNil(next.book.positions["SPY"], "detenuto sceso di 2 = OPG eseguita: via dal registro")
+        let sent = await broker.submitted
+        XCTAssertEqual(sent.filter { $0.side == "sell" }.count, 1,
+                       "nessuna seconda vendita: le 4 rimaste sono della giornaliera")
     }
 }

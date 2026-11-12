@@ -52,12 +52,13 @@ Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia 
 - **B6 · prefilter della veloce sul contante libero vero** (capitale meno esposizione aperta): meno chiamate Kimi a vuoto.
 - **R5 · l'esito dell'uscita si registra fino a 200 posizioni indietro** (prima 50, con filtro in memoria).
 - **R6 · rimosso `riskRewardRatio`** (codice morto).
+- **R7 · OPG annullata all'asta = residuo chiuso, non azioni orfane.** Dopo l'invio dell'OPG la posizione resta nel registro con `sellQueuedDay`/`sellQueuedHeld` e viene cancellata solo quando il detenuto scende di almeno la quantità; se l'ordine sparisce senza eseguirsi, la fase di acquisto la chiude a mercato (solo la quantità della notte) e i nuovi acquisti non si sommano al residuo. Test in `Tests/NightCycleTests.swift`.
 - Studio nuovo in `tools/backtest_overnight_fraction.py` (runner `overnight`): quanto CAGR e perdita massima cambiano se la NOTTE investisse solo una frazione del conto. La frazione resta 97% finché i numeri non dicano altro: la protezione resta il tetto del capitale.
 
 ## Da verificare sul telefono o sul conto vero
 
 - La NOTTE è testata con broker finto: va confermato che Alpaca paper accetti gli ordini `cls` e `opg` e li esegua alle aste.
-- Con B1, se una OPG in coda venisse annullata senza eseguirsi (asta saltata), le azioni resterebbero sul conto ma fuori dal registro notte: il ciclo non le rivende più. Capire se capita davvero su paper (le OPG a mercato eseguono in asta, è raro) e in caso decidere una riconciliazione.
+- Con R7, se una OPG in coda viene annullata senza eseguirsi le azioni restano nel registro marcate "in coda" e il giorno dopo vengono chiuse a mercato (solo la quantità della notte) prima di ricomprare. Da confermare su paper che non produca doppie vendite.
 - Che il registro notte scritto dalla versione precedente (senza quantità) si rilegga: vende tutto il detenuto del simbolo finché non passa una notte.
 - `reasoning_effort` medium accettato dal modello Kimi in uso (altrimenti l'app passa da sola a low).
 - Il foglio TRADUCI di Apple (non si apre sul simulatore).

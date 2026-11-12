@@ -107,6 +107,15 @@ enum NightStrategy {
 struct NightPosition: Codable, Sendable, Equatable {
     var day: String
     var quantity: Double?
+    /// Giorno in cui la vendita all'apertura (OPG) è stata messa in coda. La
+    /// posizione resta nel registro finché il detenuto non scende di almeno
+    /// `quantity`: se l'asta annulla l'ordine, le azioni restano sul conto e
+    /// il ciclo le chiude come residuo invece di perderle di vista.
+    var sellQueuedDay: String? = nil
+    /// Detenuto del simbolo quando la vendita è stata messa in coda: con la
+    /// giornaliera sullo stesso simbolo il totale non torna a zero, questa è
+    /// la base per capire quanto è sceso.
+    var sellQueuedHeld: Double? = nil
 }
 
 /// Posizioni della modalità notte, separate da quelle della giornaliera.
@@ -230,17 +239,34 @@ struct NightCycleRunner: Sendable {
             orders.contains { $0.symbol.uppercased() == s && $0.side == side }
         }
         /// Azioni della notte da vendere per un simbolo: quelle del registro
-        /// (mai oltre il detenuto). Registro vecchio senza quantità (nil):
-        /// si vende tutto il detenuto del simbolo, come prima di questo fix.
+        /// (mai oltre il detenuto), meno quelle già vendute dalla coda in asta
+        /// (calo del detenuto rispetto a quando la vendita è stata messa in
+        /// coda). Registro vecchio senza quantità (nil): si vende tutto il
+        /// detenuto del simbolo, come prima del fix B1.
         func ownedQty(_ s: String, held: Int, book: NightBook) -> Int {
-            guard held > 0 else { return 0 }
-            guard let recorded = book.nightQuantity(s) else { return held }
-            return min(Int(recorded.rounded(.down)), held)
+            guard held > 0, let p = book.positions[s] else { return 0 }
+            guard let recorded = p.quantity else { return held }
+            var remaining = recorded
+            if p.sellQueuedDay != nil, let baseline = p.sellQueuedHeld {
+                remaining -= max(0, baseline - heldQty(s))
+            }
+            return min(Int(max(remaining, 0).rounded(.down)), held)
         }
-        // Gli acquisti di oggi a mercato aperto restano: si eseguono in chiusura.
-        for symbol in book.positions.keys.sorted() where heldQty(symbol) <= 0 && !pending(symbol, side: "buy") {
-            if clock.isOpen, book.positions[symbol]?.day == input.today { continue }
-            book.positions[symbol] = nil
+        // Registro: via ciò che non c'è più sul broker (venduto o mai eseguito) e
+        // le vendite in coda andate in porto (detenuto sceso di almeno la quantità
+        // della notte). Gli acquisti di oggi a mercato aperto restano: si eseguono
+        // in chiusura.
+        for symbol in book.positions.keys.sorted() {
+            let held = heldQty(symbol)
+            if held <= 0 && !pending(symbol, side: "buy") {
+                if clock.isOpen, book.positions[symbol]?.day == input.today { continue }
+                book.positions[symbol] = nil
+                continue
+            }
+            if let p = book.positions[symbol], p.sellQueuedDay != nil, let q = p.quantity {
+                let baseline = p.sellQueuedHeld ?? held
+                if baseline - held >= q - 1e-6 { book.positions[symbol] = nil }
+            }
         }
 
         let phase = NightStrategy.phase(now: input.now, isOpen: clock.isOpen, nextClose: clock.nextClose)
@@ -274,11 +300,17 @@ struct NightCycleRunner: Sendable {
                 let id = "qsn-s-\(symbol)-\(input.today)-\(Int(input.now.timeIntervalSince1970 / 3600))"
                 if await submit(symbol: symbol, qty: own, side: "sell", tif: "opg", id: id, emit: emit) {
                     result.sells.append(symbol)
-                    // Tolgo subito la posizione dal registro: l'OPG in coda è
-                    // esattamente per le azioni della notte. Se lo lasciassi,
-                    // il prossimo ciclo (con la giornaliera che tiene lo
-                    // stesso simbolo) venderebbe anche le SUE azioni.
-                    book.positions[symbol] = nil
+                    // La posizione RESTA nel registro, marcata "in coda": se l'OPG
+                    // non si esegue (rifiutata dopo l'accettazione o annullata
+                    // all'asta) le azioni restano sul conto e il ciclo le chiude
+                    // come residuo; viene tolta solo quando il detenuto scende di
+                    // almeno la quantità (controllo all'inizio del ciclo). La
+                    // quantità limita sempre la vendita alle sole azioni della
+                    // notte (fix B1).
+                    var p = book.positions[symbol] ?? NightPosition(day: input.today, quantity: Double(own))
+                    p.sellQueuedDay = input.today
+                    p.sellQueuedHeld = heldQty(symbol)
+                    book.positions[symbol] = p
                 }
             }
             await emit(.init(stage: .executor, state: .done, detail: "vendite all'apertura in coda: \(result.sells.joined(separator: ", "))",
@@ -287,8 +319,9 @@ struct NightCycleRunner: Sendable {
                              notify: result.sells.isEmpty ? nil : ("VENDITA ALL'APERTURA", result.sells.joined(separator: ", "))))
 
         case .buyWindow:
-            // Posizioni rimaste dalla notte prima (app non aperta la mattina):
-            // si chiudono ora a mercato, così il bot resta solo "di notte".
+            // Posizioni rimaste dalla notte prima (app non aperta la mattina, o
+            // OPG annullata all'asta e non eseguita): si chiudono ora a mercato,
+            // così il bot resta solo "di notte" e non compra due volte sopra.
             let leftovers = book.positions.keys.sorted().filter { heldQty($0) > 0 && book.positions[$0]!.day < input.today }
             for symbol in leftovers where !pending(symbol, side: "sell") {
                 let held = Int(heldQty(symbol).rounded(.down))
@@ -340,7 +373,10 @@ struct NightCycleRunner: Sendable {
             for symbol in NightStrategy.universe {
                 if let p = try? await broker.latestPrice(symbol: symbol), p > 0 { prices[symbol] = p }
             }
+            // Niente acquisti sopra un residuo non chiuso: i simboli ancora in
+            // registro (giorno precedente) restano fuori dal paniere di stasera.
             let picks = NightStrategy.allocate(budget: budget, prices: prices)
+                .filter { book.positions[$0.symbol] == nil }
             guard !picks.isEmpty else {
                 let text = "capitale insufficiente per 1 azione (budget \(fmt(budget)) USD)"
                 await emit(.init(stage: .strategy, state: .blocked, detail: text, log: "Notte: \(text).", agent: .risk))
