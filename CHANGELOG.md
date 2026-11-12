@@ -5,6 +5,22 @@ Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Sem
 La versione installata si legge in **SISTEMA → VERSIONE** (con il numero di build della CI).
 Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
+## [Non rilasciato]
+
+### Corretto (revisione esterna sulla 1.5.0 build 157)
+- **NOTTE: la vendita OPG si conferma dallo STATO dell'ordine, non dal calo del detenuto.** Il registro salva ora il `client_order_id` dell'OPG (`sellQueuedOrderId`): a ogni ciclo si rilegge lo stato sul broker — `filled` toglie la voce, `canceled`/`rejected`/`expired` resta come residuo (poi chiusa come leftover), vivo resta in coda. Prima con la giornaliera sullo stesso simbolo il detenuto poteva risalire e la conferma sul calo era inaffidabile: il pomeriggio poteva vendere le azioni sbagliate. Test: `testOPGFilledByOrderStatusClearsBookEvenWhenHeldDidNotDrop`, `testOPGCanceledByOrderStatusStaysAsResidual`, `testExecutedOPGWithSharedSymbolClearsTheBook` (aggiornato allo stato).
+- **NOTTE: acquisti MOC parziali.** Se alcune MOC vengono rifiutate si ritenta SOLO le famiglie mancanti, con il gemello economico (es. QQQ rifiutato → QQQM). E a livello di famiglia: con un residuo su SPYM non si compra SPY (stesso indice, stesso rischio raddoppiato). Test: `testPartialMOCRetriesOnlyMissingFamiliesWithTwin`, `testResidualOnTwinBlocksOriginalOfSameFamily`.
+- **VELOCE: il retry di flat-by-close non annulla più lo stop d'emergenza appena messo** (gli ordini stop/stop_limit di vendita non vengono mai annullati nel flat) **e i simboli del registro NOTTE sono esclusi dal flat-by-close** (come quelli della giornaliera).
+- **NOTTE, finestre (regressione del calendario):** nel fine settimana a mercato chiuso la vendita OPG va messa in coda se l'ora è fuori da 9:28–19:00 ET, anche sabato e domenica (per lunedì); i festivi infrasettimanali restano "nessuna asta"; a mercato chiuso l'attesa copre ora TUTTA 9:28–19:00 ET, quindi dopo una chiusura anticipata (13:00 ET) non si invia più un'OPG che Alpaca rifiuterebbe. Test: `testPhaseWeekendQueuesOPGOutsideAuctionWindow`, `testWeekendEveningQueuesOPGForMonday`, `testPhaseWeekdayHolidayStillWaits`, `testPhaseEarlyCloseAfternoonWaits`.
+- **Studi rotti (`quale=studi`):** `backtest_trailing_stop.py`, `backtest_event_filter.py`, `backtest_vix_filter.py` e `backtest_overnight_riskparity.py` leggono ora i dati con un helper robusto alle colonne MultiIndex di yfinance (`daily_study_lib.flat_by_field`/`load_series`, stesso criterio di `backtest_app.py`); il workflow `backtest.yml` ora usa `bash -e -o pipefail`, quindi se uno script va in errore il passo FALLISCE invece di pubblicare tabelle vuote.
+
+### Cambiato (dagli screenshot della build 157)
+- MERCATI: tile tutte della stessa altezza e etichette di stato sempre su una riga, in sentence case ("In posizione", "Trend su", "Fuori capitale" — niente più maiuscole a ogni parola né testo a capo).
+- CRUSCOTTO: CONTROLLA ORA è il pulsante primario, STOP è arancione (colore d'avviso) e ben distinto.
+- BROKER: gli ordini aperti mostrano lo stato in italiano ("in attesa", "in parte eseguito"…) e tipo+prezzo ("stop 47,85", "limite 51,40") al posto di "held · n/d".
+- GRAFICO: il pulsante è "Traduci" (non più tutto maiuscolo).
+- SISTEMA: sotto il selettore di modalità resta una sola riga; la descrizione della modalità va dietro il pulsante info.
+
 ## [1.5.0 · build 156] - 2026-11-12
 
 ### Corretto

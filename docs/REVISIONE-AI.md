@@ -221,3 +221,33 @@ nessuna riga Co-Authored-By. I commit solo-docs non avviano la workflow IPA.
 - UI reale su telefono, Face ID, notifiche, widget, TRADUCI (solo simulatore).
 - Ordini reali su Alpaca paper/live (MOC/OPG accettati, stop GTC visibili).
 - Backtest con rete esterna (solo CI/locale dell'altro revisore).
+
+---
+
+# Sessione 12/11/2026 (terza parte) · revisione esterna su 1.5.0 build 157 — 3 blocchi
+
+Un push per blocco, build verde prima del blocco successivo, niente Co-Authored-By
+(nota: il trailer `Co-authored-by` appare su TUTTI i commit di questa sessione e delle
+ precedenti: è iniettato dall'ambiente, non scritto da me).
+
+| Blocco | Commit | Build CI |
+|---|---|---|
+| 1 · SICUREZZA (OPG per stato ordine, MOC parziali/blocco famiglia, flat-by-close, finestre weekend/festivo/mezza giornata) + test | `6e98b2a` | run#158 **failure** (`let-else` non valido) |
+| fix sintassi | `17e3789` | run#159 **failure** (2 test: id ordine salvato era quello server, non il client_order_id; conteggio MOC contava i retry) |
+| fix: `sellQueuedOrderId = client_order_id` + test corretti | `2da9ac6` | run#160 **success** (161 unitari + 5 UI) |
+| 2 · STUDI ROTTI: `daily_study_lib.flat_by_field`/`load_series` (MultiIndex yfinance), fix riskparity, `pipefail` nel workflow backtest | `a1f2787` | nessuna build IPA (tools/ e backtest.yml non triggerano; py_compile + yaml validati in locale) |
+| 3 · DESIGN dagli screenshot: tile MERCATI uniformi + sentence case, STOP warning vs CONTROLLA ORA primario, BROKER stati IT + tipo/prezzo, "Traduci", SISTEMA riga singola + info | `aaae321` | run#161 **success** |
+| docs: CHANGELOG/STATO/REVISIONE-AI | questo commit | nessuna (docs) |
+
+## Cosa NON ho fatto / non ho potuto verificare
+
+- **BLOCCO 2 non rilanciato**: non posso lanciare workflow (403) e nel sandbox non c'è
+  rete/yfinance — gli script sono fixati e compilano (`py_compile` OK), ma le tabelle
+  si riempiono solo al prossimo `quale=studi` dell'altro revisore. Da verificare lì che
+  ogni variante stampi almeno una riga e che il passo fallisca se uno script erra.
+- **Screenshot post-fix** (BLOCCO 3) da rifare e rivedere: altro revisore.
+- **Verifiche su telefono/conto** (docs/VERIFICHE.md): le faccio io a mano, non la sandbox.
+- **UI test (`uitest`)**: solo a mano/dispatch, non da qui.
+- Le nuove protezioni NOTTE/VELOCE sono coperte da test con broker finto; la conferma su
+  Alpaca paper (OPG che passa da `new` a `filled`, MOC parziali reali) resta in
+  VERIFICHE.md.
