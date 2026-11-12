@@ -1275,20 +1275,21 @@ struct TerminalDashboardView: View {
             if engine.recentOrders.isEmpty {
                 Text("Nessun ordine inviato in questa sessione di conto.")
                     .font(.caption)
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(Theme.textTertiary)
             } else {
                 ForEach(engine.recentOrders.prefix(8)) { order in
                     HStack(spacing: 6) {
                         Text(Formatters.time(order.submittedDate))
-                            .foregroundStyle(.gray)
+                            .foregroundStyle(Theme.textTertiary)
                         Text(order.side)
                             .foregroundStyle(order.side == "buy" ? Theme.accent : Theme.red)
                         Text("\(order.symbol) x\(Formatters.trimmed(order.filledQuantity ?? order.quantity ?? "0"))")
-                            .foregroundStyle(.white)
+                            .foregroundStyle(Theme.textPrimary)
                         Spacer()
                         if let price = order.filledAveragePriceValue {
                             Text("@ \(Formatters.money(price))")
-                                .foregroundStyle(.gray)
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.textTertiary)
                         }
                         Text(order.status)
                             .foregroundStyle(statusColor(order.status))
@@ -1297,7 +1298,7 @@ struct TerminalDashboardView: View {
                 }
             }
         }
-        .panelStyle(terminalGreen)
+        .panelStyle(Theme.accent)
     }
 
     private var logPanel: some View {
@@ -1335,30 +1336,28 @@ struct TerminalDashboardView: View {
 
     private var linksPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("LINK RAPIDI", color: terminalGreen)
+            panelHeader("Link rapidi")
             Link(destination: URL(string: "https://app.alpaca.markets")!) {
-                linkRow("ALPACA DASHBOARD · ordini e posizioni", color: terminalGreen)
+                linkRow("Alpaca dashboard · ordini e posizioni")
             }
             Link(destination: URL(string: "https://platform.kimi.ai")!) {
-                linkRow("KIMI CONSOLE · crediti e API key", color: DashboardPalette.cyan)
+                linkRow("Kimi console · crediti e API key")
             }
         }
-        .panelStyle(terminalGreen)
+        .panelStyle(Theme.accent)
     }
 
-    private func linkRow(_ title: String, color: Color) -> some View {
+    private func linkRow(_ title: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(color)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.accent)
             Spacer()
-            Text("↗ SAFARI")
-                .font(.caption)
-                .foregroundStyle(.gray)
+            Image(systemName: "arrow.up.right.square")
+                .foregroundStyle(Theme.textTertiary)
         }
-        .padding(10)
-        .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
-        .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color.opacity(0.35), lineWidth: 1))
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
     }
 
     private func agentColor(_ agent: AgentKind) -> Color {
@@ -1410,86 +1409,81 @@ private struct BrokerControlView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                panelHeader("CONTROLLO BROKER · ALPACA", color: DashboardPalette.green)
-                Spacer()
-                Button("REFRESH") {
-                    Task { await engine.refreshPortfolio() }
-                }
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(DashboardPalette.green)
+            SectionHeader(title: "Controllo broker · Alpaca", actionLabel: "Aggiorna") {
+                Task { await engine.refreshPortfolio() }
             }
 
-            Text("ORDINI APERTI: \(engine.openOrders.count)")
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(.gray)
+            Text("Ordini aperti · \(engine.openOrders.count)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
             if engine.openOrders.isEmpty {
                 Text("Nessun ordine aperto.")
                     .font(.caption)
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(Theme.textTertiary)
             } else {
                 ForEach(engine.openOrders) { order in
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text("\(order.side.uppercased()) \(order.symbol) x\(Formatters.trimmed(order.quantity ?? "0"))")
-                                .font(.system(.caption, design: .monospaced, weight: .bold))
-                                .foregroundStyle(.white)
-                            Text("\(order.status.uppercased()) · \(Formatters.time(order.submittedDate))")
+                            Text("\(order.side) \(order.symbol) x\(Formatters.trimmed(order.quantity ?? "0"))")
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(Theme.textPrimary)
+                            Text("\(order.status) · \(Formatters.time(order.submittedDate))")
                                 .font(.caption)
-                                .foregroundStyle(.gray)
+                                .foregroundStyle(Theme.textTertiary)
                         }
                         Spacer()
-                        Button("ANNULLA") {
+                        Button("Annulla") {
                             Task { await engine.cancelOrder(id: order.id) }
                         }
-                        .font(.system(.caption2, design: .monospaced, weight: .bold))
-                        .foregroundStyle(.red)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(minWidth: 44, minHeight: 44)
                         .disabled(engine.isKillInProgress)
                     }
-                    .padding(8)
-                    .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
-                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(Color.orange.opacity(0.35), lineWidth: 1))
+                    .padding(.vertical, 4)
+                    Divider().overlay(Theme.hairline)
                 }
             }
 
-            Text("POSIZIONI: \(engine.positions.count)")
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(.gray)
+            Text("Posizioni · \(engine.positions.count)")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
             if engine.positions.isEmpty {
                 Text("Nessuna posizione.")
                     .font(.caption)
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(Theme.textTertiary)
             } else {
                 ForEach(engine.positions) { position in
                     HStack(spacing: 8) {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(position.symbol) · qty \(Formatters.trimmed(position.quantity))")
-                                .font(.system(.caption, design: .monospaced, weight: .bold))
-                                .foregroundStyle(.white)
+                                .font(.body.weight(.semibold))
+                                .foregroundStyle(Theme.textPrimary)
                             Text("P&L \(Formatters.signedAmount(position.unrealizedPLValue)) USD")
                                 .font(.caption)
-                                .foregroundStyle(position.unrealizedPLValue >= 0 ? DashboardPalette.green : .red)
+                                .monospacedDigit()
+                                .foregroundStyle(position.unrealizedPLValue >= 0 ? Theme.accent : Theme.red)
                         }
                         Spacer()
-                        Button("CHIUDI") {
+                        Button("Chiudi") {
                             Task { await engine.closePosition(symbol: position.symbol) }
                         }
-                        .font(.system(.caption2, design: .monospaced, weight: .bold))
-                        .foregroundStyle(.red)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.textSecondary)
+                        .frame(minWidth: 44, minHeight: 44)
                         .disabled(engine.isKillInProgress)
                     }
-                    .padding(8)
-                    .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
-                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(Color.red.opacity(0.3), lineWidth: 1))
+                    .padding(.vertical, 4)
+                    Divider().overlay(Theme.hairline)
                 }
             }
-            Text("CHIUDI chiede ad Alpaca una chiusura a mercato della singola posizione; ANNULLA cancella il singolo ordine aperto. Per emergenza globale usa HARD KILL nel CRUSCOTTO.")
+            Text("Chiudi chiede ad Alpaca una chiusura a mercato della singola posizione; Annulla cancella il singolo ordine aperto. Per emergenza globale usa HARD KILL nel Cruscotto.")
                 .font(.caption)
-                .foregroundStyle(.gray)
+                .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .explanation()
         }
-        .panelStyle(DashboardPalette.green)
+        .panelStyle(Theme.accent)
     }
 
     private func panelHeader(_ title: String, color: Color = Theme.textPrimary) -> some View {
