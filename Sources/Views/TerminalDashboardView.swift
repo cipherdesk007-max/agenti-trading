@@ -179,11 +179,11 @@ struct TerminalDashboardView: View {
             .toolbar {
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 6) {
-                        Text("QUANTSWARM")
-                            .font(.system(.subheadline, design: .monospaced, weight: .black))
-                            .foregroundStyle(terminalGreen)
-                        Text("ALPHA ZERO")
-                            .font(.system(.subheadline, design: .monospaced, weight: .medium))
+                        Text("QuantSwarm")
+                            .font(.subheadline.weight(.bold))
+                            .foregroundStyle(Theme.accent)
+                        Text("Alpha Zero")
+                            .font(.subheadline.weight(.medium))
                             .foregroundStyle(Theme.textSecondary)
                     }
                 }
@@ -389,8 +389,8 @@ struct TerminalDashboardView: View {
 
     private var edgePanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("EDGE · EQUITY DELTA USD", color: terminalGreen)
-            EdgeChart(points: engine.edgeHistory, color: terminalGreen)
+            panelHeader("Edge · equity delta (USD)")
+            EdgeChart(points: engine.edgeHistory, color: Theme.accent)
                 .frame(height: 170)
         }
         .panelStyle(terminalGreen)
@@ -403,7 +403,7 @@ struct TerminalDashboardView: View {
         Group {
             if engine.dailyStopOn || engine.drawdownLocked {
                 VStack(alignment: .leading, spacing: 10) {
-                    panelHeader("PROTEZIONI ATTIVE", color: .red)
+                    panelHeader("Protezioni attive", color: Theme.red)
                     if engine.dailyStopOn {
                         Text("STOP GIORNALIERO: perdita oltre la soglia impostata. Nuovi segnali sospesi fino alla mezzanotte UTC; le posizioni restano protette dalle gambe stop/target sul broker.")
                             .font(.caption)
@@ -439,21 +439,21 @@ struct TerminalDashboardView: View {
         let capital = engine.account.map { min(engine.strategyConfig.capitalCap, $0.equityValue) }
         func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", $0 * 100) } ?? "—" }
         return VStack(alignment: .leading, spacing: 8) {
-            panelHeader("CAPITALE BOT · CONTRO SPY", color: terminalGreen)
+            panelHeader("Capitale bot · contro SPY")
             portfolioRow(
-                "IMPEGNATO",
+                "Impegnato",
                 Formatters.amount(engine.botExposure) + (capital.map { " / " + Formatters.amount($0) } ?? "") + " USD",
                 color: .white
             )
             if let summary {
-                portfolioRow("BOT (\(summary.days) sedute)", pct(summary.botReturn),
-                             color: summary.botReturn >= 0 ? terminalGreen : .red)
-                portfolioRow("SPY COMPRA E TIENI", pct(summary.benchmarkReturn), color: DashboardPalette.cyan)
-                portfolioRow("PERDITA MASSIMA DAL PICCO", pct(summary.maxDrawdown), color: .orange)
+                portfolioRow("Bot (\(summary.days) sedute)", pct(summary.botReturn),
+                             color: summary.botReturn >= 0 ? Theme.accent : Theme.red)
+                portfolioRow("SPY compra e tieni", pct(summary.benchmarkReturn), color: Theme.textSecondary)
+                portfolioRow("Perdita massima dal picco", pct(summary.maxDrawdown), color: Theme.amber)
                 ComparisonChart(bot: series.bot, benchmark: series.benchmark,
-                                botColor: terminalGreen, benchmarkColor: DashboardPalette.cyan)
+                                botColor: Theme.accent, benchmarkColor: Theme.textSecondary)
                     .frame(height: 150)
-                Text("Verde: bot (guadagno del conto sul capitale del bot). Azzurro: SPY. 100 = primo giorno registrato. Il bot investe solo in parte e sta fermo molti giorni: deve perdere meno di SPY nei cali, non batterlo nei rialzi.")
+                Text("Verde: bot (guadagno del conto sul capitale del bot). Grigio: SPY. 100 = primo giorno registrato. Il bot investe solo in parte e sta fermo molti giorni: deve perdere meno di SPY nei cali, non batterlo nei rialzi.")
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
@@ -490,20 +490,20 @@ struct TerminalDashboardView: View {
             }
         }()
         return VStack(alignment: .leading, spacing: 8) {
-            panelHeader("PAGELLA AGENTI · KIMI CONTRO REGOLE", color: DashboardPalette.cyan)
-            stackedRow("REGOLE DA SOLE (tutti i segnali)", group(s.rules))
-            stackedRow("SCELTI DA KIMI", group(s.chosen))
-            stackedRow("SCARTATI DA KIMI", group(s.skipped))
-            stackedRow("BOCCIATI DAL REVIEWER", group(s.reviewerRejected))
-            portfolioRow("VALORE DI KIMI", s.kimiEdge.map { String(format: "%+.2f punti", $0 * 100) } ?? "—",
-                         color: (s.kimiEdge ?? 0) >= 0 ? terminalGreen : .red)
+            panelHeader("Pagella agenti · Kimi contro regole")
+            stackedRow("Regole da sole (tutti i segnali)", group(s.rules))
+            stackedRow("Scelti da Kimi", group(s.chosen))
+            stackedRow("Scartati da Kimi", group(s.skipped))
+            stackedRow("Bocciati dal Reviewer", group(s.reviewerRejected))
+            portfolioRow("Valore di Kimi", s.kimiEdge.map { String(format: "%+.2f punti", $0 * 100) } ?? "—",
+                         color: (s.kimiEdge ?? 0) >= 0 ? Theme.accent : Theme.red)
             if let older = s.olderEdge, let recent = s.recentEdge {
-                portfolioRow("TENDENZA (prima → ora)", String(format: "%+.2f → %+.2f punti", older * 100, recent * 100),
-                             color: recent >= older ? terminalGreen : .orange)
+                portfolioRow("Tendenza (prima → ora)", String(format: "%+.2f → %+.2f punti", older * 100, recent * 100),
+                             color: recent >= older ? Theme.accent : Theme.amber)
             }
-            portfolioRow("IN CORSO", "\(s.pending)", color: .gray)
+            portfolioRow("In corso", "\(s.pending)", color: Theme.textTertiary)
             Text(verdict.0)
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
+                .font(.caption.weight(.semibold))
                 .foregroundStyle(verdict.1)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Come leggerla: VALORE DI KIMI è quanto rendono in media le sue scelte rispetto a tutti i segnali delle regole. Sopra zero aiuta, sotto zero danneggia. Il Reviewer lavora bene se i bocciati rendono meno degli scelti. TENDENZA confronta la metà più vecchia degli esiti con quella recente: se sale, gli agenti stanno migliorando.")
@@ -514,12 +514,12 @@ struct TerminalDashboardView: View {
             Divider().overlay(Color.gray.opacity(0.3))
             let filled = max(stats.placed - stats.unfilled - stats.partial, 0)
             portfolioRow(
-                "ORDINI ESEGUITI",
+                "Ordini eseguiti",
                 stats.placed == 0 ? "—" : "\(filled)/\(stats.placed) · parziali \(stats.partial) · mai \(stats.unfilled)",
                 color: .white
             )
         }
-        .panelStyle(DashboardPalette.cyan)
+        .panelStyle(Theme.accent)
     }
 
     private func updateBanner(_ update: UpdateChecker.Release) -> some View {
@@ -527,21 +527,21 @@ struct TerminalDashboardView: View {
             selectedSection = .system
         } label: {
             HStack {
-                Text("AGGIORNAMENTO \(update.version) DISPONIBILE")
-                    .font(.system(.caption, design: .monospaced, weight: .heavy))
+                Text("Aggiornamento \(update.version) disponibile")
+                    .font(.subheadline.weight(.semibold))
                 Spacer()
-                Text("SISTEMA →").font(.system(.caption2, design: .monospaced, weight: .bold))
+                Text("Sistema →").font(.caption.weight(.semibold))
             }
             .foregroundStyle(Theme.background)
             .padding(12)
-            .background(Theme.cyan, in: Theme.shape(Theme.smallRadius))
+            .background(Theme.accent, in: Theme.shape(Theme.smallRadius))
         }
         .buttonStyle(.plain)
     }
 
     private var liveBanner: some View {
-        Text("CONTO LIVE · SOLDI VERI")
-            .font(.system(.headline, design: .monospaced, weight: .black))
+        Text("Conto live · soldi veri")
+            .font(.headline.weight(.bold))
             .frame(maxWidth: .infinity)
             .padding(10)
             .background(Color.red)
@@ -667,7 +667,7 @@ struct TerminalDashboardView: View {
                 .font(.caption)
                 .foregroundStyle(.gray)
             TextField("SPY,QQQ", text: $symbols)
-                .font(.system(.body, design: .monospaced))
+                .font(.body)
                 .textInputAutocapitalization(.characters)
                 .autocorrectionDisabled()
                 .padding(10)
@@ -711,7 +711,7 @@ struct TerminalDashboardView: View {
                     "KIMI",
                     "\(engine.kimiCallsToday) chiamate",
                     spent.map { s in "\(String(format: "%.2f", s)) USD" + (limit.map { " / \(String(format: "%.2f", $0))" } ?? "") } ?? "spesa n/d",
-                    engine.creditLimitHit ? .red : DashboardPalette.cyan
+                    engine.creditLimitHit ? Theme.red : Theme.accent
                 )
                 statTile("ORDINI", "\(ordersToday) inviati", "\(engine.openOrders.count) aperti sul broker", terminalGreen)
                 statTile(
@@ -845,7 +845,7 @@ struct TerminalDashboardView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .lineLimit(3)
                 }
-                .font(.caption)
+                .font(.system(.caption, design: .monospaced))
             }
         }
     }
@@ -857,90 +857,80 @@ struct TerminalDashboardView: View {
         Group {
             if let url = engine.sessionReportURL {
                 VStack(alignment: .leading, spacing: 10) {
-                    panelHeader("REPORT SESSIONE · TXT", color: terminalGreen)
+                    panelHeader("Report di sessione · txt")
                     Text(url.lastPathComponent)
                         .font(.caption)
-                        .foregroundStyle(.gray)
+                        .foregroundStyle(Theme.textSecondary)
                     HStack(spacing: 12) {
                         ShareLink(item: url) {
-                            Text("ESPORTA / INVIA")
-                                .font(.system(.body, design: .monospaced, weight: .bold))
-                                .frame(maxWidth: .infinity)
-                                .padding()
-                                .background(terminalGreen.opacity(0.18), in: Theme.shape(Theme.smallRadius))
-                                .foregroundStyle(terminalGreen)
-                                .overlay(Theme.shape(Theme.smallRadius).strokeBorder(terminalGreen, lineWidth: 1))
+                            shareChip("Esporta / invia")
                         }
-                        Button("ELIMINA") {
+                        Button("Elimina") {
                             engine.deleteSessionReport()
                         }
-                        .buttonStyle(TerminalButtonStyle(color: .red))
+                        .buttonStyle(TerminalButtonStyle(color: Theme.textSecondary))
                     }
                 }
-                .panelStyle(terminalGreen)
+                .panelStyle(Theme.accent)
             }
         }
     }
 
     private var portfolioPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                panelHeader("PORTAFOGLIO · USD", color: terminalGreen)
-                Spacer()
-                Button("AGGIORNA") {
-                    Task { await engine.refreshPortfolio() }
-                }
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(terminalGreen)
-                .disabled(engine.isKillInProgress)
+            SectionHeader(title: "Portafoglio", actionLabel: "Aggiorna") {
+                Task { await engine.refreshPortfolio() }
             }
+            .disabled(engine.isKillInProgress)
             if let account = engine.account {
-                portfolioRow("EQUITY", Formatters.amount(account.equityValue), color: .white)
-                portfolioRow("CASH", Formatters.amount(account.cashValue), color: .white)
-                portfolioRow("BUYING POWER", Formatters.amount(account.buyingPowerValue), color: .white)
+                portfolioRow("Equity", Formatters.amount(account.equityValue), color: Theme.textPrimary)
+                portfolioRow("Cash", Formatters.amount(account.cashValue), color: Theme.textPrimary)
+                portfolioRow("Buying power", Formatters.amount(account.buyingPowerValue), color: Theme.textPrimary)
                 if let dayPnL = account.dayPnL {
                     portfolioRow(
-                        "P&L OGGI",
+                        "P&L oggi",
                         Formatters.signedAmount(dayPnL),
-                        color: dayPnL >= 0 ? terminalGreen : .red
+                        color: dayPnL >= 0 ? Theme.accent : Theme.red
                     )
                 }
             } else {
-                Text("Nessun dato: tocca AGGIORNA per leggere il conto.")
+                Text("Nessun dato: tocca Aggiorna per leggere il conto.")
                     .font(.caption)
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(Theme.textTertiary)
             }
         }
-        .panelStyle(terminalGreen)
+        .panelStyle(Theme.accent)
         .task {
             await engine.refreshPortfolio()
         }
     }
 
     /// Riga su due livelli per valori lunghi (etichetta sopra, numeri sotto).
-    private func stackedRow(_ label: String, _ value: String, color: Color = .white) -> some View {
+    private func stackedRow(_ label: String, _ value: String, color: Color = Theme.textPrimary) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.gray)
+                .foregroundStyle(Theme.textSecondary)
             Text(value)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(color)
+                .font(.headline.weight(.semibold))
                 .monospacedDigit()
+                .foregroundStyle(color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func portfolioRow(_ label: String, _ value: String, color: Color) -> some View {
-        HStack {
+        HStack(alignment: .firstTextBaseline, spacing: Layout.paddingS) {
             Text(label)
                 .font(.caption)
-                .foregroundStyle(.gray)
+                .foregroundStyle(Theme.textSecondary)
             Spacer()
             Text(value)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
+                .font(.body.weight(.semibold))
+                .monospacedDigit()
                 .foregroundStyle(color)
         }
+        .padding(.vertical, 4)
     }
 
     /// Crediti Kimi: saldo reale, chiamate del giorno e spesa misurata dal
@@ -948,72 +938,67 @@ struct TerminalDashboardView: View {
     /// SISTEMA viene raggiunto, Kimi si ferma fino a mezzanotte UTC.
     private var kimiPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("KIMI ACCOUNT · CREDITI USD", color: DashboardPalette.cyan)
+            panelHeader("Kimi · crediti USD")
             if let balance = engine.kimiBalance {
-                portfolioRow("DISPONIBILE", Formatters.money(balance.availableBalance), color: .white)
-                portfolioRow("VOUCHER", Formatters.money(balance.voucherBalance), color: .white)
+                portfolioRow("Disponibile", Formatters.money(balance.availableBalance), color: Theme.textPrimary)
+                portfolioRow("Voucher", Formatters.money(balance.voucherBalance), color: Theme.textPrimary)
                 portfolioRow(
-                    "CASH",
+                    "Cash",
                     Formatters.money(balance.cashBalance),
-                    color: (balance.cashBalance ?? 0) < 0 ? .red : .white
+                    color: (balance.cashBalance ?? 0) < 0 ? Theme.red : Theme.textPrimary
                 )
             } else {
-                Text("Saldo non ancora letto: tocca AGGIORNA nel pannello portafoglio.")
+                Text("Saldo non ancora letto: tocca Aggiorna nel pannello portafoglio.")
                     .font(.caption)
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(Theme.textTertiary)
             }
-            portfolioRow("CHIAMATE OGGI", "\(engine.kimiCallsToday)", color: .white)
+            portfolioRow("Chiamate oggi", "\(engine.kimiCallsToday)", color: Theme.textPrimary)
             portfolioRow(
-                "SPESI OGGI (DA SALDO)",
+                "Spesi oggi (da saldo)",
                 engine.creditsSpentToday.map { Formatters.money($0) } ?? "—",
-                color: .white
+                color: Theme.textPrimary
             )
             if engine.strategyConfig.creditLimitEnabled {
                 portfolioRow(
-                    "LIMITE GIORNALIERO",
+                    "Limite giornaliero",
                     Formatters.money(engine.strategyConfig.dailyCreditLimitUSD),
-                    color: engine.creditLimitHit ? .red : .gray
+                    color: engine.creditLimitHit ? Theme.red : Theme.textTertiary
                 )
             }
             if engine.creditLimitHit {
-                Text("LIMITE RAGGIUNTO: Kimi fermo fino a mezzanotte UTC. Le posizioni restano protette dal broker.")
-                    .font(.system(.caption2, design: .monospaced, weight: .bold))
-                    .foregroundStyle(.red)
+                Text("Limite raggiunto: Kimi fermo fino a mezzanotte UTC. Le posizioni restano protette dal broker.")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .panelStyle(DashboardPalette.cyan)
+        .panelStyle(Theme.accent)
     }
 
     /// Kimi Analyst: lettura qualitativa del mercato con cadenza configurabile
     /// (solo con dati freschi), oppure su richiesta con ANALIZZA ORA.
     private var analysisPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                panelHeader("KIMI ANALYST · LETTURA MERCATO", color: DashboardPalette.cyan)
-                Spacer()
-                Button("ANALIZZA ORA") {
-                    Task { await engine.requestAnalysisNow() }
-                }
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(DashboardPalette.cyan)
-                .disabled(engine.isKillInProgress)
+            SectionHeader(title: "Kimi Analyst · lettura mercato", actionLabel: "Analizza ora") {
+                Task { await engine.requestAnalysisNow() }
             }
+            .disabled(engine.isKillInProgress)
             if let entry = engine.latestAnalysis {
                 HStack(spacing: 6) {
                     analysisChip(
-                        entry.analysis.regime.replacingOccurrences(of: "_", with: " ").uppercased(),
-                        color: DashboardPalette.cyan
+                        entry.analysis.regime.replacingOccurrences(of: "_", with: " ").capitalized,
+                        color: Theme.accent
                     )
-                    analysisChip("VOL \(entry.analysis.volatility.uppercased())", color: .orange)
+                    analysisChip("Vol \(entry.analysis.volatility)", color: Theme.amber)
                     analysisChip(
-                        entry.analysis.bias.uppercased(),
-                        color: entry.analysis.bias == "ribassista" ? .red : terminalGreen
+                        entry.analysis.bias.capitalized,
+                        color: entry.analysis.bias == "ribassista" ? Theme.red : Theme.accent
                     )
                     Spacer()
                     Text("\(Int(entry.analysis.confidence * 100))%")
-                        .font(.system(.caption2, design: .monospaced, weight: .bold))
-                        .foregroundStyle(DashboardPalette.cyan)
+                        .font(.caption.weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(Theme.accent)
                 }
                 Text(entry.analysis.comment)
                     .font(.caption)
@@ -1030,48 +1015,37 @@ struct TerminalDashboardView: View {
                     .explanation()
             }
         }
-        .panelStyle(DashboardPalette.cyan)
+        .panelStyle(Theme.accent)
     }
 
     private func analysisChip(_ title: String, color: Color) -> some View {
-        Text(title)
-            .font(.system(.caption2, design: .monospaced, weight: .bold))
-            .foregroundStyle(color)
-            .padding(.horizontal, 6)
-            .padding(.vertical, 3)
-            .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color.opacity(0.6), lineWidth: 1))
+        StatusChip(text: title, color: color)
     }
 
     /// Dataset di training: ogni decisione di Kimi (anche gli HOLD) viene
     /// salvata in SwiftData con prezzo, ATR, livelli ed esito misurato.
     private var datasetPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            panelHeader("TRAINING KIMI · DATASET", color: DashboardPalette.cyan)
-            portfolioRow("CAMPIONI RACCOLTI", "\(engine.datasetStats.total)", color: .white)
-            portfolioRow("CON ESITO VALUTATO", "\(engine.datasetStats.completed)", color: .white)
-            Button("ESPORTA DATASET JSONL") {
+            panelHeader("Training Kimi · dataset")
+            portfolioRow("Campioni raccolti", "\(engine.datasetStats.total)", color: Theme.textPrimary)
+            portfolioRow("Con esito valutato", "\(engine.datasetStats.completed)", color: Theme.textPrimary)
+            Button("Esporta dataset JSONL") {
                 engine.exportTrainingDataset()
             }
-            .buttonStyle(TerminalButtonStyle(color: DashboardPalette.cyan))
+            .buttonStyle(TerminalButtonStyle(color: Theme.accent))
             .disabled(engine.datasetStats.total == 0)
             if let url = engine.datasetExportURL {
                 Text(url.lastPathComponent)
                     .font(.caption)
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(Theme.textSecondary)
                 HStack(spacing: 12) {
                     ShareLink(item: url) {
-                        Text("INVIA")
-                            .font(.system(.body, design: .monospaced, weight: .bold))
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(DashboardPalette.cyan.opacity(0.18), in: Theme.shape(Theme.smallRadius))
-                            .foregroundStyle(DashboardPalette.cyan)
-                            .overlay(Theme.shape(Theme.smallRadius).strokeBorder(DashboardPalette.cyan, lineWidth: 1))
+                        shareChip("Invia")
                     }
-                    Button("ELIMINA") {
+                    Button("Elimina") {
                         engine.deleteDatasetExport()
                     }
-                    .buttonStyle(TerminalButtonStyle(color: .red))
+                    .buttonStyle(TerminalButtonStyle(color: Theme.textSecondary))
                 }
             }
             Text("Ogni decisione (anche gli HOLD) è registrata con prezzo, ATR, livelli ed esito: win/loss per i trade eseguiti, movimento del prezzo a 30 min per gli HOLD.")
@@ -1080,32 +1054,26 @@ struct TerminalDashboardView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .explanation()
         }
-        .panelStyle(DashboardPalette.cyan)
+        .panelStyle(Theme.accent)
     }
 
     /// Esportazione dei trade chiusi: vale per entrambe le modalità.
     private var exportPanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            panelHeader("ESPORTA TRADE", color: terminalGreen)
-            Button("ESPORTA TRADE CHIUSI CSV") {
+            panelHeader("Esporta trade")
+            Button("Esporta trade chiusi CSV") {
                 engine.exportTradesCSV()
             }
-            .buttonStyle(TerminalButtonStyle(color: terminalGreen))
+            .buttonStyle(TerminalButtonStyle(color: Theme.accent))
             if let url = engine.tradesCSVURL {
                 HStack(spacing: 12) {
                     ShareLink(item: url) {
-                        Text("INVIA CSV")
-                            .font(.system(.body, design: .monospaced, weight: .bold))
-                            .frame(maxWidth: .infinity)
-                            .padding()
-                            .background(terminalGreen.opacity(0.18), in: Theme.shape(Theme.smallRadius))
-                            .foregroundStyle(terminalGreen)
-                            .overlay(Theme.shape(Theme.smallRadius).strokeBorder(terminalGreen, lineWidth: 1))
+                        shareChip("Invia CSV")
                     }
-                    Button("ELIMINA") {
+                    Button("Elimina") {
                         engine.deleteTradesCSV()
                     }
-                    .buttonStyle(TerminalButtonStyle(color: .red))
+                    .buttonStyle(TerminalButtonStyle(color: Theme.textSecondary))
                 }
             }
             Text("Un file da aprire in Numbers o Excel: data, ETF, quantità, ingresso, uscita, P&L, stop e motivazione di Kimi.")
@@ -1114,19 +1082,13 @@ struct TerminalDashboardView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .explanation()
         }
-        .panelStyle(terminalGreen)
+        .panelStyle(Theme.accent)
     }
 
-    private func panelHeader(_ title: String, color: Color) -> some View {
-        HStack(spacing: 7) {
-            Capsule()
-                .fill(color)
-                .frame(width: 3, height: 12)
-            Text(title)
-                .font(.system(.caption, design: .monospaced, weight: .heavy))
-                .tracking(0.6)
-                .foregroundStyle(color)
-        }
+    private func panelHeader(_ title: String, color: Color = Theme.textPrimary) -> some View {
+        Text(title)
+            .font(.headline)
+            .foregroundStyle(color)
     }
 
     /// Etichetta "notizie 48h" su una posizione aperta: SOLO interfaccia, nessun
@@ -1139,12 +1101,7 @@ struct TerminalDashboardView: View {
         var body: some View {
             Group {
                 if let count, count > 0 {
-                    Text("NOTIZIE 48H · \(count)")
-                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                        .foregroundStyle(DashboardPalette.cyan)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(DashboardPalette.cyan.opacity(0.15), in: Capsule())
+                    StatusChip(text: "Notizie 48h · \(count)", color: Theme.accent)
                         .accessibilityIdentifier("news-badge-\(symbol)")
                 }
             }
@@ -1201,7 +1158,7 @@ struct TerminalDashboardView: View {
 
     private var decisionsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("KIMI BRAIN · ULTIME DECISIONI", color: DashboardPalette.cyan)
+            panelHeader("Kimi Brain · ultime decisioni")
             if engine.decisions.isEmpty {
                 Text("Nessuna decisione ancora: Kimi viene chiamato solo quando la Strategia trova un segnale.")
                     .font(.caption)
@@ -1214,15 +1171,16 @@ struct TerminalDashboardView: View {
                                 .font(.caption)
                                 .foregroundStyle(.gray)
                             Text(entry.decision.symbol)
-                                .font(.system(.caption, design: .monospaced, weight: .bold))
-                                .foregroundStyle(.white)
-                            Text(entry.decision.action.rawValue.uppercased())
-                                .font(.system(.caption, design: .monospaced, weight: .bold))
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Theme.textPrimary)
+                            Text(entry.decision.action.rawValue)
+                                .font(.caption.weight(.semibold))
                                 .foregroundStyle(actionColor(entry.decision.action))
                             Spacer()
                             Text("\(Int(entry.decision.confidence * 100))%")
                                 .font(.caption)
-                                .foregroundStyle(DashboardPalette.cyan)
+                                .monospacedDigit()
+                                .foregroundStyle(Theme.textSecondary)
                         }
                         Text(entry.decision.rationale)
                             .font(.caption)
@@ -1236,34 +1194,33 @@ struct TerminalDashboardView: View {
                             .foregroundStyle(.gray)
                         }
                     }
-                    .padding(8)
-                    .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
-                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(DashboardPalette.cyan.opacity(0.25), lineWidth: 1))
+                    .padding(.vertical, 6)
+                    Divider().overlay(Theme.hairline)
                 }
             }
         }
-        .panelStyle(DashboardPalette.cyan)
+        .panelStyle(Theme.accent)
     }
 
     private var calibrationPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("CALIBRAZIONE KIMI · AFFIDABILITÀ", color: DashboardPalette.cyan)
+            panelHeader("Calibrazione Kimi · affidabilità")
             if let calibration = engine.calibration {
-                portfolioRow("TRADE MISURATI", "\(calibration.samples)", color: .white)
+                portfolioRow("Trade misurati", "\(calibration.samples)", color: Theme.textPrimary)
                 portfolioRow(
-                    "BRIER SCORE",
+                    "Brier score",
                     String(
                         format: "%.3f",
                         locale: Locale(identifier: "en_US_POSIX"),
                         calibration.brierScore
                     ),
-                    color: calibration.brierScore < 0.25 ? terminalGreen : .orange
+                    color: calibration.brierScore < 0.25 ? Theme.accent : Theme.amber
                 )
                 ForEach(calibration.buckets) { bucket in
                     portfolioRow(
                         bucket.label,
-                        "WIN \(Int(bucket.winRate * 100))% · n=\(bucket.trades)",
-                        color: .white
+                        "win \(Int(bucket.winRate * 100))% · n=\(bucket.trades)",
+                        color: Theme.textPrimary
                     )
                 }
             } else {
@@ -1272,36 +1229,36 @@ struct TerminalDashboardView: View {
                     .foregroundStyle(.gray)
             }
         }
-        .panelStyle(DashboardPalette.cyan)
+        .panelStyle(Theme.accent)
     }
 
     private var metricsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("METRICHE PERFORMANCE", color: terminalGreen)
+            panelHeader("Performance")
             if let stats = engine.performanceStats {
-                portfolioRow("TRADE CHIUSI", "\(stats.completedTrades)", color: .white)
+                portfolioRow("Trade chiusi", "\(stats.completedTrades)", color: Theme.textPrimary)
                 portfolioRow(
-                    "WIN RATE",
+                    "Win rate",
                     Formatters.percent(stats.winRate),
-                    color: (stats.winRate ?? 0) >= 0.5 ? terminalGreen : .orange
+                    color: (stats.winRate ?? 0) >= 0.5 ? Theme.accent : Theme.amber
                 )
                 let factorText = stats.profitFactor.map {
                     String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), $0)
                 } ?? "∞"
                 portfolioRow(
-                    "PROFIT FACTOR",
+                    "Profit factor",
                     factorText,
-                    color: (stats.profitFactor ?? .infinity) >= 1 ? terminalGreen : .red
+                    color: (stats.profitFactor ?? .infinity) >= 1 ? Theme.accent : Theme.red
                 )
                 portfolioRow(
-                    "EXPECTANCY / TRADE",
+                    "Expectancy / trade",
                     Formatters.signedAmount(stats.expectancy ?? 0),
-                    color: (stats.expectancy ?? 0) >= 0 ? terminalGreen : .red
+                    color: (stats.expectancy ?? 0) >= 0 ? Theme.accent : Theme.red
                 )
                 portfolioRow(
-                    "MAX DRAWDOWN",
+                    "Max drawdown",
                     Formatters.amount(stats.maxDrawdown),
-                    color: .red
+                    color: Theme.red
                 )
             } else {
                 Text("Nessun trade chiuso: le metriche appariranno dopo i primi esiti registrati.")
@@ -1314,7 +1271,7 @@ struct TerminalDashboardView: View {
 
     private var ordersPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("ORDINI RECENTI", color: terminalGreen)
+            panelHeader("Ordini recenti")
             if engine.recentOrders.isEmpty {
                 Text("Nessun ordine inviato in questa sessione di conto.")
                     .font(.caption)
@@ -1324,8 +1281,8 @@ struct TerminalDashboardView: View {
                     HStack(spacing: 6) {
                         Text(Formatters.time(order.submittedDate))
                             .foregroundStyle(.gray)
-                        Text(order.side.uppercased())
-                            .foregroundStyle(order.side == "buy" ? terminalGreen : .red)
+                        Text(order.side)
+                            .foregroundStyle(order.side == "buy" ? Theme.accent : Theme.red)
                         Text("\(order.symbol) x\(Formatters.trimmed(order.filledQuantity ?? order.quantity ?? "0"))")
                             .foregroundStyle(.white)
                         Spacer()
@@ -1333,7 +1290,7 @@ struct TerminalDashboardView: View {
                             Text("@ \(Formatters.money(price))")
                                 .foregroundStyle(.gray)
                         }
-                        Text(order.status.uppercased())
+                        Text(order.status)
                             .foregroundStyle(statusColor(order.status))
                     }
                     .font(.caption)
@@ -1345,7 +1302,7 @@ struct TerminalDashboardView: View {
 
     private var logPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("AGENT SWARM FEED", color: terminalGreen)
+            panelHeader("Registro eventi")
             ScrollViewReader { proxy in
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 6) {
@@ -1360,7 +1317,7 @@ struct TerminalDashboardView: View {
                                     .foregroundStyle(.white)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                             }
-                            .font(.caption)
+                            .font(.system(.caption, design: .monospaced))
                             .id(entry.id)
                         }
                     }
@@ -1406,26 +1363,26 @@ struct TerminalDashboardView: View {
 
     private func agentColor(_ agent: AgentKind) -> Color {
         switch agent {
-        case .scout: return terminalGreen
-        case .brain: return DashboardPalette.cyan
-        case .risk: return .orange
-        case .system: return .gray
+        case .scout: return Theme.accent
+        case .brain: return Theme.textPrimary
+        case .risk: return Theme.amber
+        case .system: return Theme.textTertiary
         }
     }
 
     private func actionColor(_ action: TradeAction) -> Color {
         switch action {
-        case .buy: return terminalGreen
-        case .sell: return .red
-        case .hold: return .gray
+        case .buy: return Theme.accent
+        case .sell: return Theme.red
+        case .hold: return Theme.textTertiary
         }
     }
 
     private func statusColor(_ status: String) -> Color {
         switch status {
-        case "filled": return terminalGreen
-        case "canceled", "expired", "rejected": return .gray
-        default: return .orange
+        case "filled": return Theme.accent
+        case "canceled", "expired", "rejected": return Theme.textTertiary
+        default: return Theme.amber
         }
     }
 
@@ -1434,7 +1391,7 @@ struct TerminalDashboardView: View {
             showKillConfirmation = true
         } label: {
             Text("HARD KILL SWITCH")
-                .font(.system(.headline, design: .monospaced, weight: .black))
+                .font(.headline.weight(.black))
                 .frame(maxWidth: .infinity)
                 .padding()
                 .background(engine.isKillInProgress ? Color.gray : Color.red)
@@ -1535,16 +1492,10 @@ private struct BrokerControlView: View {
         .panelStyle(DashboardPalette.green)
     }
 
-    private func panelHeader(_ title: String, color: Color) -> some View {
-        HStack(spacing: 7) {
-            Capsule()
-                .fill(color)
-                .frame(width: 3, height: 12)
-            Text(title)
-                .font(.system(.caption, design: .monospaced, weight: .heavy))
-                .tracking(0.6)
-                .foregroundStyle(color)
-        }
+    private func panelHeader(_ title: String, color: Color = Theme.textPrimary) -> some View {
+        Text(title)
+            .font(.headline)
+            .foregroundStyle(color)
     }
 }
 
@@ -1874,16 +1825,10 @@ private struct SystemSettingsView: View {
         }
     }
 
-    private func panelHeader(_ title: String, color: Color) -> some View {
-        HStack(spacing: 7) {
-            Capsule()
-                .fill(color)
-                .frame(width: 3, height: 12)
-            Text(title)
-                .font(.system(.caption, design: .monospaced, weight: .heavy))
-                .tracking(0.6)
-                .foregroundStyle(color)
-        }
+    private func panelHeader(_ title: String, color: Color = Theme.textPrimary) -> some View {
+        Text(title)
+            .font(.headline)
+            .foregroundStyle(color)
     }
 
     private func settingRow(_ label: String, _ value: String) -> some View {
@@ -1992,19 +1937,34 @@ private struct TerminalButtonStyle: ButtonStyle {
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .font(.system(.body, design: .monospaced, weight: .bold))
+            .font(.subheadline.weight(.semibold))
             .lineLimit(1)
-            .minimumScaleFactor(0.7)
-            .frame(maxWidth: .infinity)
-            .padding()
-            .background(color.opacity(configuration.isPressed ? 0.35 : 0.18), in: Theme.shape(Theme.smallRadius))
+            .minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.horizontal, Layout.paddingS)
+            .background(Theme.surfaceHigh, in: Theme.shape(Theme.smallRadius))
             .foregroundStyle(color)
-            .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color, lineWidth: 1))
+            .overlay(Theme.shape(Theme.smallRadius).strokeBorder(Theme.hairline, lineWidth: 1))
+            .opacity(configuration.isPressed ? 0.7 : 1)
     }
 }
 
 private extension View {
     func panelStyle(_ color: Color) -> some View {
-        themedCard(color)
+        self
+            .padding(Layout.paddingM)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface, in: Theme.shape())
     }
+}
+
+/// Etichetta per ShareLink: stesso look del pulsante secondario.
+private func shareChip(_ title: String) -> some View {
+    Text(title)
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(Theme.accent)
+        .frame(maxWidth: .infinity, minHeight: 44)
+        .padding(.horizontal, Layout.paddingM)
+        .background(Theme.surfaceHigh, in: Theme.shape())
+        .overlay(Theme.shape().strokeBorder(Theme.hairline, lineWidth: 1))
 }
