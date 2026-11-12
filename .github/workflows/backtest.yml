@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi"
         default: "tutti"
 
 jobs:
@@ -64,4 +64,12 @@ jobs:
       - name: Segnali di oggi (controllo indipendente)
         if: env.Q == 'oggi'
         run: python tools/oggi.py | tee -a backtest.md
+      - name: STUDI (solo analisi, non cambiano l'app) — trailing stop, risk-parity NOTTE, filtro evento 48h, filtro VIX
+        if: env.Q == 'studi'
+        working-directory: tools
+        run: |
+          python backtest_trailing_stop.py | tee -a ../backtest.md
+          python backtest_overnight_riskparity.py | tee -a ../backtest.md
+          python backtest_event_filter.py | tee -a ../backtest.md
+          python backtest_vix_filter.py | tee -a ../backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
