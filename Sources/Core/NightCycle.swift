@@ -521,8 +521,7 @@ struct NightCycleRunner: Sendable {
             let picks = NightStrategy.allocate(budget: budget, prices: prices)
                 .filter { pick in
                     guard book.positions[pick.symbol] == nil else { return false }
-                    let family = NightStrategy.families.first(where: { $0.symbols.contains(pick.symbol) })
-                    else { return true }
+                    guard let family = NightStrategy.families.first(where: { $0.symbols.contains(pick.symbol) }) else { return true }
                     return family.symbols.allSatisfy { !blocked.contains($0.uppercased()) }
                 }
             guard !picks.isEmpty else {
