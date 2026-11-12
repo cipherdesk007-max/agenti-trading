@@ -99,6 +99,8 @@ struct TerminalDashboardView: View {
     @State private var showLogoutConfirmation = false
     @State private var showUnlockConfirmation = false
     @State private var showLiveStartConfirmation = false
+    /// Catena agenti e registro nel CRUSCOTTO: si aprono a richiesta.
+    @State private var showAgentsLog = false
     @State private var pulse = false
 
     private let terminalGreen = DashboardPalette.green
@@ -118,9 +120,15 @@ struct TerminalDashboardView: View {
                                 guardPanel
                                 heroPanel
                                 todayPanel
-                                pipelinePanel
                                 positionsPanel
-                                recentLogPanel
+                                DisclosureGroup(isExpanded: $showAgentsLog) {
+                                    VStack(spacing: Layout.paddingM) {
+                                        pipelinePanel
+                                        recentLogPanel
+                                    }
+                                } label: {
+                                    SectionHeader(title: "Catena agenti ed eventi")
+                                }
                                 reportPanel
                                 killButton
                             case .markets:
@@ -250,14 +258,14 @@ struct TerminalDashboardView: View {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(engine.account.map { Formatters.amount($0.equityValue) + " $" } ?? "— $")
-                        .font(.system(size: 30, weight: .bold, design: .rounded))
+                        .font(.system(size: 30, weight: .bold))
                         .monospacedDigit()
                         .foregroundStyle(Theme.textPrimary)
                         .contentTransition(.numericText())
                     if let account = engine.account, let dayPnL = account.dayPnL {
                         let base = account.lastEquityValue ?? account.equityValue
                         Text(Formatters.signedAmount(dayPnL) + " $ oggi" + (base > 0 ? String(format: " · %+.2f%%", dayPnL / base * 100) : ""))
-                            .font(.system(.footnote, design: .rounded, weight: .semibold))
+                            .font(.footnote.weight(.semibold))
                             .monospacedDigit()
                             .foregroundStyle(Theme.signed(dayPnL))
                     }
@@ -276,11 +284,12 @@ struct TerminalDashboardView: View {
                 .accessibilityLabel(hidden ? "Mostra saldo" : "Nascondi saldo")
                 Spacer()
                 VStack(alignment: .trailing, spacing: 5) {
-                    Text(engine.paperTrading ? "PAPER" : "LIVE")
-                        .themedChip(engine.paperTrading ? Theme.green : Theme.red, filled: !engine.paperTrading)
+                    StatusChip(text: engine.paperTrading ? "Paper" : "Live",
+                               color: engine.paperTrading ? Theme.accent : Theme.red,
+                               filled: !engine.paperTrading)
                     if let clock = engine.marketClock {
-                        Text(clock.isOpen ? "MERCATO APERTO" : "MERCATO CHIUSO")
-                            .themedChip(clock.isOpen ? Theme.green : Theme.amber)
+                        StatusChip(text: clock.isOpen ? "Mercato aperto" : "Mercato chiuso",
+                                   color: clock.isOpen ? Theme.accent : Theme.amber)
                     }
                 }
             }
@@ -300,7 +309,7 @@ struct TerminalDashboardView: View {
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(engine.isRunning ? Theme.textPrimary : Theme.textSecondary)
                 if let pause = engine.pauseReason {
-                    Text("PAUSA · \(pause)").themedChip(Theme.amber)
+                    StatusChip(text: "Pausa · \(pause)", color: Theme.amber)
                 }
                 Spacer()
                 if engine.isRunning, let beat = engine.lastLoopBeat {
@@ -557,18 +566,15 @@ struct TerminalDashboardView: View {
 
     /// Stato, cosa sta facendo adesso, START/STOP: tutto in un colpo d'occhio.
     private var heroPanel: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        AppCard {
+            VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
                 Text(engineStateText)
-                    .font(.system(.title2, design: .monospaced, weight: .black))
+                    .font(.title2.weight(.bold))
                     .foregroundStyle(engineStateColor)
                 Spacer()
-                Text(displayedMode.label)
-                    .font(.system(.caption2, design: .monospaced, weight: .black))
-                    .foregroundStyle(displayedMode == .intraday ? .orange : terminalGreen)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(displayedMode == .intraday ? .orange : terminalGreen, lineWidth: 1))
+                StatusChip(text: displayedMode.shortLabel.capitalized,
+                           color: displayedMode == .intraday ? Theme.amber : Theme.accent)
             }
             Text(engine.isRunning ? engine.currentActivity : idleHint)
                 .font(.callout)
@@ -604,12 +610,12 @@ struct TerminalDashboardView: View {
                         Button("CONTROLLA ORA") {
                             engine.requestDailyCheck()
                         }
-                        .buttonStyle(TerminalButtonStyle(color: DashboardPalette.cyan))
+                        .secondaryButton()
                     }
                     Button("STOP") {
                         Task { await engine.stop() }
                     }
-                    .buttonStyle(TerminalButtonStyle(color: .orange))
+                    .secondaryButton()
                     .disabled(engine.isKillInProgress)
                 } else {
                     Button(engine.paperTrading ? "START" : "START LIVE") {
@@ -619,7 +625,7 @@ struct TerminalDashboardView: View {
                             showLiveStartConfirmation = true
                         }
                     }
-                    .buttonStyle(TerminalButtonStyle(color: engine.paperTrading ? terminalGreen : .red))
+                    .primaryButton()
                     .disabled(engine.isKillInProgress)
                     .alert("AVVIO CON SOLDI VERI", isPresented: $showLiveStartConfirmation) {
                         Button("ANNULLA", role: .cancel) {}
@@ -633,13 +639,14 @@ struct TerminalDashboardView: View {
             }
             if engine.isRunning, let startedAt = engine.sessionStartedAt {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
-                    Text("AVVIATA \(Formatters.time(startedAt)) · ATTIVA DA \(elapsed(from: startedAt, to: context.date))")
-                        .font(.system(.caption2, design: .monospaced, weight: .bold))
+                    Text("Avviata \(Formatters.time(startedAt)) · attiva da \(elapsed(from: startedAt, to: context.date))")
+                        .font(.caption2.weight(.bold))
+                        .monospacedDigit()
                         .foregroundStyle(engineStateColor)
                 }
             }
+            }
         }
-        .panelStyle(engineStateColor)
     }
 
     private var idleHint: String {
@@ -695,8 +702,9 @@ struct TerminalDashboardView: View {
         let unrealized = engine.positions.reduce(0) { $0 + $1.unrealizedPLValue }
         let spent = engine.creditsSpentToday
         let limit = engine.strategyConfig.creditLimitEnabled ? engine.strategyConfig.dailyCreditLimitUSD : nil
-        return VStack(alignment: .leading, spacing: 10) {
-            panelHeader("OGGI", color: terminalGreen)
+        return AppCard {
+            VStack(alignment: .leading, spacing: 10) {
+            SectionHeader(title: "Oggi")
             LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 10) {
                 statTile(
                     "KIMI",
@@ -712,42 +720,44 @@ struct TerminalDashboardView: View {
                     unrealized >= 0 ? terminalGreen : .red
                 )
                 statTile(
-                    "P&L GIORNATA",
+                    "P&L giornata",
                     engine.account?.dayPnL.map(Formatters.signedAmount) ?? "—",
                     "equity " + Formatters.amount(engine.account?.equityValue),
-                    (engine.account?.dayPnL ?? 0) >= 0 ? terminalGreen : .red
+                    (engine.account?.dayPnL ?? 0) >= 0 ? Theme.accent : Theme.red
                 )
             }
+            }
         }
-        .panelStyle(terminalGreen)
     }
 
     private func statTile(_ title: String, _ value: String, _ detail: String, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title)
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(.gray)
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
             Text(value)
-                .font(.system(.headline, design: .monospaced, weight: .black))
+                .font(.headline.weight(.bold))
+                .monospacedDigit()
                 .foregroundStyle(color)
                 .lineLimit(1)
                 .minimumScaleFactor(0.6)
             Text(detail)
                 .font(.caption)
-                .foregroundStyle(.white.opacity(0.7))
+                .foregroundStyle(Theme.textSecondary)
                 .lineLimit(2)
                 .minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(10)
-        .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
-        .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color.opacity(0.3), lineWidth: 1))
+        .padding(Layout.paddingS)
+        .background(Theme.surfaceHigh, in: Theme.shape(Theme.smallRadius))
     }
 
     /// La catena degli agenti: chi sta lavorando, cosa ha deciso, cosa passa avanti.
     private var pipelinePanel: some View {
         VStack(alignment: .leading, spacing: 10) {
-            panelHeader("CATENA AGENTI · ULTIMO CICLO", color: DashboardPalette.cyan)
+            Text("Catena · ultimo ciclo")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
             ForEach(engine.pipeline) { stage in
                 HStack(alignment: .top, spacing: 10) {
                     Image(systemName: stageIcon(stage.state))
@@ -756,12 +766,10 @@ struct TerminalDashboardView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         HStack(spacing: 6) {
                             Text(stage.id.title)
-                                .font(.system(.caption, design: .monospaced, weight: .black))
+                                .font(.caption.weight(.bold))
                                 .foregroundStyle(stageColor(stage.state))
                             if stage.id.usesKimi {
-                                Text("KIMI")
-                                    .font(.system(.caption2, design: .monospaced, weight: .bold))
-                                    .foregroundStyle(DashboardPalette.cyan)
+                                StatusChip(text: "Kimi", color: Theme.textSecondary)
                             }
                             Spacer()
                             if let at = stage.updatedAt {
@@ -782,12 +790,12 @@ struct TerminalDashboardView: View {
             }
             if displayedMode == .daily, !engine.dailyCandidates.isEmpty {
                 Text("Segnali di oggi: " + engine.dailyCandidates.map { "\($0.symbol) RSI2 \(String(format: "%.1f", $0.snapshot.rsi2))" }.joined(separator: " · "))
-                    .font(.system(.caption2, design: .monospaced, weight: .bold))
-                    .foregroundStyle(terminalGreen)
+                    .font(.caption2.weight(.bold))
+                    .monospacedDigit()
+                    .foregroundStyle(Theme.accent)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .panelStyle(DashboardPalette.cyan)
     }
 
     private func stageIcon(_ state: PipelineState) -> String {
@@ -804,8 +812,8 @@ struct TerminalDashboardView: View {
     private func stageColor(_ state: PipelineState) -> Color {
         switch state {
         case .idle: return .gray
-        case .working: return DashboardPalette.cyan
-        case .done: return terminalGreen
+        case .working: return Theme.accent
+        case .done: return Theme.accent
         case .skipped: return .gray
         case .blocked: return .orange
         case .failed: return .red
@@ -816,7 +824,9 @@ struct TerminalDashboardView: View {
     /// è in DETTAGLI.
     private var recentLogPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            panelHeader("ULTIMI EVENTI", color: terminalGreen)
+            Text("Ultimi eventi")
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
             if engine.logs.isEmpty {
                 Text("Nessun evento: premi START.")
                     .font(.caption)
@@ -837,7 +847,6 @@ struct TerminalDashboardView: View {
                 .font(.caption)
             }
         }
-        .panelStyle(terminalGreen)
     }
 
     /// Pannello report di sessione: appare solo quando esiste un file .txt
@@ -1145,8 +1154,9 @@ struct TerminalDashboardView: View {
     }
 
     private var positionsPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            panelHeader("POSIZIONI APERTE", color: terminalGreen)
+        AppCard {
+            VStack(alignment: .leading, spacing: 8) {
+            SectionHeader(title: "Posizioni aperte")
             if engine.positions.isEmpty {
                 Text("Nessuna posizione aperta.")
                     .font(.caption)
@@ -1156,8 +1166,8 @@ struct TerminalDashboardView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text(position.symbol)
-                                .font(.system(.caption, design: .monospaced, weight: .bold))
-                                .foregroundStyle(.white)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Theme.textPrimary)
                             Text((position.side ?? "long").uppercased())
                                 .font(.caption)
                                 .foregroundStyle(position.side == "short" ? .red : terminalGreen)
@@ -1175,17 +1185,17 @@ struct TerminalDashboardView: View {
                             .foregroundStyle(.gray)
                             Spacer()
                             Text(Formatters.signedAmount(position.unrealizedPLValue))
-                                .font(.system(.caption, design: .monospaced, weight: .bold))
-                                .foregroundStyle(position.unrealizedPLValue >= 0 ? terminalGreen : .red)
+                                .font(.caption.weight(.bold))
+                                .monospacedDigit()
+                                .foregroundStyle(position.unrealizedPLValue >= 0 ? Theme.accent : Theme.red)
                         }
                     }
-                    .padding(8)
-                    .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
-                    .overlay(Theme.shape(Theme.smallRadius).strokeBorder(terminalGreen.opacity(0.2), lineWidth: 1))
+                    .padding(Layout.paddingS)
+                    .background(Theme.surfaceHigh, in: Theme.shape(Theme.smallRadius))
                 }
             }
+            }
         }
-        .panelStyle(terminalGreen)
     }
 
     private var decisionsPanel: some View {
