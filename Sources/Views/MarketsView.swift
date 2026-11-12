@@ -313,6 +313,24 @@ struct MarketDetailView: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
+        } else if let last = candles.last {
+            // Sugli altri intervalli (1H, 15M, 5M, live) il prezzo resta sempre
+            // visibile: ultima candela dell'intervallo e variazione sulla precedente.
+            let previous = candles.count > 1 ? candles[candles.count - 2].close : last.close
+            let change = previous > 0 ? (last.close / previous - 1) * 100 : 0
+            HStack(alignment: .firstTextBaseline) {
+                Text("ULTIMO PREZZO · \(interval.rawValue)")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(Theme.textSecondary)
+                Spacer()
+                Text(String(format: "%+.2f%%", change))
+                    .font(.system(.footnote, design: .monospaced, weight: .semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(change >= 0 ? Theme.green : Theme.red)
+                Text(String(format: "%.2f", last.close))
+                    .font(.system(.title3, design: .monospaced, weight: .heavy))
+                    .monospacedDigit()
+            }
         }
 
         if candles.isEmpty {

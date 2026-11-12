@@ -5,6 +5,11 @@ Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Sem
 La versione installata si legge in **SISTEMA → VERSIONE** (con il numero di build della CI).
 Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
+## [Non rilasciato]
+
+### Corretto
+- Grafico: su 1H, 15M e 5M il prezzo non sparisce più; in alto restano ultimo prezzo dell'intervallo e variazione sulla candela precedente.
+
 ## [1.4.0 · build 137] - 2026-11-12
 
 ### Corretto
