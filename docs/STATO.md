@@ -42,6 +42,15 @@ Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia 
 | Overnight (`overnight`) | SPY/QQQ/IWM/GLD a peso uguale, costi 0,003% per lato: +8,0% annuo, perdita massima −22%, Sharpe 0,81; ultimi 2 anni +13,9%; gemelli positivi | Costruita la modalità NOTTE |
 | Secondo modello locale (Qwen3.5 su iPhone con MLX) | Possibile tecnicamente; pochi segnali da giudicare, rischio di memoria sotto LiveContainer | Rimandato: si riconsidera se la pagella mostra che il Brain sbaglia |
 
+## Correzioni di sicurezza (12/11/2026, revisione esterna su 1.5.0 build 157 — tutte con test in `Tests/`)
+
+- **NOTTE: conferma della vendita dallo stato dell'ordine OPG.** Il registro salva il `client_order_id` (`sellQueuedOrderId`): `filled` toglie la voce, `canceled`/`rejected`/`expired` resta come residuo. Prima la conferma veniva dal calo del detenuto, inaffidabile con la giornaliera sullo stesso simbolo.
+- **NOTTE: MOC parziali e blocco famiglia.** Le MOC rifiutate vengono ritentate solo per le famiglie mancanti (col gemello); con un residuo su un simbolo della famiglia non si compra l'altro (niente SPY se resta SPYM).
+- **VELOCE: flat-by-close** non annulla più gli stop protettivi (stop GTC d'emergenza) e non tocca i simboli del registro NOTTE.
+- **NOTTE: finestre.** Weekend: OPG in coda a mercato chiuso fuori da 9:28–19:00 ET (anche sabato/domenica, per lunedì). Festivo infrasettimanale: nessuna asta. A mercato chiuso il wait copre tutta 9:28–19:00 ET (niente OPG dopo chiusure anticipate alle 13:00).
+- **Studi `quale=studi`:** fix colonne MultiIndex di yfinance (`daily_study_lib.flat_by_field`/`load_series`) e `pipefail` nel workflow, così uno script in errore fa fallire il passo invece di pubblicare tabelle vuote. Da rilanciare a mano (403): le tabelle si riempiono al prossimo run.
+- **Design dagli screenshot (build 157):** tile MERCATI uniformi e sentence case, STOP arancione vs CONTROLLA ORA primario, BROKER con stati in italiano e tipo/prezzo, "Traduci", SISTEMA con una sola riga sotto il selettore.
+
 ## Correzioni di sicurezza (11/11/2026, tutte con test in `Tests/`)
 
 - **B1 · la notte vende solo le sue azioni.** Il registro notte ora salva anche la quantità (`NightPosition`, retrocompatibile con il vecchio formato). Prima l'OPG vendeva TUTTE le azioni del simbolo: con SPY/QQQ/IWM/GLD in entrambi i panieri svuotava le posizioni della giornaliera e il suo stop GTC residuo poteva aprire uno short. La chiusura "leftover" del mattino fa lo stesso: vende solo la quantità della notte.
@@ -70,7 +79,7 @@ Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia 
 
 ## Come verificare in modo indipendente
 
-- Test: 153 unitari (CI a ogni push, "Unsigned iOS IPA": +12 HTTP AlpacaServiceTests con mock, +3 parametrici conti 500–1M) + 5 di interfaccia in `UITests/` (solo a mano, opzione `uitest`). Tabella file/rischi/test in [CONTROLLO-FINALE.md](CONTROLLO-FINALE.md).
+- Test: 161 unitari (CI a ogni push, "Unsigned iOS IPA": +12 HTTP AlpacaServiceTests con mock, +3 parametrici conti 500–1M, +8 revisione esterna 1.5.0: OPG per stato ordine, MOC parziali, blocco famiglia, finestre weekend/festivo/mezza giornata) + 5 di interfaccia in `UITests/` (solo a mano, opzione `uitest`). Tabella file/rischi/test in [CONTROLLO-FINALE.md](CONTROLLO-FINALE.md).
 - Strategie: Actions → "Backtest filtro" → `quale` = `app`, `piccolo`, `overnight`, `segnali`, `studi`, `oggi`.
 - Ordini: confronta il report di sessione dell'app con lo storico ordini di Alpaca.
 - Indicatori: SMA200 e RSI(2) di Wilder su TradingView o Yahoo devono coincidere con la tabella di `oggi`.
