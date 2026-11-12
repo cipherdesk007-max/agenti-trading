@@ -1485,12 +1485,6 @@ private struct BrokerControlView: View {
         }
         .panelStyle(Theme.accent)
     }
-
-    private func panelHeader(_ title: String, color: Color = Theme.textPrimary) -> some View {
-        Text(title)
-            .font(.headline)
-            .foregroundStyle(color)
-    }
 }
 
 /// Impostazioni vere: persistite in UserDefaults e lette dal motore a ogni
@@ -1536,29 +1530,25 @@ private struct SystemSettingsView: View {
         let missing = snapshots.keys.sorted().filter { !ok.contains($0) }
         let text: String
         if snapshots.isEmpty || equity == nil {
-            text = "ETF COMPRABILI: si calcola al primo controllo (START o CONTROLLA ORA)."
+            text = "ETF comprabili: si calcola al primo controllo (START o CONTROLLA ORA)."
         } else {
-            text = "ETF COMPRABILI: \(ok.count)/\(snapshots.count)"
+            text = "ETF comprabili: \(ok.count)/\(snapshots.count)"
                 + (missing.isEmpty ? "" : " · esclusi \(missing.joined(separator: ", "))")
         }
-        let color: Color = (snapshots.isEmpty || equity == nil) ? .gray : (ok.count >= 8 ? DashboardPalette.green : (ok.count >= 4 ? .orange : .red))
+        let color: Color = (snapshots.isEmpty || equity == nil) ? Theme.textTertiary : (ok.count >= 8 ? Theme.accent : (ok.count >= 4 ? Theme.amber : Theme.red))
         return Text(text)
-            .font(.system(.caption2, design: .monospaced, weight: .bold))
+            .font(.caption.weight(.semibold))
             .foregroundStyle(color)
             .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier("buyableETF")
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                panelHeader("IMPOSTAZIONI", color: DashboardPalette.green)
-                Spacer()
-                Button("CARICA MODELLI") {
-                    Task { await engine.loadAvailableKimiModels() }
-                }
-                .font(.system(.caption2, design: .monospaced, weight: .bold))
-                .foregroundStyle(DashboardPalette.cyan)
+        VStack(alignment: .leading, spacing: 14) {
+            AppCard {
+                VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Strategia", actionLabel: "Carica modelli") {
+                Task { await engine.loadAvailableKimiModels() }
             }
 
             Picker("Modalità", selection: $draft.tradingMode) {
@@ -1569,17 +1559,24 @@ private struct SystemSettingsView: View {
             .pickerStyle(.segmented)
             Text(Self.modeDescription(draft.tradingMode))
                 .font(.caption)
-                .foregroundStyle(draft.tradingMode == .intraday ? .orange : DashboardPalette.green)
+                .foregroundStyle(draft.tradingMode == .intraday ? Theme.amber : Theme.accent)
             Text("La modalità cambia al prossimo START.")
                 .font(.caption)
-                .foregroundStyle(.gray)
+                .foregroundStyle(Theme.textTertiary)
+            if draft.tradingMode != .intraday {
+                Text("In giornaliera Kimi viene chiamato solo se un ETF è in trend (sopra SMA200) con RSI2 sotto 10. Nessun segnale = zero crediti.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
+            }
 
             Group {
                 // Il numero che conta, scritto in chiaro: quanto usa il bot adesso.
                 let equityNow = engine.account?.equityValue
                 let used = equityNow.map { min(draft.sanitized.capitalCap, $0) }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("CAPITALE USATO DAL BOT")
+                    Text("Capitale usato dal bot")
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(Theme.textSecondary)
                     Text(used.map { Formatters.amount($0) + " $" } ?? "saldo in arrivo…")
@@ -1596,7 +1593,8 @@ private struct SystemSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
                 Toggle("Usa solo una parte del conto", isOn: $draft.capitalLimitEnabled)
-                    .tint(DashboardPalette.green)
+                    .font(.callout.weight(.semibold))
+                    .tint(Theme.accent)
                 if draft.capitalLimitEnabled {
                     Stepper(
                         "Capitale bot: \(String(format: "%.0f", draft.botCapitalUSD)) USD",
@@ -1607,8 +1605,8 @@ private struct SystemSettingsView: View {
                 Text(draft.capitalLimitEnabled
                      ? "Il bot non impegna mai più di questa cifra (USD), anche se sul conto c'è di più. Utile solo se sul conto tieni altri soldi."
                      : "Il bot usa tutto il saldo del conto" + (engine.account.map { " (\(Formatters.amount($0.equityValue)) USD)" } ?? "") + ": cresce e cala da solo con guadagni e perdite. Rischio e tetto del 25% si ricalcolano a ogni controllo.")
-                    .font(.system(.caption2, design: .monospaced, weight: .regular))
-                    .foregroundStyle(.gray)
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                     .explanation()
                 if draft.tradingMode != .night { buyableRow }
@@ -1626,71 +1624,67 @@ private struct SystemSettingsView: View {
                     step: 0.5
                 )
             }
-            .font(.system(.caption, design: .monospaced, weight: .bold))
-            .foregroundStyle(.white)
+                }
+            }
 
             // Impostazioni della sola modalità veloce: in giornaliera non servono.
             if draft.tradingMode == .intraday {
-                Group {
-                    Stepper("Ciclo decisioni: \(draft.decisionIntervalSeconds)s", value: $draft.decisionIntervalSeconds, in: 30...120, step: 5)
-                    Stepper(
-                        "Validità analisi Analyst: \(String(format: "%.1f", draft.analysisIntervalMinutes)) min",
-                        value: $draft.analysisIntervalMinutes,
-                        in: 2...15,
-                        step: 1
-                    )
-                }
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(.white)
+                AppCard {
+                    VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Modalità veloce")
+            Stepper("Ciclo decisioni: \(draft.decisionIntervalSeconds)s", value: $draft.decisionIntervalSeconds, in: 30...120, step: 5)
+            Stepper(
+                "Validità analisi Analyst: \(String(format: "%.1f", draft.analysisIntervalMinutes)) min",
+                value: $draft.analysisIntervalMinutes,
+                in: 2...15,
+                step: 1
+            )
+            Text("Kimi decide alla chiusura della candela")
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
+            Picker("Timeframe decisione", selection: $draft.decisionTimeframeMinutes) {
+                Text("1 min").tag(1)
+                Text("5 min").tag(5)
+                Text("15 min").tag(15)
+            }
+            .pickerStyle(.segmented)
 
-                Text("KIMI DECIDE ALLA CHIUSURA DELLA CANDELA")
-                    .font(.caption)
-                    .foregroundStyle(.gray)
-                Picker("Timeframe decisione", selection: $draft.decisionTimeframeMinutes) {
-                    Text("1 min").tag(1)
-                    Text("5 min").tag(5)
-                    Text("15 min").tag(15)
+            Toggle("Filtro gratuito pre-Kimi", isOn: $draft.kimiFilterEnabled)
+                .font(.callout.weight(.semibold))
+                .tint(Theme.accent)
+            Text("Kimi viene chiamato solo se scatta un trigger in codice (setup long). Nessun trigger = zero crediti spesi.")
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+                .explanation()
+                    }
                 }
-                .pickerStyle(.segmented)
-
-                Toggle("FILTRO GRATUITO PRE-KIMI", isOn: $draft.kimiFilterEnabled)
-                    .font(.system(.caption, design: .monospaced, weight: .bold))
-                    .tint(DashboardPalette.green)
-                Text("Kimi viene chiamato solo se scatta un trigger in codice (setup long). Nessun trigger = zero crediti spesi.")
-                    .font(.caption)
-                    .foregroundStyle(.gray)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .explanation()
-            } else {
-                Text("GIORNALIERA: Kimi viene chiamato solo se un ETF è in trend (sopra SMA200) con RSI2 sotto 10. Nessun segnale = zero crediti.")
-                    .font(.caption)
-                    .foregroundStyle(.gray)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .explanation()
             }
 
-            Toggle("LIMITE CREDITI GIORNALIERO", isOn: $draft.creditLimitEnabled)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .tint(DashboardPalette.green)
+            AppCard {
+                VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Kimi")
+
+            Toggle("Limite crediti giornaliero", isOn: $draft.creditLimitEnabled)
+                .font(.callout.weight(.semibold))
+                .tint(Theme.accent)
             Stepper(
                 "Limite spesa: \(String(format: "%.2f", draft.dailyCreditLimitUSD)) USD/giorno",
                 value: $draft.dailyCreditLimitUSD,
                 in: 0.10...50.0,
                 step: 0.10
             )
-            .font(.system(.caption, design: .monospaced, weight: .bold))
-            .foregroundStyle(.white)
             .disabled(!draft.creditLimitEnabled)
 
-            Text("MODELLO KIMI")
+            Text("Modello Kimi")
                 .font(.caption)
-                .foregroundStyle(.gray)
+                .foregroundStyle(Theme.textTertiary)
             TextField("kimi-k3.1-pro-highspeed", text: $draft.kimiModel)
                 .font(.caption)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .padding(10)
-                .background(Color(white: 0.08))
+                .background(Theme.surfaceHigh, in: Theme.shape(Theme.smallRadius))
             if !engine.availableKimiModels.isEmpty {
                 Picker("Modelli disponibili", selection: $draft.kimiModel) {
                     if !engine.availableKimiModels.contains(draft.kimiModel) {
@@ -1706,111 +1700,121 @@ private struct SystemSettingsView: View {
             if let error = engine.modelListError {
                 Text(error)
                     .font(.caption)
-                    .foregroundStyle(.red)
+                    .foregroundStyle(Theme.red)
             }
 
-            Toggle("RIPRENDI SESSIONE AL RIAVVIO", isOn: $draft.autoResumeOnLaunch)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .tint(DashboardPalette.green)
+            Toggle("Riprendi sessione al riavvio", isOn: $draft.autoResumeOnLaunch)
+                .font(.callout.weight(.semibold))
+                .tint(Theme.accent)
 
-            Toggle("PROMEMORIA 15:30 NEW YORK (21:30 ITALIA)", isOn: $draft.dailyReminder)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .tint(DashboardPalette.green)
+            Toggle("Promemoria 15:30 New York (21:30 Italia)", isOn: $draft.dailyReminder)
+                .font(.callout.weight(.semibold))
+                .tint(Theme.accent)
             Text("Lun–ven, mezz'ora prima della chiusura USA: ti ricorda di aprire l'app per la modalità giornaliera. iOS non permette di leggere le chiavi protette da Face ID in background, quindi l'app non controlla da sola: ti avvisa.")
                 .font(.caption)
-                .foregroundStyle(.gray)
+                .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .explanation()
+                }
+            }
 
-            Toggle("NASCONDI SALDO", isOn: $draft.hideAmounts)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .tint(DashboardPalette.green)
+            AppCard {
+                VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "App")
+
+            Toggle("Nascondi saldo", isOn: $draft.hideAmounts)
+                .font(.callout.weight(.semibold))
+                .tint(Theme.accent)
             Text("Saldo, P&L e capitale diventano ••••• (anche con l'occhio in alto). I prezzi degli ETF restano visibili.")
                 .font(.caption)
-                .foregroundStyle(.gray)
+                .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .explanation()
 
-            Toggle("MODALITÀ PRO", isOn: $draft.proMode)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .tint(DashboardPalette.green)
+            Toggle("Modalità Pro", isOn: $draft.proMode)
+                .font(.callout.weight(.semibold))
+                .tint(Theme.accent)
             Text("Per chi conosce già l'app: toglie spiegazioni, legende e testi d'aiuto. Restano numeri, stati, avvisi e pulsanti.")
                 .font(.caption)
-                .foregroundStyle(.gray)
+                .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
 
-            Toggle("IMPORTI NEL WIDGET", isOn: $draft.widgetShowsAmounts)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .tint(DashboardPalette.green)
+            Toggle("Importi nel widget", isOn: $draft.widgetShowsAmounts)
+                .font(.callout.weight(.semibold))
+                .tint(Theme.accent)
             Text("Spento: il widget mostra solo lo stato, senza equity e P&L (il widget si vede anche a telefono bloccato).")
                 .font(.caption)
-                .foregroundStyle(.gray)
+                .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .explanation()
+                }
+            }
 
-            Button("APPLICA IMPOSTAZIONI") {
+            Button("Applica impostazioni") {
                 engine.updateStrategyConfig(draft)
             }
-            .buttonStyle(TerminalButtonStyle(color: DashboardPalette.green))
+            .primaryButton()
 
-            VStack(alignment: .leading, spacing: 6) {
+            AppCard {
+                VStack(alignment: .leading, spacing: 6) {
+            SectionHeader(title: "Stato")
                 let config = engine.strategyConfig
-                settingRow("VERSIONE", AppVersion.text)
-                settingRow("AGGIORNAMENTI", engine.updateStatus)
+                settingRow("Versione", AppVersion.text)
+                settingRow("Aggiornamenti", engine.updateStatus)
                 HStack(spacing: 10) {
                     if let update = engine.availableUpdate, let url = UpdateChecker.liveContainerInstallURL(for: update) {
-                        Button("AGGIORNA A \(update.version)") { openURL(url) }
-                            .buttonStyle(TerminalButtonStyle(color: DashboardPalette.cyan))
+                        Button("Aggiorna a \(update.version)") { openURL(url) }
+                            .buttonStyle(TerminalButtonStyle(color: Theme.accent))
                     } else {
-                        Button("CONTROLLA AGGIORNAMENTI") { Task { await engine.checkForUpdates() } }
-                            .buttonStyle(TerminalButtonStyle(color: DashboardPalette.cyan))
+                        Button("Controlla aggiornamenti") { Task { await engine.checkForUpdates() } }
+                            .buttonStyle(TerminalButtonStyle(color: Theme.accent))
                     }
                 }
                 if let source = UpdateChecker.liveContainerSourceURL {
-                    Button("AGGIUNGI SORGENTE A LIVECONTAINER") { openURL(source) }
-                        .font(.system(.caption2, design: .monospaced, weight: .bold))
-                        .foregroundStyle(DashboardPalette.cyan)
+                    Button("Aggiungi sorgente a LiveContainer") { openURL(source) }
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.accent)
                 }
-                Text("AGGIORNA apre LiveContainer, che installa la nuova IPA sopra questa: dati, chiavi e impostazioni restano. Con la sorgente aggiunta, LiveContainer mostra da solo le versioni nuove.")
+                Text("Aggiorna apre LiveContainer, che installa la nuova IPA sopra questa: dati, chiavi e impostazioni restano. Con la sorgente aggiunta, LiveContainer mostra da solo le versioni nuove.")
                     .font(.caption)
-                    .foregroundStyle(.gray)
+                    .foregroundStyle(Theme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
                     .explanation()
-                settingRow("MODALITÀ", config.tradingMode.label)
-                settingRow("CAPITALE BOT", (config.capitalLimitEnabled
+                settingRow("Modalità", config.tradingMode.label)
+                settingRow("Capitale bot", (config.capitalLimitEnabled
                     ? "limitato a \(String(format: "%.0f", config.botCapitalUSD)) USD"
                     : "tutto il conto") + " · impegnati \(String(format: "%.0f", engine.botExposure)) USD")
-                settingRow("STATO APPLICATO", "rischio \(String(format: "%.2f", config.riskPerTradePercent))% · max \(config.maxOpenPositions) · stop giorno \(String(format: "%.1f", config.dailyStopPercent))%")
-                settingRow("MODELLO ATTIVO", config.kimiModel)
+                settingRow("Stato applicato", "rischio \(String(format: "%.2f", config.riskPerTradePercent))% · max \(config.maxOpenPositions) · stop giorno \(String(format: "%.1f", config.dailyStopPercent))%")
+                settingRow("Modello attivo", config.kimiModel)
                 if config.tradingMode == .night {
-                    settingRow("PANIERE", "S&P 500 · Nasdaq-100 · Russell 2000 · oro, peso uguale, originale o gemello secondo il saldo")
-                    settingRow("ORDINI", "acquisto in asta di chiusura (MOC), vendita in asta di apertura (OPG)")
-                    settingRow("KIMI", "non usato: 0 crediti")
-                    settingRow("APERTURE", "mattina entro le 15:28 · pomeriggio 15:30–21:50 (ora italiana)")
+                    settingRow("Paniere", "S&P 500 · Nasdaq-100 · Russell 2000 · oro, peso uguale, originale o gemello secondo il saldo")
+                    settingRow("Ordini", "acquisto in asta di chiusura (MOC), vendita in asta di apertura (OPG)")
+                    settingRow("Kimi", "non usato: 0 crediti")
+                    settingRow("Aperture", "mattina entro le 15:28 · pomeriggio 15:30–21:50 (ora italiana)")
                 } else if config.tradingMode == .daily {
-                    settingRow("SEGNALI", "15 ETF · sopra SMA200 e RSI2 < 10 · Kimi solo se c'è un segnale")
-                    settingRow("ORDINI", "limite + stop \(String(format: "%.1f", DailyStrategy.stopATR)) ATR + target \(String(format: "%.0f", DailyStrategy.takeProfitATR)) ATR, GTC sul broker")
-                    settingRow("USCITE", "chiusura > SMA5 o \(DailyStrategy.maxHoldingDays) giorni, solo a mercato aperto")
-                    settingRow("DATI", "barre giornaliere SIP (consolidate), ripiego IEX")
-                    settingRow("CONTROLLI", "subito, ogni 15 min ad app aperta e a ogni riapertura")
+                    settingRow("Segnali", "15 ETF · sopra SMA200 e RSI2 < 10 · Kimi solo se c'è un segnale")
+                    settingRow("Ordini", "limite + stop \(String(format: "%.1f", DailyStrategy.stopATR)) ATR + target \(String(format: "%.0f", DailyStrategy.takeProfitATR)) ATR, GTC sul broker")
+                    settingRow("Uscite", "chiusura > SMA5 o \(DailyStrategy.maxHoldingDays) giorni, solo a mercato aperto")
+                    settingRow("Dati", "barre giornaliere SIP (consolidate), ripiego IEX")
+                    settingRow("Controlli", "subito, ogni 15 min ad app aperta e a ogni riapertura")
                 } else {
-                    settingRow("DECISIONI KIMI", "chiusura candela \(config.decisionTimeframeMinutes)m · filtro \(config.kimiFilterEnabled ? "ON" : "OFF")")
-                    settingRow("STREAM DATI", SystemLimits.marketStreamHost)
-                    settingRow("GUARD CHIUSURA", "no nuovi trade negli ultimi 15 min")
-                    settingRow("FLAT BY CLOSE", "chiude le posizioni della veloce a T-10 min")
-                    settingRow("FOREGROUND", "motore solo ad app aperta: in background nessun ordine")
+                    settingRow("Decisioni Kimi", "chiusura candela \(config.decisionTimeframeMinutes)m · filtro \(config.kimiFilterEnabled ? "on" : "off")")
+                    settingRow("Stream dati", SystemLimits.marketStreamHost)
+                    settingRow("Guard chiusura", "no nuovi trade negli ultimi 15 min")
+                    settingRow("Flat by close", "chiude le posizioni della veloce a T-10 min")
+                    settingRow("Foreground", "motore solo ad app aperta: in background nessun ordine")
                 }
-                settingRow("PAUSE AUTOMATICHE", "rete assente o batteria < 20%")
-            }
+                settingRow("Pause automatiche", "rete assente o batteria < 20%")
             Text(engine.strategyConfig.tradingMode.runsOnSchedule
                  ? "Nessuna app iOS resta attiva 24/7: per questo la giornaliera mette stop e target sul broker, attivi anche ad app chiusa. Basta aprirla una volta al giorno a mercato aperto."
                  : "Nessuna app iOS resta attiva 24/7: la veloce lavora solo ad app aperta con lo schermo acceso; in background nessun nuovo ordine, le posizioni restano protette dalle gambe stop/target sul broker.")
                 .font(.caption)
-                .foregroundStyle(.gray)
+                .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .explanation()
+                }
+            }
         }
-        .panelStyle(DashboardPalette.green)
         .onAppear {
             draft = engine.strategyConfig
         }
@@ -1819,22 +1823,17 @@ private struct SystemSettingsView: View {
         }
     }
 
-    private func panelHeader(_ title: String, color: Color = Theme.textPrimary) -> some View {
-        Text(title)
-            .font(.headline)
-            .foregroundStyle(color)
-    }
-
     private func settingRow(_ label: String, _ value: String) -> some View {
         HStack(alignment: .top) {
             Text(label)
-                .foregroundStyle(.gray)
+                .font(.caption)
+                .foregroundStyle(Theme.textTertiary)
             Spacer()
             Text(value)
-                .foregroundStyle(.white)
+                .font(.caption)
+                .foregroundStyle(Theme.textPrimary)
                 .multilineTextAlignment(.trailing)
         }
-        .font(.caption)
     }
 }
 
