@@ -92,7 +92,7 @@ final class FlatByCloseTests: XCTestCase {
 
     /// Chiusura fallita: lo stop d'emergenza viene rimesso subito, con il
     /// client_order_id qsv-emg-SIMBOLO-GIORNO e la quantità detenuta.
-    func testCloseFailsEmergencyStopPlaced() async {
+    func testCloseFailsEmergencyStopPlaced() async throws {
         let broker = FakeFlatBroker()
         await broker.setPositionQty(5)
         await broker.setFailClose(true)
