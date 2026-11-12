@@ -1,9 +1,13 @@
 # Proposte · non implementate
 
-Solo idee, da scegliere e poi da sviluppare. Vincoli: usano **solo le 3 API
-esistenti** (Alpaca Trading, Alpaca Market Data con notizie Benzinga, Kimi/Moonshot) e
-ogni modifica alla strategia deve passare per un backtest in `tools/` prima di entrare
-nell'app (vincolo di `docs/STATO.md`). Nessuna di queste è nel codice.
+Solo idee, da scegliere e poi da sviluppare. Vincoli: le prime 5 usano **solo le 3 API
+esistenti** (Alpaca Trading, Alpaca Market Data con notizie Benzinga, Kimi/Moonshot);
+dal 12/11/2026 si possono proporre anche **API pubbliche gratuite oltre le 3**, ma solo se
+(verificato prima) Alpaca non offre già il dato, la fonte è ufficiale con documentazione e
+limiti d'uso dichiarati (link sotto), l'uso è **mai obbligatorio** (se l'API non risponde
+l'app si comporta come oggi) e ogni modifica alla strategia passa per un backtest in
+`tools/` prima di entrare nell'app (vincolo di `docs/STATO.md`). Nessuna di queste è nel
+codice.
 
 ## 1 · Trailing stop GTC sulla GIORNALIERA (invece dello stop fisso a 2,5 ATR)
 
@@ -39,3 +43,109 @@ nell'app (vincolo di `docs/STATO.md`). Nessuna di queste è nel codice.
 - **Guadagno atteso**: visibilità su eventi che possono muovere una posizione durante la notte, dove non c'è stop (la NOTTE non può averne). Puó motivare una chiusura manuale.
 - **Rischio**: solo rumore — notifiche a vuoto. **Nessun rischio sugli ordini**: non tocca l'esecuzione, è display puro.
 - **Come provarla prima**: 1 mese in paper con log delle notifiche in DETTAGLI: contare quante avvisano un movimento reale della posizione entro 24h contro quante sono rumore. Entra solo se il rapporto è claramente utile.
+
+---
+
+## API pubbliche gratuite aggiuntive · 12/11/2026 (solo proposte, non implementate)
+
+Prima verifica fatta: Alpaca offre **già** calendario di borsa, corporate actions, aste
+e screener (proposte 6–9, stesse chiavi, nessun costo né nuova credenziale). Una sola
+fonte esterna passa i filtri (proposta 10, FRED). Scartate: Yahoo Finance (non ufficiale,
+ToS vietano lo scraping), calendario Nasdaq Trader (pagina HTML, non API documentata),
+SEC EDGAR (ufficiale e gratuita ma ridondante con le notizie Benzinga già usate; da
+riconsiderare solo per un filtro eventi 8-K, vedi proposta 4).
+
+### 6 · Alpaca Trading API `GET /v2/calendar` (endpoint non usato, stesse chiavi)
+
+- **Dato**: giorni di borsa 1970–2029 con orari di open/close esatti, **incluse le
+  chiusure anticipate** (es. 13:00 ET il giorno prima di Natale).
+- **A quale modalità serve**: NOTTE (la finestra MOC oggi usa un margine fisso di 10 min;
+  con il calendario si conosce la chiusura esatta del giorno, anche anticipata, e si
+  evitano OPG/MOC nei festivi); GIORNALIERA e VELOCE (promemoria e controlli solo nei
+  giorni di borsa; flat-by-close saprebbe la chiusura anticipata).
+- **Guadagno atteso**: niente ordini d'asta nei giorni sbagliati; promemoria precisi.
+- **Rischio**: nullo, endpoint di sola lettura. Limite dichiarato: Trading API 200
+  richieste/min per conto.
+- **Come provarla**: confrontare `calendar` con `clock` per 1 mese in paper; backtest:
+  variante di `tools/backtest_overnight.py` che usa le chiusure anticipate reali.
+- **Mai obbligatoria**: se non risponde si usa `clock` come oggi.
+- **Link**: https://docs.alpaca.markets/us/reference/legacycalendar · limiti:
+  https://alpaca.markets/support/usage-limit-api-calls
+
+### 7 · Alpaca Market Data, corporate actions per simbolo (endpoint non usato)
+
+- **Dato**: split, dividendi, merger annunciati per un simbolo in un periodo
+  (`data_quality=complete` esclude gli eventi ancora in corso).
+- **A quale modalità serve**: NOTTE e GIORNALIERA. I registri locali salvano le
+  **quantità**: dopo uno split (es. 2:1) la quantità registrata è stale e la vendita
+  OPG / lo stop possono partire a quantità sbagliata (il `min(recorded, held)` di B1/R7
+  copre, ma lascia residui orfani post-split).
+- **Guadagno atteso**: riconciliazione automatica delle quantità di registro dopo ogni
+  corporate action sugli ETF in posizione; niente orfani post-split.
+- **Rischio**: dato storico, non real-time; una CA annunciata ma non ancora effettiva va
+  ignorata (si confronta con `ex_date`).
+- **Come provarla**: unit test con fixture JSON; poi 1 mese in paper confrontando
+  quantità di registro vs broker a ogni CA sugli ETF del paniere.
+- **Mai obbligatoria**: se non risponde, comportamento odierno.
+- **Link**: https://docs.alpaca.markets/us/reference/corporateactions-1 · piano/limiti
+  Market Data Basic (IEX real-time, 200 req/min): https://docs.alpaca.markets/us/docs/about-market-data-api
+
+### 8 · Alpaca Market Data, aste storiche `GET /v2/stocks/auctions` (feed `sip`)
+
+- **Dato**: prezzi **reali delle aste di apertura (`o`) e di chiusura (`c`)** per giorno
+  e simbolo, con timestamp e size.
+- **A quale modalità serve**: NOTTE. Gli studi overnight usano close→open; con i prezzi
+  d'asta reali il backtest è fedele a ciò che MOC/OPG esegue davvero. In app: verifica
+  post-asta che l'esecuzione sia al prezzo d'asta (scostamento vs close).
+- **Guadagno atteso**: backtest overnight più realistico (costi d'asta già stimati a
+  0,003%/lato, qui si misura lo scostamento reale); controllo qualità delle esecuzioni.
+- **Rischio**: senza feed real-time i dati sono in ritardo di 15 min (va bene dopo la
+  chiusura); limite ~100 req/min (header `X-RateLimit-*`).
+- **Come provarla**: variante di `tools/backtest_overnight.py` con prezzi d'asta reali
+  (da scaricare una tantum da Alpaca in `tools/`); in paper, confronto esecuzione vs
+  `auctions` del giorno per un mese.
+- **Mai obbligatoria**: se non risponde, si usa l'ultimo prezzo come oggi.
+- **Link**: https://docs.alpaca.markets/us/reference/stockauctions-1 (e `stockauctionsingle-1`)
+
+### 9 · Alpaca Market Data, screener most-actives / movers (endpoint non usato)
+
+- **Dato**: top N simboli per volume o numero di trade della giornata (SIP), gainers e
+  losers (`/v1beta1/screener/stocks/most-actives`, `/movers`).
+- **A quale modalità serve**: VELOCE — scegliere i simboli più liquidi del giorno invece
+  di una lista fissa, per ridurre slippage su ingressi/uscite intraday.
+- **Guadagno atteso**: liquidità migliore dove si opera intraday.
+- **Rischio**: sul piano Basic gratuito il real-time per le azioni è **solo IEX**, quindi
+  lo screener SIP può essere limitato o in ritardo — va trattato come opzionale. La
+  veloce resta sconsigliata con soldi veri (perde nei backtest).
+- **Come provarla**: backtest intraday su top-20 per volume medio a 20 gg (proxy delle
+  barre, dato che lo screener storico non esiste) vs lista fissa; in paper, confronto
+  slippage 1 mese.
+- **Mai obbligatoria**: se non risponde, si usa la lista simboli impostata dall'utente.
+- **Link**: https://docs.alpaca.markets/us/reference/mostactives-1 ·
+  https://docs.alpaca.markets/us/reference/movers-1 · caveat piano Basic:
+  https://docs.alpaca.markets/us/docs/about-market-data-api
+
+### 10 · FRED (Federal Reserve Bank of St. Louis) — serie `VIXCLS` (e `GVZCLS` per l'oro)
+
+- **Dato**: VIX di chiusura CBOE giornaliero dal 1990 (serie `VIXCLS`); `GVZCLS` per la
+  volatilità dell'oro. Fonte ufficiale (Federal Reserve Bank of St. Louis), **gratuita**
+  con chiave API gratuita (registrazione su fredaccount), limiti dichiarati: **120
+  richieste/min per chiave**, Terms of Use pubblici.
+- **A quale modalità serve**: GIORNALIERA — filtro di regime in codice: blocca nuovi
+  ingressi se VIX sopra soglia (media 20 gg + k·σ oppure livello fisso), da passare anche
+  a Brain/Reviewer come contesto. (Alpaca non offre il VIX: è un indice CBOE, non uno
+  stock/ETF del paniere.)
+- **Guadagno atteso**: evita ingressi dentro drawdown violenti (2008, 2020, 2022…); la
+  perdita max della giornaliera (−9%) potrebbe scendere.
+- **Rischio**: salta anche i rimbalzi post-crash; aggiunge una quarta credenziale (gratis,
+  salvata come le altre nel Keychain); multi-testing se si provano tante soglie
+  (Deflated Sharpe).
+- **Come provarla**: backtest in `tools/` con `^VIX` da yfinance (stesso dato di VIXCLS)
+  — filtro VIX vs senza su 2006–oggi, CAGR/perdita max/Sharpe + 18 varianti di
+  robustezza; poi 1 mese in ombra (registro ombra) in paper prima di attivarlo.
+- **Mai obbligatoria**: se FRED non risponde (o la chiave manca), nessun filtro e
+  l'app si comporta esattamente come oggi.
+- **Link**: API https://fred.stlouisfed.org/docs/api/fred/ · limiti (429 oltre 120/min):
+  https://fred.stlouisfed.org/docs/api/fred/errors.html · ToU:
+  https://fred.stlouisfed.org/docs/api/terms_of_use.html · serie:
+  https://fred.stlouisfed.org/series/VIXCLS
