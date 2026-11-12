@@ -242,15 +242,22 @@ final class NightCycleTests: XCTestCase {
 
     func testSellWindowLegacyEntryWithoutQuantitySellsAllHeld() async {
         // Registro scritto dalla versione precedente (senza quantità):
-        // quantità ignota, si vende tutto il detenuto del simbolo.
+        // quantità ignota, si vende tutto il detenuto del simbolo, UNA sola volta.
         let broker = FakeNightBroker(isOpen: false, nextClose: nil)
         await broker.set(held: [BrokerPosition(symbol: "SPYM", quantity: 3, averageEntryPrice: 89, unrealizedPL: 0)])
         var book = NightBook()
         book.positions["SPYM"] = NightPosition(day: "2026-11-10", quantity: nil)
-        _ = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+        let result = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
             .run(NightCycleInput(book: book, today: "2026-11-11", now: et(8))) { _ in }
         let sent = await broker.submitted
         XCTAssertEqual(sent.first?.qty, 3)
+        XCTAssertNil(result.book.positions["SPYM"],
+                     "voce legacy esce subito dopo la coda: la vendita di tutto il detenuto va fatta una sola volta")
+        // Se l'OPG sparisce, un ciclo dopo non la reinvia (altrimenti venderebbe di
+        // nuovo tutto il detenuto, anche le azioni della giornaliera sullo stesso simbolo).
+        _ = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: result.book, today: "2026-11-11", now: et(21))) { _ in }
+        XCTAssertEqual(await broker.submitted.count, 1, "nessun re-invio per voce legacy")
     }
 
     func testLeftoverClosesOnlyNightSharesNotDailyOnes() async {
@@ -367,5 +374,25 @@ final class NightCycleTests: XCTestCase {
         let sent = await broker.submitted
         XCTAssertEqual(sent.filter { $0.side == "sell" }.count, 1,
                        "nessuna seconda vendita: le 4 rimaste sono della giornaliera")
+    }
+
+    func testRequeuedOPGWithSharedSymbolSellsOnlyNightShares() async {
+        // SPY: 2 azioni della notte + 4 della giornaliera. L'OPG in coda sparisce
+        // (annullata): al re-invio la quantità resta quella della notte, mai il
+        // detenuto totale (sennò si venderebbero anche le azioni della giornaliera).
+        let broker = FakeNightBroker(isOpen: false, nextClose: nil)
+        await broker.set(held: [BrokerPosition(symbol: "SPY", quantity: 6, averageEntryPrice: 700, unrealizedPL: 0)])
+        var book = NightBook()
+        book.positions["SPY"] = NightPosition(day: "2026-11-10", quantity: 2)
+        let first = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: book, today: "2026-11-11", now: et(20))) { _ in }
+        XCTAssertEqual(first.book.positions["SPY"]?.sellQueuedDay, "2026-11-11")
+        await broker.set(orders: [])  // l'OPG viene annullata: nessun ordine aperto
+        let second = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: first.book, today: "2026-11-11", now: et(21))) { _ in }
+        let sent = await broker.submitted
+        XCTAssertEqual(sent.count, 2, "l'OPG sparita viene rimessa in coda")
+        XCTAssertEqual(sent.last?.qty, 2, "solo le 2 azioni della notte, non le 6 detenute")
+        XCTAssertEqual(second.book.positions["SPY"]?.sellQueuedHeld, 6)
     }
 }

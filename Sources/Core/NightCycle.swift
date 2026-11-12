@@ -300,17 +300,26 @@ struct NightCycleRunner: Sendable {
                 let id = "qsn-s-\(symbol)-\(input.today)-\(Int(input.now.timeIntervalSince1970 / 3600))"
                 if await submit(symbol: symbol, qty: own, side: "sell", tif: "opg", id: id, emit: emit) {
                     result.sells.append(symbol)
-                    // La posizione RESTA nel registro, marcata "in coda": se l'OPG
-                    // non si esegue (rifiutata dopo l'accettazione o annullata
-                    // all'asta) le azioni restano sul conto e il ciclo le chiude
-                    // come residuo; viene tolta solo quando il detenuto scende di
-                    // almeno la quantità (controllo all'inizio del ciclo). La
-                    // quantità limita sempre la vendita alle sole azioni della
-                    // notte (fix B1).
-                    var p = book.positions[symbol] ?? NightPosition(day: input.today, quantity: Double(own))
-                    p.sellQueuedDay = input.today
-                    p.sellQueuedHeld = heldQty(symbol)
-                    book.positions[symbol] = p
+                    if var p = book.positions[symbol], let q = p.quantity, q > 0 {
+                        // La posizione RESTA nel registro, marcata "in coda": se l'OPG
+                        // non si esegue (rifiutata dopo l'accettazione o annullata
+                        // all'asta) le azioni restano sul conto e il ciclo le chiude
+                        // come residuo; viene tolta solo quando il detenuto scende di
+                        // almeno la quantità (controllo all'inizio del ciclo). La
+                        // quantità limita sempre la vendita alle sole azioni della
+                        // notte (fix B1).
+                        p.sellQueuedDay = input.today
+                        p.sellQueuedHeld = heldQty(symbol)
+                        book.positions[symbol] = p
+                    } else {
+                        // Registro vecchio senza quantità: la vendita copre tutto il
+                        // detenuto e va fatta UNA sola volta. La voce esce subito:
+                        // se la giornaliera ha lo stesso simbolo il detenuto non
+                        // torna mai a zero e la voce resterebbe viva per sempre,
+                        // ri-mettendo in coda ogni sera la vendita di TUTTO il
+                        // detenuto (anche le azioni della giornaliera).
+                        book.positions[symbol] = nil
+                    }
                 }
             }
             await emit(.init(stage: .executor, state: .done, detail: "vendite all'apertura in coda: \(result.sells.joined(separator: ", "))",
