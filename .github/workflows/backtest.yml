@@ -48,7 +48,9 @@ jobs:
         run: python tools/backtest_momentum.py | tee -a backtest.md
       - name: Overnight e rimbalzo di fine giornata
         if: env.Q == 'tutti' || env.Q == 'overnight' || env.Q == 'mensile'
-        run: python tools/backtest_overnight.py | tee -a backtest.md
+        run: |
+          python tools/backtest_overnight.py | tee -a backtest.md
+          python tools/backtest_overnight_fraction.py | tee -a backtest.md
       - name: Batteria di regole giornaliere
         if: env.Q == 'tutti' || env.Q == 'segnali'
         working-directory: tools
