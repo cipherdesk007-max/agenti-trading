@@ -1,0 +1,57 @@
+name: Docs PDF
+
+# Genera docs/GUIDA.pdf dalla guida in markdown. Parte da solo quando cambia
+# docs/GUIDA.md (o questo workflow), oppure a mano dal pannello Actions.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/GUIDA.md"
+      - ".github/workflows/docs.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-pdf
+  cancel-in-progress: true
+
+jobs:
+  guida-pdf:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Installa pandoc e weasyprint
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq pandoc weasyprint
+
+      - name: Genera GUIDA.pdf
+        # weasyprint (HTML -> PDF) invece di LaTeX: tollera caratteri accentati
+        # ed emoji senza impastarsi, e l'installazione è molto più leggera.
+        run: |
+          pandoc docs/GUIDA.md -o docs/GUIDA.pdf \
+            --pdf-engine=weasyprint --toc \
+            --metadata title="Guida all'uso · QuantSwarm Alpha Zero" \
+            --metadata lang=it
+          test -s docs/GUIDA.pdf
+          ls -la docs/GUIDA.pdf
+
+      - name: Carica artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: GUIDA-pdf
+          path: docs/GUIDA.pdf
+
+      - name: Committa GUIDA.pdf
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/GUIDA.pdf
+          if git diff --cached --quiet; then
+            echo "PDF invariato: niente commit"
+            exit 0
+          fi
+          git commit -m "docs: rigenera GUIDA.pdf dalla guida"
+          git push
