@@ -320,3 +320,46 @@ per "insufficient qty".
 - Run #165 e #166 cancellate dall'infrastruttura GitHub (runner macOS evicted, nessun
   log): stesso codice ri-eseguito fino alla run#168 verde. Non posso rilanciare run o
   dispatch (token read-only sulle mutazioni, 403).
+
+---
+
+# Sessione 12/11/2026 (quinta parte) · audit finale richiesto dall'utente ("controlla tutto")
+
+Richiesta: verificare che l'app sia "perfetta" e pubblicarla. **Non pubblico nulla**:
+release GitHub / `pubblica=true` / dispatch sono vietati per questo agente (token
+read-only sulle mutazioni, 403) e restano manuali (vedi `docs/RELEASE-NOTE.md`).
+Nessuna app è "perfetta" e nessun guadagno è promesso: "i risultati passati non
+garantiscono quelli futuri" (presente in GUIDA.md). Quello che segue è ciò che è stato
+verificato e ciò che no.
+
+## Verificato ora (in sandbox + CI)
+
+- Albero pulito; ultimo codice `6438649` → **run#168 success** (166 test unitari, 0
+  fallimenti; test build e build app Release OK). Ultimo commit `dfc732e` è solo docs.
+- `Sources/`: nessun `try!`/`fatalError`/`preconditionFailure`, zero `URL(string:)!`
+  rimasti, nessun TODO/FIXME/HACK (grep verificato).
+- Nessun pattern di segreto in `Sources/`, `Tests/`, `UITests/`, `.github/` (solo
+  fixture "PK-TEST"/"SK-TEST" nei test).
+- Pubblicazione: input `pubblica` di `ios-build.yml` con `default: false`, passi di
+  release abilitati solo su `workflow_dispatch && inputs.pubblica` — mai su push.
+- Nessuna esposizione pubblica: grep per tunnel/broad listener (ngrok, 0.0.0.0, …)
+  pulito; solo localhost/127.0.0.1.
+- `MARKETING_VERSION 1.5.0` in app (project.yml:35) e widget (project.yml:80).
+- Tutti e 12 gli identificatori UI-test invariati e presenti (STOP, START,
+  CONTROLLA ORA, HARD KILL SWITCH, MERCATI, PAPER TRADING, market-SPY,
+  interval-picker, chart-price, news-badge-XLF, Grafico a candele, buyableETF).
+- `tools/*.py` compilano (`py_compile` OK); entrambi i workflow YAML validi.
+- 5 test di interfaccia in `UITests/` (eseguiti solo a mano con opzione `uitest`).
+- Nessuna promessa di guadagno in `Sources/`; GUIDA.md contiene l'avviso obbligatorio.
+- Coerenza docs: STATO.md 166 test = run#168; CHANGELOG [Non rilasciato] presente.
+
+## Non verificabile da qui (resta aperto, onestamente)
+
+- Telefono reale: Face ID, notifiche, widget, TRADUCI, comportamento in background
+  (solo simulatore in CI). Controlli pronti in `docs/VERIFICHE.md` (11 controlli).
+- Conto Alpaca paper reale: OPG/MOC accettati ed eseguiti, stop GTC visibili, chiusura
+  con ordini aperti ("insufficient qty" — controllo 11), MOC parziali reali.
+- UI test (`uitest`), screenshot post-fix, backtest `quale=studi`/`overnight` (rete +
+  dispatch manuale: 403 per me).
+- `docs/GUIDA.pdf` da generare (no generatore PDF in sandbox).
+- Pubblicazione della release v1.5.0 (build 156+fix → 166 test): a mano, non mia.
