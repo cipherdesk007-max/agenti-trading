@@ -33,6 +33,18 @@ enum UpdateChecker {
             case .download: return "Safari"
             }
         }
+
+        /// Spiegazione del pulsante Aggiorna per il gestore di questa installazione.
+        var helpText: String {
+            switch self {
+            case .liveContainer:
+                return "Aggiorna apre LiveContainer, che installa la nuova IPA sopra questa: dati, chiavi e impostazioni restano. Con la sorgente aggiunta, LiveContainer mostra da solo le versioni nuove."
+            case .sideStore:
+                return "Aggiorna apre SideStore, che firma e installa la nuova IPA sopra questa: dati, chiavi e impostazioni restano. Con la sorgente aggiunta, SideStore mostra da solo le versioni nuove."
+            case .download:
+                return "Nessun gestore trovato: Aggiorna scarica l'IPA con Safari, poi installala con 'Apri in SideStore' o con il gestore che usi."
+            }
+        }
     }
 
     /// True se l'app gira dentro LiveContainer: le classi dell'host

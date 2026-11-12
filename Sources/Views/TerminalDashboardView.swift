@@ -539,18 +539,6 @@ struct TerminalDashboardView: View {
         .buttonStyle(.plain)
     }
 
-    /// Spiegazione del pulsante Aggiorna secondo il gestore di questa installazione.
-    private func updateHelp(for store: UpdateChecker.Store) -> String {
-        switch store {
-        case .liveContainer:
-            return "Aggiorna apre LiveContainer, che installa la nuova IPA sopra questa: dati, chiavi e impostazioni restano. Con la sorgente aggiunta, LiveContainer mostra da solo le versioni nuove."
-        case .sideStore:
-            return "Aggiorna apre SideStore, che firma e installa la nuova IPA sopra questa: dati, chiavi e impostazioni restano. Con la sorgente aggiunta, SideStore mostra da solo le versioni nuove."
-        case .download:
-            return "Nessun gestore trovato: Aggiorna scarica l'IPA con Safari, poi installala con 'Apri in SideStore' o con il gestore che usi."
-        }
-    }
-
     private var liveBanner: some View {
         Text("Conto live · soldi veri")
             .font(.headline.weight(.bold))
@@ -1782,7 +1770,7 @@ private struct SystemSettingsView: View {
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(Theme.accent)
                 }
-                Text(updateHelp(for: store))
+                Text(store.helpText)
                     .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
                     .fixedSize(horizontal: false, vertical: true)
