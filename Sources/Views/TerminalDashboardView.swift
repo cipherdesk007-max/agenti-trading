@@ -360,8 +360,9 @@ struct TerminalDashboardView: View {
 
     /// Come leggere la griglia MERCATI.
     private var marketsLegend: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            panelHeader("COME SI LEGGE", color: Theme.textSecondary)
+        AppCard {
+            VStack(alignment: .leading, spacing: 6) {
+            SectionHeader(title: "Come si legge")
             ForEach([
                 (MarketInsight.State.held, "il bot ha una posizione aperta, con lo stop sul broker"),
                 (.signal, "le regole hanno trovato un ribasso in trend: decide Kimi"),
@@ -370,12 +371,12 @@ struct TerminalDashboardView: View {
                 (.unaffordable, "il capitale non compra 1 azione entro i limiti")
             ], id: \.0.rawValue) { state, text in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
-                    Text(state.rawValue).themedChip(MarketDetailView.color(for: state))
+                    StatusChip(text: state.rawValue.capitalized, color: MarketDetailView.color(for: state))
                     Text(text).font(.caption).foregroundStyle(Theme.textSecondary)
                 }
             }
+            }
         }
-        .panelStyle(Theme.textTertiary)
     }
 
     private func elapsed(from start: Date, to end: Date) -> String {

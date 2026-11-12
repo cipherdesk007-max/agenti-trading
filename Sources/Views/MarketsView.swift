@@ -45,11 +45,12 @@ struct MarketsPanel: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        AppCard {
+            VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(isIntraday ? "MERCATI · MODALITÀ VELOCE" : "MERCATI · 15 ETF")
-                    .font(.system(.caption, design: .monospaced, weight: .heavy))
-                    .foregroundStyle(Theme.cyan)
+                Text(isIntraday ? "Mercati · modalità veloce" : "Mercati · 15 ETF")
+                    .font(.headline)
+                    .foregroundStyle(Theme.textPrimary)
                 Spacer()
                 Text(isIntraday || engine.marketBarsDate == nil
                      ? "tocca per il grafico"
@@ -67,7 +68,7 @@ struct MarketsPanel: View {
                 dailyGrid
             }
         }
-        .themedCard(Theme.cyan)
+        }
         .onAppear {
             #if DEBUG
             let args = ProcessInfo.processInfo.arguments
@@ -146,28 +147,23 @@ private struct MarketTile: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(insight.symbol)
-                .font(.system(.subheadline, design: .monospaced, weight: .heavy))
+                .font(.subheadline.weight(.bold))
                 .foregroundStyle(Theme.textPrimary)
             Text(insight.close.map { String(format: "%.2f", $0) } ?? "—")
-                .font(.system(.caption, design: .monospaced, weight: .semibold))
+                .tabularNumber(.caption, .semibold)
                 .foregroundStyle(Theme.textSecondary)
-                .monospacedDigit()
             if let change = insight.dayChange {
                 Text(String(format: "%+.2f%%", change * 100))
-                    .font(.system(.caption2, design: .monospaced, weight: .bold))
-                    .foregroundStyle(Theme.signed(change))
+                    .font(.caption2.weight(.bold))
                     .monospacedDigit()
+                    .foregroundStyle(Theme.signed(change))
             }
-            Text(intraday ? (insight.state == .noData ? "IN ATTESA" : "STREAM") : insight.state.rawValue)
-                .font(.system(size: 9, weight: .heavy, design: .monospaced))
-                .lineLimit(1)
-                .minimumScaleFactor(0.7)
-                .foregroundStyle(color)
+            StatusChip(text: intraday ? (insight.state == .noData ? "In attesa" : "Stream") : insight.state.rawValue.capitalized,
+                       color: color)
         }
-        .padding(10)
+        .padding(Layout.paddingS)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
-        .overlay(Theme.shape(Theme.smallRadius).strokeBorder(color.opacity(insight.state == .held || insight.state == .signal ? 0.8 : 0.2), lineWidth: 1))
+        .background(Theme.surfaceHigh, in: Theme.shape(Theme.smallRadius))
     }
 }
 
@@ -276,9 +272,9 @@ struct MarketDetailView: View {
             .toolbarColorScheme(.dark, for: .navigationBar)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button("CHIUDI") { dismiss() }
-                        .font(.system(.caption, design: .monospaced, weight: .bold))
-                        .foregroundStyle(Theme.green)
+                    Button("Chiudi") { dismiss() }
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Theme.accent)
                 }
             }
         }
@@ -306,12 +302,13 @@ struct MarketDetailView: View {
         let fallbackPrice = engine.intradayLastPrice(for: symbol) ?? engine.marketBars[symbol]?.last?.close
         if explains {
             HStack {
-                Text(insight.state.rawValue).themedChip(Self.color(for: insight.state), filled: insight.state == .held)
+                StatusChip(text: insight.state.rawValue.capitalized,
+                           color: Self.color(for: insight.state),
+                           filled: insight.state == .held)
                 Spacer()
                 if let close = insight.close ?? fallbackPrice {
                     Text(String(format: "%.2f", close))
-                        .font(.system(.title3, design: .monospaced, weight: .heavy))
-                        .monospacedDigit()
+                        .tabularNumber(.title3, .heavy)
                         .accessibilityIdentifier("chart-price")
                 }
             }
@@ -325,19 +322,17 @@ struct MarketDetailView: View {
             let previous = candles.count > 1 ? candles[candles.count - 2].close : candles.last?.close
             let change = (previous ?? 0) > 0 ? (price / previous! - 1) * 100 : nil
             HStack(alignment: .firstTextBaseline) {
-                Text("ULTIMO PREZZO · \(interval.rawValue)")
+                Text("Ultimo prezzo · \(interval.rawValue)")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
                 if let change {
                     Text(String(format: "%+.2f%%", change))
-                        .font(.system(.footnote, design: .monospaced, weight: .semibold))
-                        .monospacedDigit()
+                        .tabularNumber(.footnote, .semibold)
                         .foregroundStyle(change >= 0 ? Theme.green : Theme.red)
                 }
                 Text(String(format: "%.2f", price))
-                    .font(.system(.title3, design: .monospaced, weight: .heavy))
-                    .monospacedDigit()
+                    .tabularNumber(.title3, .heavy)
                     .accessibilityIdentifier("chart-price")
             }
         }
