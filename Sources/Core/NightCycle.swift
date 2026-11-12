@@ -437,7 +437,9 @@ struct NightCycleRunner: Sendable {
                         // notte (fix B1).
                         p.sellQueuedDay = input.today
                         p.sellQueuedHeld = heldQty(symbol)
-                        p.sellQueuedOrderId = orderId
+                        // Si salva il client_order_id (non l'id server): è quello
+                        // che orderRef(byClientOrderId:) usa per rileggere lo stato.
+                        p.sellQueuedOrderId = id
                         book.positions[symbol] = p
                     } else {
                         // Registro vecchio senza quantità: la vendita copre tutto il

@@ -292,10 +292,13 @@ final class NightCycleTests: XCTestCase {
         func family(of s: String) -> Int {
             NightStrategy.families.firstIndex { $0.symbols.contains(s) } ?? -1
         }
-        XCTAssertEqual(Set(buys.map(family)).count, 4, "una sola MOC per famiglia: niente duplicati")
+        // Nel registro una sola MOC per famiglia (il retry interno di submit può
+        // aver ritentato l'originale rifiutato: quello non conta come successo).
+        XCTAssertEqual(Set(res.book.positions.keys.map(family)).count, 4, "una sola MOC per famiglia: niente duplicati")
         XCTAssertTrue(buys.contains("QQQM"), "la famiglia mancante viene ritentata col gemello")
-        XCTAssertTrue(buys.contains("SPY") && buys.contains("IWM") && buys.contains("GLD"))
-        XCTAssertEqual(Set(res.book.positions.keys), Set(buys))
+        XCTAssertFalse(res.book.positions.keys.contains("QQQ"), "l'originale rifiutato non entra nel registro")
+        XCTAssertTrue(res.book.positions.keys.contains("SPY") && res.book.positions.keys.contains("IWM")
+                      && res.book.positions.keys.contains("GLD"))
     }
 
     func testResidualOnTwinBlocksOriginalOfSameFamily() async {
