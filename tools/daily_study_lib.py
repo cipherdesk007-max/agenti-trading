@@ -121,6 +121,14 @@ def simulate(o, h, l, c, *, rsi_thr=10.0, exit_sma=5, stop_atr=2.5, trail=False,
             for _, j in sig:
                 if len(pos) >= max_pos:
                     break
+                # BUG FIX: mai ricomprare un simbolo gia' detenuto. Il segnale
+                # RSI2<10 puo' durare giorni mentre lo teniamo: senza questo
+                # controllo pos[j] veniva sovrascritto e le azioni vecchie
+                # sparivano dai libri (cash scalato all'ingresso, mai riaccreditato),
+                # distruggendo il conto. backtest_app.py ha sempre avuto
+                # "if j not in pos" (come l'app reale: un solo lotto per simbolo).
+                if j in pos:
+                    continue
                 entry = o.iloc[t + 1, j] * (1 + cost)
                 dist = stop_atr * a.iloc[t, j]
                 if not (dist > 0 and entry > dist):
