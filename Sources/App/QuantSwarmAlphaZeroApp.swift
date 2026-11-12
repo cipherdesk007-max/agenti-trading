@@ -5,36 +5,37 @@ import SwiftData
 @main
 struct QuantSwarmAlphaZeroApp: App {
     @StateObject private var engine: QuantSwarmEngine
-    private let container: ModelContainer
+    private let container: ModelContainer?
 
     init() {
         DiagnosticsCollector.shared.start()
         let keychain = KeychainManager()
-        if let stored = try? ModelContainer(for: TradeRecord.self, DecisionSample.self) {
-            container = stored
-        } else {
-            // Store corrotto o migrazione fallita: si azzera il database locale
-            // (solo statistiche/dataset, mai credenziali o ordini) e si riprova.
-            Self.wipePersistentStore()
-            if let retried = try? ModelContainer(for: TradeRecord.self, DecisionSample.self) {
-                container = retried
-            } else {
-                // Ultima spiaggia: store in memoria, nessun I/O su disco,
-                // quindi non può fallire. L'app resta utilizzabile per il
-                // trading anche se il database locale non si apre.
-                // NOTA: con i modelli variadici, configurations è variadico
-                // (non un array): le parentesi quadre rompono la compilazione.
-                container = try! ModelContainer(
-                    for: TradeRecord.self, DecisionSample.self,
-                    configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-                )
-            }
-        }
+        container = Self.makeContainer()
         let engine = QuantSwarmEngine(
             keychain: keychain,
             container: container
         )
         _engine = StateObject(wrappedValue: engine)
+    }
+
+    /// Store SwiftData: prima quello persistente; se corrotto o con migrazione
+    /// fallita si azzera (solo statistiche/dataset, mai credenziali o ordini) e
+    /// si riprova; ultima spiaggia uno store solo in memoria. Nil solo se anche
+    /// quello fallisce: in quel caso l'app gira senza persistenza locale.
+    /// NOTA: con i modelli variadici, configurations è variadico (non un array):
+    /// le parentesi quadre rompono la compilazione.
+    private static func makeContainer() -> ModelContainer? {
+        if let stored = try? ModelContainer(for: TradeRecord.self, DecisionSample.self) {
+            return stored
+        }
+        wipePersistentStore()
+        if let retried = try? ModelContainer(for: TradeRecord.self, DecisionSample.self) {
+            return retried
+        }
+        return try? ModelContainer(
+            for: TradeRecord.self, DecisionSample.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
     }
 
     /// Rimuove i file dello store SwiftData di default (Application Support).
@@ -52,8 +53,18 @@ struct QuantSwarmAlphaZeroApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(engine)
-                .modelContainer(container)
+                .modelContainerIfPresent(container)
                 .preferredColorScheme(.dark)
+        }
+    }
+}
+
+private extension View {
+    @ViewBuilder func modelContainerIfPresent(_ container: ModelContainer?) -> some View {
+        if let container {
+            self.modelContainer(container)
+        } else {
+            self
         }
     }
 }

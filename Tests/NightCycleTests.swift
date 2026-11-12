@@ -193,6 +193,24 @@ final class NightCycleTests: XCTestCase {
         XCTAssertTrue(NightStrategy.allocate(budget: 50, prices: ["SPYM": 89.5, "GLDM": 79]).isEmpty)
     }
 
+    /// Divisione della NOTTE parametrica su 500 / 1.000 / 10.000 / 100.000 /
+    /// 1.000.000 USD (CONTROLLO FINALE): mai oltre il budget (97% del capitale),
+    /// mai quantità zero o negative, 4 famiglie dès che il budget lo permette.
+    func testAllocateParametricBudgets() {
+        let prices: [String: Double] = ["SPY": 760, "SPYM": 89.5, "QQQ": 692, "QQQM": 285,
+                                        "IWM": 283, "VTWO": 114, "GLD": 365, "GLDM": 79]
+        for equity in [500.0, 1_000, 10_000, 100_000, 1_000_000] {
+            let budget = equity * (1 - NightStrategy.cashBuffer)
+            let picks = NightStrategy.allocate(budget: budget, prices: prices)
+            let spent = picks.reduce(0) { $0 + Double($1.quantity) * $1.price }
+            XCTAssertLessThanOrEqual(spent, budget + 1e-6, "Mai oltre il budget a equity \(equity)")
+            XCTAssertTrue(picks.allSatisfy { $0.quantity > 0 }, "Mai quantità zero/negative a equity \(equity)")
+            if equity >= 1_000 {
+                XCTAssertEqual(picks.count, 4, "Le 4 famiglie a equity \(equity)")
+            }
+        }
+    }
+
     // MARK: - Ciclo
 
     func testBuyWindowQueuesCloseAuctionBuys() async {

@@ -95,7 +95,9 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var entryStats = (placed: 0, unfilled: 0, partial: 0)
 
     private let keychain: KeychainManager
-    private let modelContext: ModelContext
+    /// Nil solo se nessuno store SwiftData si è aperto: l'app gira lo stesso,
+    /// ma senza persistere dataset e statistiche locali.
+    private let modelContext: ModelContext?
     private let marketScout = MarketScoutAgent()
     private let riskAgent = RiskExecutionAgent()
     private var kimiService: KimiService?
@@ -159,10 +161,10 @@ final class QuantSwarmEngine: ObservableObject {
 
     init(
         keychain: KeychainManager,
-        container: ModelContainer
+        container: ModelContainer?
     ) {
         self.keychain = keychain
-        modelContext = ModelContext(container)
+        modelContext = container.map(ModelContext.init)
         creditGuard = CreditGuardStore.load() ?? .empty(day: Self.dayStampUTC())
         #if canImport(UIKit)
         UIDevice.current.isBatteryMonitoringEnabled = true
@@ -1024,7 +1026,7 @@ final class QuantSwarmEngine: ObservableObject {
         let descriptor = FetchDescriptor<DecisionSample>(
             sortBy: [SortDescriptor(\.createdAt)]
         )
-        guard let samples = try? modelContext.fetch(descriptor), !samples.isEmpty else {
+        guard let samples = try? modelContext?.fetch(descriptor), !samples.isEmpty else {
             log("Dataset vuoto: serve almeno una decisione registrata.", agent: .brain)
             return
         }
@@ -1042,7 +1044,7 @@ final class QuantSwarmEngine: ObservableObject {
             predicate: #Predicate<TradeRecord> { $0.outcomeRecorded },
             sortBy: [SortDescriptor(\.createdAt)]
         )
-        guard let records = try? modelContext.fetch(descriptor), !records.isEmpty else {
+        guard let records = try? modelContext?.fetch(descriptor), !records.isEmpty else {
             log("Nessun trade chiuso da esportare.", agent: .risk)
             return
         }
@@ -1065,8 +1067,8 @@ final class QuantSwarmEngine: ObservableObject {
     }
 
     private func refreshDatasetStats() {
-        let total = (try? modelContext.fetchCount(FetchDescriptor<DecisionSample>())) ?? 0
-        let completed = (try? modelContext.fetchCount(
+        let total = (try? modelContext?.fetchCount(FetchDescriptor<DecisionSample>())) ?? 0
+        let completed = (try? modelContext?.fetchCount(
             FetchDescriptor<DecisionSample>(predicate: #Predicate { $0.evaluated })
         )) ?? 0
         datasetStats = DatasetStats(total: total, completed: completed)
@@ -1079,7 +1081,7 @@ final class QuantSwarmEngine: ObservableObject {
             predicate: #Predicate<DecisionSample> { $0.executed && !$0.evaluated }
         )
         descriptor.fetchLimit = 100
-        guard let samples = try? modelContext.fetch(descriptor) else { return }
+        guard let samples = try? modelContext?.fetch(descriptor) else { return }
         for sample in samples where sample.orderID == record.orderID {
             sample.netPnL = record.netPnL
             sample.evaluated = true
@@ -1097,7 +1099,7 @@ final class QuantSwarmEngine: ObservableObject {
             }
         )
         descriptor.fetchLimit = 50
-        guard let samples = try? modelContext.fetch(descriptor), !samples.isEmpty else { return }
+        guard let samples = try? modelContext?.fetch(descriptor), !samples.isEmpty else { return }
         var changed = false
         for sample in samples {
             guard let snapshot = snapshots[sample.symbol],
@@ -1108,7 +1110,7 @@ final class QuantSwarmEngine: ObservableObject {
             changed = true
         }
         if changed {
-            try? modelContext.save()
+            try? modelContext?.save()
             refreshDatasetStats()
         }
     }
@@ -1469,9 +1471,9 @@ final class QuantSwarmEngine: ObservableObject {
                         price: snapshot.lastPrice,
                         atr: atr
                     )
-                    modelContext.insert(sample)
+                    modelContext?.insert(sample)
                     do {
-                        try modelContext.save()
+                        try modelContext?.save()
                     } catch {
                         log("Dataset: \(error.localizedDescription)")
                     }
@@ -1648,9 +1650,9 @@ final class QuantSwarmEngine: ObservableObject {
     }
 
     private func persist(receipt: ExecutionReceipt, atr: Double) throws {
-        modelContext.insert(TradeRecord(receipt: receipt, atr: atr))
+        modelContext?.insert(TradeRecord(receipt: receipt, atr: atr))
         do {
-            try modelContext.save()
+            try modelContext?.save()
         } catch {
             throw QuantSwarmError.persistence(error.localizedDescription)
         }
@@ -1665,7 +1667,7 @@ final class QuantSwarmEngine: ObservableObject {
                 sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
             )
             descriptor.fetchLimit = 100
-            let records = try modelContext.fetch(descriptor)
+            let records = try modelContext?.fetch(descriptor) ?? []
             for record in records {
                 do {
                     let order = try await service.order(id: record.orderID)
@@ -1709,7 +1711,7 @@ final class QuantSwarmEngine: ObservableObject {
                 }
             }
             if !records.isEmpty {
-                try modelContext.save()
+                try modelContext?.save()
                 refreshDatasetStats()
             }
         } catch {
@@ -1724,7 +1726,7 @@ final class QuantSwarmEngine: ObservableObject {
         let descriptor = FetchDescriptor<TradeRecord>(
             predicate: #Predicate<TradeRecord> { $0.outcomeRecorded }
         )
-        guard let records = try? modelContext.fetch(descriptor) else { return }
+        guard let records = try? modelContext?.fetch(descriptor) else { return }
         let scored: [(probability: Double, won: Double)] = records.compactMap { record in
             guard let probability = record.winProbability, let pnl = record.netPnL else {
                 return nil
@@ -1767,7 +1769,7 @@ final class QuantSwarmEngine: ObservableObject {
             predicate: #Predicate<TradeRecord> { $0.outcomeRecorded },
             sortBy: [SortDescriptor(\.createdAt)]
         )
-        guard let records = try? modelContext.fetch(descriptor) else { return }
+        guard let records = try? modelContext?.fetch(descriptor) else { return }
         let pnls = records.compactMap(\.netPnL)
         guard !pnls.isEmpty else {
             performanceStats = nil
@@ -1798,7 +1800,7 @@ final class QuantSwarmEngine: ObservableObject {
         let descriptor = FetchDescriptor<TradeRecord>(
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        guard let records = try? modelContext.fetch(descriptor) else {
+        guard let records = try? modelContext?.fetch(descriptor) else {
             return PerformanceMatrix(
                 submittedTrades: 0,
                 completedTrades: 0,
@@ -2338,11 +2340,11 @@ extension QuantSwarmEngine {
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
         descriptor.fetchLimit = 200
-        guard let record = (try? modelContext.fetch(descriptor))?.first else { return }
+        guard let record = (try? modelContext?.fetch(descriptor))?.first else { return }
         record.netPnL = pnl ?? 0
         record.outcomeRecorded = true
         linkOutcomeToSample(record)
-        try? modelContext.save()
+        try? modelContext?.save()
         refreshDatasetStats()
         computeCalibration()
     }

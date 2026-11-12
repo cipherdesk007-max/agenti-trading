@@ -255,4 +255,38 @@ final class RiskRulesTests: XCTestCase {
         let snapshot = try JSONDecoder().decode(AccountSnapshot.self, from: Data(json.utf8))
         XCTAssertEqual(snapshot.accountNumber, "PA333")
     }
+
+    // MARK: - Conti di taglie diverse (CONTROLLO FINALE)
+
+    /// Sizing parametrico su 500 / 1.000 / 10.000 / 100.000 / 1.000.000 USD:
+    /// mai oltre il budget, mai tetto 25% o rischio superati, mai quantità
+    /// zero o negative quando il sizing ha successo.
+    func testSizingParametricAccountSizes() {
+        for equity in [500.0, 1_000, 10_000, 100_000, 1_000_000] {
+            let acct = RiskRules.Account(equity: equity, cash: equity, buyingPower: equity * 4)
+            let result = sizing(buy(), price: 100, account: acct, risk: 0.01)
+            guard case .success(let s) = result else {
+                if case .failure(let rejection) = result {
+                    XCTAssertFalse(rejection.reason.isEmpty, "Rifiuto senza motivo a equity \(equity)")
+                }
+                continue
+            }
+            XCTAssertGreaterThan(s.quantity, 0, "equity \(equity)")
+            XCTAssertLessThanOrEqual(s.quantity * s.limitPrice, equity * RiskRules.maximumPositionFraction + 1e-6,
+                                     "Tetto 25% a equity \(equity)")
+            XCTAssertLessThanOrEqual(s.riskAmount, equity * 0.01 + 1e-6, "Rischio 1% a equity \(equity)")
+            XCTAssertLessThanOrEqual(s.quantity * s.limitPrice, acct.cash + 1e-6, "Mai oltre il cash a equity \(equity)")
+        }
+    }
+
+    /// Tetto del capitale del bot parametrico: il dimensionamento vede sempre
+    /// min(conto, limite), mai di più e mai negativo.
+    func testCappedCapitalParametricAccountSizes() {
+        for equity in [500.0, 1_000, 10_000, 100_000, 1_000_000] {
+            let acct = RiskRules.Account(equity: equity, cash: equity, buyingPower: equity * 4)
+            let capped = RiskRules.capped(acct, capital: 10_000, exposure: 0)
+            XCTAssertEqual(capped.equity, min(equity, 10_000), "equity \(equity)")
+            XCTAssertGreaterThanOrEqual(capped.cash, 0, "equity \(equity)")
+        }
+    }
 }

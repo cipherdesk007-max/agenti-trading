@@ -412,8 +412,8 @@ struct DailyCycleRunner: Sendable {
         }
 
         // 3. ANALYST: quadro di mercato calcolato in codice (zero crediti).
-        let marketText = market.keys.sorted().map { key in
-            "\(key) \(market[key]!.close > market[key]!.sma200 ? "sopra" : "sotto") SMA200"
+        let marketText = market.sorted { $0.key < $1.key }.map { key, snap in
+            "\(key) \(snap.close > snap.sma200 ? "sopra" : "sotto") SMA200"
         }.joined(separator: " · ")
         await emit(.init(stage: .analyst, state: .done, detail: marketText.isEmpty ? "quadro non disponibile" : marketText))
 

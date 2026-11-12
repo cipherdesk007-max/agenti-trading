@@ -425,7 +425,10 @@ struct NightCycleRunner: Sendable {
             // Posizioni rimaste dalla notte prima (app non aperta la mattina, o
             // OPG annullata all'asta e non eseguita): si chiudono ora a mercato,
             // così il bot resta solo "di notte" e non compra due volte sopra.
-            let leftovers = book.positions.keys.sorted().filter { heldQty($0) > 0 && book.positions[$0]!.day < input.today }
+            let leftovers = book.positions
+                .filter { $0.value.day < input.today && heldQty($0.key) > 0 }
+                .map(\.key)
+                .sorted()
             for symbol in leftovers where !pending(symbol, side: "sell") {
                 let held = Int(heldQty(symbol).rounded(.down))
                 let own = ownedQty(symbol, held: held, book: book)

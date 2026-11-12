@@ -1522,11 +1522,10 @@ private struct SystemSettingsView: View {
         let equity = engine.account?.equityValue
         let capital = min(draft.sanitized.capitalCap, equity ?? 0)
         let risk = draft.sanitized.riskFraction
-        let ok = snapshots.keys.sorted().filter { symbol in
-            let s = snapshots[symbol]!
-            return RiskRules.canBuyOneShare(price: s.close, stopDistance: DailyStrategy.stopATR * s.atr14,
-                                            capital: capital, freeCash: capital, riskFraction: risk)
-        }
+        let ok = snapshots.compactMap { symbol, s in
+            RiskRules.canBuyOneShare(price: s.close, stopDistance: DailyStrategy.stopATR * s.atr14,
+                                     capital: capital, freeCash: capital, riskFraction: risk) ? symbol : nil
+        }.sorted()
         let missing = snapshots.keys.sorted().filter { !ok.contains($0) }
         let text: String
         if snapshots.isEmpty || equity == nil {

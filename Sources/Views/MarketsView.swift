@@ -52,9 +52,9 @@ struct MarketsPanel: View {
                     .font(.headline)
                     .foregroundStyle(Theme.textPrimary)
                 Spacer()
-                Text(isIntraday || engine.marketBarsDate == nil
+                Text(isIntraday
                      ? "tocca per il grafico"
-                     : "dati \(engine.marketBarsDate!.formatted(date: .omitted, time: .shortened)) · tocca")
+                     : engine.marketBarsDate.map { "dati \($0.formatted(date: .omitted, time: .shortened)) · tocca" } ?? "tocca per il grafico")
                     .font(.caption)
                     .foregroundStyle(Theme.textTertiary)
             }

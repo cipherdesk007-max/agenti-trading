@@ -252,6 +252,12 @@ actor AlpacaService {
         session = URLSession(configuration: configuration)
     }
 
+    /// Init per i test: sessione iniettabile (con URLProtocol mock).
+    init(credentials: AlpacaCredentials, session: URLSession) {
+        self.credentials = credentials
+        self.session = session
+    }
+
     func validateCredentials() async throws {
         _ = try await account()
     }
