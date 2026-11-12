@@ -44,31 +44,19 @@ def call(method, url, data=None, content_type="application/json", raw=False):
 
 def ensure_initialized():
     """Un repository senza commit non può ricevere né release (422
-    "Repository is empty") né file via contents API (409): serve un primo
-    commit. Se manca, lo crea via git data API (blob -> tree -> commit ->
-    branch di default), poi tutto il resto funziona normalmente."""
+    "Repository is empty") né file via contents API (409), e nemmeno la
+    git data API lo può inizializzare: su un repo vuoto ogni endpoint
+    git/* risponde 409 "Git Repository is empty". L'inizializzazione una
+    volta sola va fatta dalla web UI ("Add a README"). Qui ci limitiamo a
+    verificare che esista almeno un commit."""
     repo = call("GET", f"{API}/repos/{REPO}") or {}
     branch = repo.get("default_branch") or "main"
     if call("GET", f"{API}/repos/{REPO}/git/ref/heads/{branch}"):
         return  # già inizializzato
-    blob = call("POST", f"{API}/repos/{REPO}/git/blobs", {
-        "content": "# FMLAB QuantSwarm Alpha Zero\n\n"
-                   "Repository pubblico delle IPA per gli aggiornamenti via "
-                   "LiveContainer/SideStore (sorgente apps.json, icona e IPA).\n",
-        "encoding": "utf-8",
-    })
-    tree = call("POST", f"{API}/repos/{REPO}/git/trees", {
-        "tree": [{"path": "README.md", "mode": "100644", "type": "blob",
-                  "sha": blob["sha"]}],
-    })
-    commit = call("POST", f"{API}/repos/{REPO}/git/commits", {
-        "message": "init: primo commit (release e apps.json richiedono una storia)",
-        "tree": tree["sha"],
-        "parents": [],
-    })
-    call("POST", f"{API}/repos/{REPO}/git/refs", {
-        "ref": f"refs/heads/{branch}", "sha": commit["sha"]})
-    print(f"Repository {REPO} inizializzato (branch {branch}, commit {commit['sha'][:7]})")
+    raise SystemExit(
+        f"Il repository {REPO} non ha commit: la API non può crearne il "
+        "primo. Apri la pagina del repository su github.com e premi "
+        "\"Add a README\" (poi riesegui la build).")
 
 
 def put_file(path, content_bytes, message):
