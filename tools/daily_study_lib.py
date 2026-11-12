@@ -61,7 +61,14 @@ def wilder_rsi(c, n=2):
 
 
 def atr(h, l, c, n=14):
-    tr = pd.concat([h - l, (h - c.shift()).abs(), (l - c.shift()).abs()], axis=1).max(axis=1)
+    """ATR di Wilder per simbolo. h, l, c sono DataFrame (date x simboli):
+    serve un DataFrame in uscita, non una Series per data (bug: concat axis=1
+    + max(axis=1) schiacciava tutto su una sola colonna e a.iloc[t, j]
+    esplodeva con "Too many indexers"). Stack + groupby per data: max dei tre
+    true range per simbolo, saltando i NaN (prima riga: solo h-l)."""
+    prev = c.shift()
+    tr = pd.concat([h - l, (h - prev).abs(), (l - prev).abs()])
+    tr = tr.groupby(level=0).max()
     return tr.ewm(alpha=1 / n, adjust=False).mean()
 
 
