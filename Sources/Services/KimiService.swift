@@ -138,11 +138,14 @@ actor KimiService {
         performance: PerformanceMatrix,
         calibration: CalibrationStats? = nil,
         marketContext: MarketContext? = nil,
-        analystView: KimiAnalysis? = nil
+        analystView: KimiAnalysis? = nil,
+        specialistReports: [AgentReport] = [],
+        divergence: CouncilDivergence.Assessment? = nil
     ) async throws -> KimiDecision {
         let systemPrompt = """
-        Sei il modulo decisionale di un sistema di trading. Non fornire consulenza finanziaria \
-        e non affermare certezze. Valuta esclusivamente i dati forniti. Restituisci hold se i dati \
+        Sei il Chief Decision Agent di un consiglio di specialisti di un sistema di trading, \
+        in modalità veloce (intraday). Non fornire consulenza finanziaria e non affermare \
+        certezze. Valuta esclusivamente i dati forniti. Restituisci hold se i dati \
         sono insufficienti, incoerenti o il rapporto rischio/rendimento non è favorevole. Il conto \
         opera SOLO in acquisto: le vendite allo scoperto non sono permesse, quindi le uniche \
         azioni valide sono buy o hold (in un quadro ribassista rispondi hold). Per buy vale \
@@ -150,7 +153,14 @@ actor KimiService {
         l'ingresso e (take_profit - entry_price) almeno 1,5 volte (entry_price - stop_loss). \
         entry_price deve essere il prezzo corrente fornito. Il campo analyst_view, se presente, \
         è la lettura di regime/volatilità/bias dell'agente Analyst sugli stessi dati: usala come \
-        contesto e segnala nel rationale se sei in disaccordo, ma decidi sui dati. win_probability è una stima \
+        contesto e segnala nel rationale se sei in disaccordo, ma decidi sui dati. Il campo \
+        specialist_reports contiene i pareri standardizzati degli specialisti locali (analisi \
+        tecnica multi-timeframe, statistica quantitativa, notizie, portafoglio): NON sono una \
+        media da ubbidire, sono evidenze da confrontare. Nel rationale segnala chi è d'accordo \
+        e chi no, e se scegli buy CONTRO pareri avversi (signal "short") o con divergence_note \
+        presente, spiega esplicitamente perché gli altri si sbagliano. La confidence degli \
+        specialisti misura la completezza dei dati, NON è una probabilità statistica calibrata: \
+        non usarla come win_probability. win_probability è una stima \
         soggettiva in (0,1), payoff_ratio è il rapporto reward/risk positivo. Il campo \
         candles_two_timeframes contiene le ultime candele CHIUSE (t = secondi unix di inizio \
         candela, o/h/l/c/v) e gli indicatori calcolati in codice sui timeframe 1m e 15m: usali \
@@ -180,6 +190,9 @@ actor KimiService {
         payload["candles_two_timeframes"] = marketContext.map(Self.contextPayload) ?? NSNull()
         // Collegamento agenti: la lettura dell'Analyst arriva al Brain.
         payload["analyst_view"] = analystView.map(Self.analysisPayload) ?? NSNull()
+        // Consiglio: i report degli specialisti locali e la divergenza.
+        payload["specialist_reports"] = Self.specialistPayload(specialistReports)
+        payload["divergence_note"] = divergence?.note ?? NSNull()
         // Apprendimento in-context: la calibrazione misurata sui trade passati
         // rientra nel prompt, così Kimi corregge da solo l'over/under-confidence.
         if let calibration {
@@ -247,14 +260,23 @@ actor KimiService {
         decision: KimiDecision,
         snapshot: MarketSnapshot,
         marketContext: MarketContext? = nil,
-        analystView: KimiAnalysis? = nil
+        analystView: KimiAnalysis? = nil,
+        specialistReports: [AgentReport] = [],
+        divergence: CouncilDivergence.Assessment? = nil
     ) async throws -> KimiReview {
         let systemPrompt = """
-        Sei il revisore avversario di un sistema di trading. Assumi che la decisione proposta sia \
-        SBAGLIATA e cerca attivamente motivi concreti per respingerla: livelli incoerenti con le \
-        candele chiuse fornite, rapporto rischio/rendimento reale insufficiente, volatilità anomala \
-        rispetto all'ATR, dati contraddittori o stantii, ancoraggio errato al prezzo corrente, \
-        contrasto con la lettura dell'Analyst (analyst_view) non giustificato. Approva solo se non trovi nulla di concreto da obiettare. Non usare Markdown.
+        Sei il Contrarian Agent, revisore avversario di un sistema di trading. Assumi che la \
+        decisione proposta sia SBAGLIATA e cerca attivamente motivi concreti per respingerla: \
+        livelli incoerenti con le candele chiuse fornite, rapporto rischio/rendimento reale \
+        insufficiente, volatilità anomala rispetto all'ATR, dati contraddittori o stantii, \
+        ancoraggio errato al prezzo corrente, contrasto con la lettura dell'Analyst \
+        (analyst_view) non giustificato. Ricevi anche i pareri degli specialisti locali in \
+        specialist_reports e la divergenza del consiglio in divergence_note: NON confermare \
+        automaticamente né la proposta né gli altri agenti. Se uno specialista è avverso \
+        (signal "short") o la divergence_note segnala un disaccordo, verifica tu stesso se quel \
+        motivo regge sui dati: se regge, respingi. Se tutti gli specialisti sono favorevoli, \
+        cerca comunque l'angolo morto che nessuno ha considerato (notizie mancanti, dati sospesi, \
+        portafoglio già pieno). Approva solo se non trovi nulla di concreto da obiettare. Non usare Markdown.
         """
         var payload: [String: Any] = [
             "proposal": [
@@ -276,6 +298,8 @@ actor KimiService {
         ]
         payload["candles_two_timeframes"] = marketContext.map(Self.contextPayload) ?? NSNull()
         payload["analyst_view"] = analystView.map(Self.analysisPayload) ?? NSNull()
+        payload["specialist_reports"] = Self.specialistPayload(specialistReports)
+        payload["divergence_note"] = divergence?.note ?? NSNull()
         let payloadData = try JSONSerialization.data(withJSONObject: payload)
         let payloadString = String(decoding: payloadData, as: UTF8.self)
         let messages: [[String: String]] = [
@@ -327,8 +351,11 @@ actor KimiService {
         (Benzinga) sull'ETF e sul mercato: usale per evitare di comprare dentro un evento \
         che può cambiare il quadro (decisione della Fed, dati sull'inflazione, crollo di un \
         settore), non per inseguire una notizia. Usa market_overview per il contesto generale e \
-        recent_closes (ultime 20 chiusure) per giudicare la forma del ribasso. Se c'è \
-        past_outcomes, tienine conto: se gli ETF che scarti vanno meglio di quelli che scegli, \
+        recent_closes (ultime 20 chiusure) per giudicare la forma del ribasso. specialist_digest \
+        contiene i pareri standardizzati degli specialisti locali per candidato (tecnica \
+        giornaliera, statistica, notizie, fondamentali sospesi): confrontali, segnala nel \
+        rationale chi è d'accordo e chi no; la loro confidence NON è una probabilità calibrata. \
+        Se c'è past_outcomes, tienine conto: se gli ETF che scarti vanno meglio di quelli che scegli, \
         sii meno selettivo. \
         Non inventare dati. Non usare Markdown.
         """
@@ -349,8 +376,9 @@ actor KimiService {
                     "indicators": snap(candidate.snapshot),
                     "recent_closes": candidate.recentCloses.map { ($0 * 100).rounded() / 100 },
                     "correlation_60d": candidate.correlations,
-                    "news_48h": candidate.news
-                ]
+                    "news_48h": candidate.news,
+                    "specialist_digest": Self.specialistPayload(Council.dailyDigest(for: candidate))
+                ] as [String: Any]
             },
             "market_overview": market.mapValues(snap),
             "open_positions": openPositions,
@@ -409,7 +437,10 @@ actor KimiService {
         appena sopra la SMA200), volatilità (ATR) anomala, quadro di mercato in rottura, \
         motivazione del Brain non coerente con gli indicatori, correlazione sopra 0,85 con una \
         posizione già aperta (correlation_60d), notizie in news_48h che spiegano il calo con \
-        un cambiamento vero (non un normale ribasso) o un evento imminente ad alto rischio. Approva solo se non trovi nulla \
+        un cambiamento vero (non un normale ribasso) o un evento imminente ad alto rischio. \
+        specialist_digest contiene i pareri degli specialisti locali sul candidato: verifica \
+        tu stesso se i loro motivi reggono sui dati, senza confermarli automaticamente. \
+        Approva solo se non trovi nulla \
         di concreto. Non usare Markdown.
         """
         let s = candidate.snapshot
@@ -424,6 +455,7 @@ actor KimiService {
                 "correlation_60d": candidate.correlations,
                 "news_48h": candidate.news
             ],
+            "specialist_digest": Self.specialistPayload(Council.dailyDigest(for: candidate)),
             "market_overview": market.mapValues { m -> [String: Double] in
                 ["close": m.close, "sma200": m.sma200, "rsi2": m.rsi2, "atr14": m.atr14]
             }
@@ -451,6 +483,25 @@ actor KimiService {
         )
         let json = try extractJSONObject(from: content)
         return try JSONDecoder().decode(KimiReview.self, from: Data(json.utf8))
+    }
+
+    /// Serializzazione compatta dei report del consiglio: si tengono analisi
+    /// completa ma solo le prime 3 evidenze e i primi 2 rischi per contenere
+    /// i token. static e pura: testabile senza rete.
+    static func specialistPayload(_ reports: [AgentReport]) -> [[String: Any]] {
+        reports.map { report in
+            [
+                "agent": report.agent.rawValue,
+                "signal": report.signal.rawValue,
+                "confidence": report.confidence,
+                "analysis": report.analysis,
+                "evidence": Array(report.evidence.prefix(3)),
+                "risks": Array(report.risks.prefix(2)),
+                "missing_data_count": report.missingData.count,
+                "abstained": report.signal == .abstain,
+                "invalidation": report.invalidation
+            ] as [String: Any]
+        }
     }
 
     /// Serializzazione compatta del contesto candele: numeri a 4 decimali e

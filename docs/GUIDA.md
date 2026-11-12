@@ -45,7 +45,7 @@ ETF americani (S&P 500, Nasdaq-100, Russell 2000, oro) usando un conto Alpaca.
 | CRUSCOTTO | Saldo e P&L di oggi in grande, stato del motore, START/STOP/CONTROLLA ORA, posizioni aperte, catena agenti e registro a richiesta, HARD KILL in basso | `screenshots/CRUSCOTTO.png` |
 | MERCATI | Griglia dei 15 ETF con stato (in posizione, segnale, trend, non comprabile) e ultimo prezzo | `screenshots/MERCATI.png` |
 | GRAFICO | Toccando un ETF: grafico a candele (1G/1H/15M/5M), prezzo sempre visibile, medie, livelli di ingresso/stop/target, notizie 48h con TRADUCI | `screenshots/GRAFICO.png` |
-| DETTAGLI | Curva del capitale contro SPY, pagella agenti (Kimi contro le regole), portafoglio, crediti Kimi, performance, registro eventi | `screenshots/DETTAGLI.png` |
+| DETTAGLI | Curva del capitale contro SPY, pagella agenti (Kimi contro le regole), consiglio degli specialisti (solo modalità veloce), portafoglio, crediti Kimi, performance, registro eventi | `screenshots/DETTAGLI.png` |
 | BROKER | Ordini aperti (Annulla) e posizioni (Chiudi) con controllo manuale, ordini recenti, link rapidi | `screenshots/BROKER.png` |
 | SISTEMA | Conti Alpaca (aggiungi/usa/elimina), sezioni Strategia, Kimi, App, Stato; versioni e aggiornamenti | `screenshots/SISTEMA.png` |
 
@@ -77,6 +77,13 @@ futuri.**
 - Decide ogni pochi minuti con Kimi su candele da 1–15 minuti; chiude tutto prima
   della chiusura del mercato. **Nei backtest perde e non batte il caso.** Richiede
   l'app sempre aperta.
+- Prima di ogni decisione un **consiglio di specialisti locali** (analisi tecnica,
+  statistica quantitativa, notizie, portafoglio; i fondamentali restano sospesi
+  perché l'app non ha quella fonte) produce pareri motivati con evidenze. Kimi
+  (il "Chief") li confronta, deve motivare quando va contro qualcuno, e un secondo
+  Kimi avversario contesta tutto. In DETTAGLI, il pannello CONSIGLIO mostra i
+  pareri, le divergenze, la decisione e una pagella per specialista costruita
+  sui risultati a 30 minuti. Il costo in crediti non cambia.
 
 ## 5. Il capitale
 

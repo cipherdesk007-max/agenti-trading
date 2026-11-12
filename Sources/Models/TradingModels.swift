@@ -748,6 +748,71 @@ final class DecisionSample {
     }
 }
 
+/// Memoria del consiglio: i report degli specialisti locali, la divergenza
+/// rilevata e la decisione finale del Chief, con l'esito retrospettivo
+/// valutato dopo `SystemLimits.holdEvaluationSeconds` (pattern di
+/// DecisionSample.postHoldMovePct). Serve per la pagella per agente
+/// (AgentScorecard) e per ricostruire ogni decisione dalle evidenze.
+@Model
+final class CouncilRecord {
+    var id: UUID
+    var createdAt: Date
+    var symbol: String
+    /// Report standardizzati del consiglio, codificati in JSON.
+    var reportsJSON: String
+    /// Esito del confronto divergenze (JSON di CouncilDivergence.Assessment).
+    var divergenceJSON: String?
+    /// Decisione finale del Chief: buy / hold.
+    var action: String
+    var rationale: String
+    var confidence: Double
+    /// Prezzo di riferimento al momento della decisione (per l'esito).
+    var referencePrice: Double
+    /// Movimento % del prezzo dopo l'orizzonte di valutazione.
+    var outcomeMovePct: Double?
+    var evaluated: Bool
+    var executed: Bool
+    var orderID: String?
+    /// Se il Contrarian (Reviewer) ha approvato la proposta.
+    var reviewerApproved: Bool
+
+    init(reports: [AgentReport], divergence: CouncilDivergence.Assessment?, decision: KimiDecision, price: Double) {
+        id = UUID()
+        createdAt = Date()
+        symbol = decision.symbol
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        reportsJSON = (try? encoder.encode(reports)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+        divergenceJSON = divergence.flatMap {
+            (try? encoder.encode($0)).flatMap { String(data: $0, encoding: .utf8) }
+        }
+        action = decision.action.rawValue
+        rationale = decision.rationale
+        confidence = decision.confidence
+        referencePrice = price
+        outcomeMovePct = nil
+        evaluated = false
+        executed = false
+        orderID = nil
+        reviewerApproved = false
+    }
+
+    /// Report decodificati (se il JSON non è decodificabile, lista vuota).
+    var reports: [AgentReport] {
+        guard let data = reportsJSON.data(using: .utf8) else { return [] }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return (try? decoder.decode([AgentReport].self, from: data)) ?? []
+    }
+
+    var divergence: CouncilDivergence.Assessment? {
+        guard let text = divergenceJSON, let data = text.data(using: .utf8) else { return nil }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try? decoder.decode(CouncilDivergence.Assessment.self, from: data)
+    }
+}
+
 // MARK: - Catena agenti
 
 /// Gli agenti in ordine: ognuno riceve solo i dati che gli servono dal

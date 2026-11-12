@@ -84,7 +84,11 @@ def simulate(o, h, l, c, rsi_thr=10, exit_sma=5, stop_atr=2.5, risk=0.01, max_po
         p = pos.pop(j)
         px = price * (1 - COST)
         cash += p["qty"] * px
-        trades.append(dict(ret=px / p["entry"] - 1, pnl=p["qty"] * (px - p["entry"]), days=t - p["day"], reason=reason))
+        # "r" = R-multiple dell'operazione: P&L in unità di rischio iniziale
+        # (distanza stop). Usato dalla validazione quantitativa.
+        trades.append(dict(ret=px / p["entry"] - 1, pnl=p["qty"] * (px - p["entry"]),
+                           days=t - p["day"], reason=reason,
+                           r=(px - p["entry"]) / (p["entry"] - p["stop"])))
 
     for t in range(start, T):
         # 1. apertura: uscite a regole e ingressi del giorno prima

@@ -72,6 +72,12 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var activeMode: TradingMode?
     /// Registro ombra: scelti da Kimi vs scartati (esiti ipotetici).
     @Published private(set) var shadowSummary = ShadowSummary.from(DailyBookStore.load(account: nil).shadow)
+
+    /// Ultimo consiglio della modalità veloce (report specialisti, divergenza,
+    /// decisione del Chief): mostrato nel pannello CONSIGLIO.
+    @Published private(set) var lastCouncil: CouncilSnapshot?
+    /// Pagella retrospettiva per specialista (hit sui pareri giudicati).
+    @Published private(set) var agentScorecards: [AgentScorecard] = []
     /// Conti Alpaca salvati e quello attivo (la chiave Kimi è la stessa per tutti).
     @Published private(set) var alpacaProfiles: [AlpacaProfile] = []
     @Published private(set) var activeProfileID: String?
@@ -193,6 +199,7 @@ final class QuantSwarmEngine: ObservableObject {
         }
         datasetExportURL = DatasetExporter.existingExportURL()
         refreshDatasetStats()
+        refreshAgentScorecards()
     }
 
     // MARK: - Più conti Alpaca
@@ -1093,6 +1100,53 @@ final class QuantSwarmEngine: ObservableObject {
         }
     }
 
+    /// Valuta i record del consiglio più vecchi dell'orizzonte di valutazione:
+    /// registra quanto si è mosso il prezzo da quando il Chief ha deciso. La
+    /// pagella per agente (AgentScorecard) usa questo movimento per giudicare i
+    /// pareri favorevoli/avversi di ogni specialista; neutri e sospesi restano
+    /// fuori. Il record NON si tocca più dopo la valutazione.
+    private func evaluateCouncilRecords() {
+        let cutoff = Date().addingTimeInterval(-SystemLimits.holdEvaluationSeconds)
+        var descriptor = FetchDescriptor<CouncilRecord>(
+            predicate: #Predicate<CouncilRecord> {
+                !$0.evaluated && $0.createdAt < cutoff
+            }
+        )
+        descriptor.fetchLimit = 50
+        guard let records = try? modelContext?.fetch(descriptor), !records.isEmpty else { return }
+        var changed = false
+        for record in records {
+            guard let snapshot = snapshots[record.symbol],
+                  snapshot.lastPrice > 0,
+                  record.referencePrice > 0 else { continue }
+            record.outcomeMovePct = (snapshot.lastPrice - record.referencePrice) / record.referencePrice * 100
+            record.evaluated = true
+            changed = true
+        }
+        if changed {
+            try? modelContext?.save()
+            refreshAgentScorecards()
+        }
+    }
+
+    /// Ricalcola la pagella retrospettiva per specialista sugli ultimi 200
+    /// record del consiglio valutati (euristica documentata, non statistica).
+    func refreshAgentScorecards() {
+        var descriptor = FetchDescriptor<CouncilRecord>(
+            predicate: #Predicate<CouncilRecord> { $0.evaluated }
+        )
+        descriptor.sortBy = [SortDescriptor(\.createdAt, order: .reverse)]
+        descriptor.fetchLimit = 200
+        guard let records = try? modelContext?.fetch(descriptor) else { return }
+        let entries = records.compactMap { record -> (reports: [AgentReport], outcomeMovePct: Double)? in
+            guard let move = record.outcomeMovePct else { return nil }
+            let reports = record.reports
+            guard !reports.isEmpty else { return nil }
+            return (reports, move)
+        }
+        agentScorecards = AgentScorecard.scorecards(from: entries)
+    }
+
     // MARK: - Loop principale
 
     private func apply(stored: StoredCredentials) {
@@ -1165,6 +1219,7 @@ final class QuantSwarmEngine: ObservableObject {
             await refreshTradeRecords()
             await refreshPortfolioThrottled()
             evaluateHoldSamples()
+            evaluateCouncilRecords()
             // L'Analyst non gira più a orologio: parte solo prima di una
             // decisione (catena Scout → filtro → Analyst → Brain → Reviewer →
             // Rischio) o su ANALIZZA ORA. Niente crediti spesi a vuoto.
@@ -1427,6 +1482,22 @@ final class QuantSwarmEngine: ObservableObject {
                     continue
                 }
                 let context = candleStores[symbol]?.context()
+                // Consiglio degli specialisti (FASE 3): i report locali
+                // costano 0 crediti e precedono il Brain, che li confronta e
+                // motiva le divergenze nel rationale.
+                let councilReports = Council.fastModeReports(
+                    symbol: symbol,
+                    context: context,
+                    newsText: configuredNews,
+                    positions: positions,
+                    openOrders: openOrders,
+                    botEquity: equity,
+                    maxOpenPositions: config.maxOpenPositions
+                )
+                let councilDivergence = CouncilDivergence.assess(councilReports)
+                if let note = councilDivergence.note {
+                    log("\(symbol): \(note)", agent: .analyst)
+                }
                 // Catena agenti: se la lettura dell'Analyst è più vecchia di
                 // "validità analisi" (impostazioni), viene aggiornata PRIMA del
                 // Brain e gli viene passata.
@@ -1447,7 +1518,9 @@ final class QuantSwarmEngine: ObservableObject {
                         performance: performanceMatrix(),
                         calibration: calibration,
                         marketContext: context,
-                        analystView: analystView
+                        analystView: analystView,
+                        specialistReports: councilReports,
+                        divergence: councilDivergence
                     )
                     registerKimiCall()
                     setStage(.brain, .done, "\(symbol): \(decision.action.rawValue.uppercased()) \(Int(decision.confidence * 100))%")
@@ -1468,6 +1541,25 @@ final class QuantSwarmEngine: ObservableObject {
                         atr: atr
                     )
                     modelContext?.insert(sample)
+                    // Memoria del consiglio (FASE 4): report + divergenza +
+                    // decisione; l'esito si valuta a 30 minuti e alimenta la
+                    // pagella per specialista.
+                    let councilRecord = CouncilRecord(
+                        reports: councilReports,
+                        divergence: councilDivergence,
+                        decision: decision,
+                        price: snapshot.lastPrice
+                    )
+                    modelContext?.insert(councilRecord)
+                    lastCouncil = CouncilSnapshot(
+                        symbol: symbol,
+                        timestamp: Date(),
+                        reports: councilReports,
+                        divergence: councilDivergence,
+                        action: decision.action.rawValue,
+                        rationale: decision.rationale,
+                        reviewerApproved: nil
+                    )
                     do {
                         try modelContext?.save()
                     } catch {
@@ -1523,7 +1615,9 @@ final class QuantSwarmEngine: ObservableObject {
                                 decision: decision,
                                 snapshot: snapshot,
                                 marketContext: context,
-                                analystView: analystView
+                                analystView: analystView,
+                                specialistReports: councilReports,
+                                divergence: councilDivergence
                             )
                             registerKimiCall()
                         } catch is CancellationError {
@@ -1535,6 +1629,8 @@ final class QuantSwarmEngine: ObservableObject {
                             )
                             continue
                         }
+                        councilRecord.reviewerApproved = review.approved
+                        lastCouncil?.reviewerApproved = review.approved
                         guard review.approved else {
                             setStage(.reviewer, .done, "\(symbol) bocciato")
                             skipStages(after: .reviewer, "bocciato dal Reviewer")
@@ -1568,6 +1664,8 @@ final class QuantSwarmEngine: ObservableObject {
                         setStage(.executor, .done, "\(symbol): bracket inviato")
                         sample.orderID = receipt.orderID
                         sample.executed = true
+                        councilRecord.orderID = receipt.orderID
+                        councilRecord.executed = true
                         try persist(receipt: receipt, atr: atr)
                         let description = orderDescription(receipt)
                         log("Bracket inviato: \(description).", agent: .risk)

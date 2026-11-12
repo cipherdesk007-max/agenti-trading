@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza"
         default: "tutti"
 
 # pipefail: se uno script va in errore il passo FALLISCE anche se il tee ha scritto
@@ -78,4 +78,9 @@ jobs:
           python backtest_overnight_riskparity.py | tee -a ../backtest.md
           python backtest_event_filter.py | tee -a ../backtest.md
           python backtest_vix_filter.py | tee -a ../backtest.md
+      # FASE 5: walk-forward out-of-sample, Monte Carlo, Sortino/profit
+      # factor/expectancy/R-multiplo. Non cambia l'app: misura le regole attuali.
+      - name: Robustezza (walk-forward + Monte Carlo + metriche complete)
+        if: env.Q == 'tutti' || env.Q == 'robustezza' || env.Q == 'mensile'
+        run: python tools/backtest_robustness.py | tee -a backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"

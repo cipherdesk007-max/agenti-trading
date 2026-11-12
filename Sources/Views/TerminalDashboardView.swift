@@ -141,6 +141,7 @@ struct TerminalDashboardView: View {
                                 // Pannelli della sola modalità veloce (stream 1m,
                                 // analisi a richiesta, dataset): in giornaliera non servono.
                                 if displayedMode == .intraday { analysisPanel }
+                                if displayedMode == .intraday { councilPanel }
                                 portfolioPanel
                                 kimiPanel
                                 if displayedMode == .intraday {
@@ -518,6 +519,104 @@ struct TerminalDashboardView: View {
                 stats.placed == 0 ? "—" : "\(filled)/\(stats.placed) · parziali \(stats.partial) · mai \(stats.unfilled)",
                 color: .white
             )
+        }
+        .panelStyle(Theme.accent)
+    }
+
+    /// Consiglio degli agenti (FASE 7): report degli specialisti, divergenze,
+    /// decisione del Chief e pagella retrospettiva per specialista.
+    private var councilPanel: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            panelHeader("Consiglio degli agenti")
+            if let council = engine.lastCouncil {
+                portfolioRow(
+                    "Ultima seduta",
+                    "\(council.symbol) · \(council.action.uppercased()) · \(council.timestamp.formatted(date: .omitted, time: .shortened))",
+                    color: council.action == "buy" ? terminalGreen : Theme.textPrimary
+                )
+                if let approved = council.reviewerApproved {
+                    portfolioRow(
+                        "Contrarian (reviewer)",
+                        approved ? "approva" : "respinge",
+                        color: approved ? terminalGreen : Theme.red
+                    )
+                }
+                if let note = council.divergence?.note {
+                    Text(note)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                ForEach(council.reports) { report in
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack {
+                            Text(report.agent.title)
+                                .font(.caption.weight(.bold))
+                            Spacer()
+                            Text(report.signal.label)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(
+                                    report.signal == .long ? terminalGreen :
+                                    report.signal == .short ? Theme.red : .gray
+                                )
+                            Text("\(Int(report.confidence * 100))%")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.textTertiary)
+                        }
+                        Text(report.analysis)
+                            .font(.caption)
+                            .foregroundStyle(Theme.textPrimary)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !report.evidence.isEmpty {
+                            Text(report.evidence.prefix(3).joined(separator: " · "))
+                                .font(.caption2)
+                                .foregroundStyle(.gray)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        if !report.missingData.isEmpty {
+                            Text("Dati mancanti: \(report.missingData.joined(separator: "; "))")
+                                .font(.caption2)
+                                .foregroundStyle(Theme.amber)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        Text("Invalidazione: \(report.invalidation)")
+                            .font(.caption2)
+                            .foregroundStyle(Theme.textTertiary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(8)
+                    .background(Color.gray.opacity(0.12), in: Theme.shape(Theme.smallRadius))
+                }
+                Text("Decisione del Chief: \(council.rationale)")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Il consiglio (tecnica, quant, notizie, fondamentali, portafoglio) si riunisce alla prossima decisione della modalità veloce.")
+                    .font(.caption)
+                    .foregroundStyle(.gray)
+            }
+            Divider().overlay(Color.gray.opacity(0.3))
+            panelHeader("Pagella per specialista")
+            if engine.agentScorecards.isEmpty {
+                Text("Nessun parere giudicato: le pagelle arrivano dopo 30 minuti dalle prime decisioni.")
+                    .font(.caption)
+                    .foregroundStyle(.gray)
+            } else {
+                ForEach(engine.agentScorecards) { card in
+                    portfolioRow(
+                        card.agent.title,
+                        card.hitRate.map { String(format: "%.0f%% · %d giudizi", locale: Locale(identifier: "en_US_POSIX"), $0 * 100, card.judged) }
+                            ?? "\(card.hits)/\(card.judged) · servono 5 giudizi",
+                        color: (card.hitRate ?? 0.5) >= 0.5 ? terminalGreen : Theme.amber
+                    )
+                }
+                Text("Come leggerla: un parere FAVOREVOLE è vinto se il prezzo sale entro 30 minuti, un parere AVVERSO se scende. I pareri NEUTRALI e SOSPESI non si giudicano. È un'euristica di primo ordine, non una probabilità calibrata.")
+                    .font(.caption)
+                    .foregroundStyle(.gray)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
+            }
         }
         .panelStyle(Theme.accent)
     }

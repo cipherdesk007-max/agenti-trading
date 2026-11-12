@@ -25,15 +25,15 @@ struct QuantSwarmAlphaZeroApp: App {
     /// NOTA: con i modelli variadici, configurations è variadico (non un array):
     /// le parentesi quadre rompono la compilazione.
     private static func makeContainer() -> ModelContainer? {
-        if let stored = try? ModelContainer(for: TradeRecord.self, DecisionSample.self) {
+        if let stored = try? ModelContainer(for: TradeRecord.self, DecisionSample.self, CouncilRecord.self) {
             return stored
         }
         wipePersistentStore()
-        if let retried = try? ModelContainer(for: TradeRecord.self, DecisionSample.self) {
+        if let retried = try? ModelContainer(for: TradeRecord.self, DecisionSample.self, CouncilRecord.self) {
             return retried
         }
         return try? ModelContainer(
-            for: TradeRecord.self, DecisionSample.self,
+            for: TradeRecord.self, DecisionSample.self, CouncilRecord.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true)
         )
     }

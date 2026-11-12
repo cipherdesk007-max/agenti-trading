@@ -20,16 +20,19 @@ Questo file è per chi studia o rivede il progetto (persone o AI): cosa fa l'app
 | Giornaliera | `Sources/Core/DailyStrategy.swift`, `Sources/Core/DailyCycle.swift` | Indicatori su barre chiuse, candidati, uscite, registro per conto (`DailyBookStore`), registro ombra e pagella (`ShadowSummary`), ciclo puro testabile con broker e Brain finti |
 | Notte | `Sources/Core/NightCycle.swift` | Finestre d'asta (`NightStrategy.phase`), divisione del capitale in azioni intere (`allocate`), registro per conto (`NightBookStore`), ciclo puro testabile |
 | Veloce | dentro `QuantSwarmEngine.swift` | Intraday 15m con Kimi, flat prima della chiusura. Sperimentale |
+| Consiglio | `Sources/Agents/SpecialistAgents.swift`, `CouncilRecord` in `Sources/Models/TradingModels.swift` | Cinque specialisti locali (tecnica, quant, notizie, fondamentali, portafoglio) con report standard e divergenze; memoria e pagella per agente. Zero crediti. Vedi `docs/CONSIGLIO.md` |
 | Rischio | `Sources/Core/RiskRules.swift` | Capitale del bot, quantità, tetto 25%, rischio per trade, 1 azione comprabile |
 | Alpaca | `Sources/Services/AlpacaService.swift` | REST trading + dati + notizie; `AlpacaBroker` adatta il servizio a `BrokerClient` e `NightBroker` |
 | Kimi | `Sources/Services/KimiService.swift` | Brain e Reviewer della giornaliera (JSON con schema, `reasoning_effort` medium con ripiego low), decide/review/analyze della veloce |
 | Promemoria | `Sources/Services/NotificationManager.swift` | Giornaliera 15:30 NY; notte 8:45 e 15:15 NY |
 | Interfaccia | `Sources/Views/*.swift` | CRUSCOTTO, MERCATI e grafici, DETTAGLI (curva del capitale, pagella), BROKER, SISTEMA, conti |
 | Test | `Tests/*.swift` | Rischio, strategia, ciclo giornaliero, ciclo notte, pagella, conti, aggiornamenti |
-| Studi | `tools/*.py`, `.github/workflows/backtest.yml` | Backtest con yfinance; controllo mensile automatico |
+| Studi | `tools/*.py`, `.github/workflows/backtest.yml` | Backtest con yfinance; controllo mensile automatico; validazione quantitativa (`quale=robustezza`: walk-forward out-of-sample, Monte Carlo, metriche per trade) |
 | Documentazione PDF | `docs/GUIDA.pdf`, `.github/workflows/docs.yml` | PDF della guida rigenerato in CI (pandoc + weasyprint) a ogni modifica di `docs/GUIDA.md` |
 
 Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia (regole, zero crediti) → Analyst (quadro) → Brain (Kimi) → Reviewer (Kimi avversario) → Rischio (codice) → Esecutore (limite + stop + target sul broker). Kimi viene chiamato solo per candidati che il capitale può comprare. Brain e Reviewer ricevono indicatori, ultime 20 chiusure, correlazione a 60 sedute e notizie delle ultime 48 ore.
+
+Catena della veloce con il consiglio (vedi `docs/CONSIGLIO.md`): Scout → Strategia → **consiglio di specialisti locali (report standard, zero crediti)** → Analyst (quadro) → Brain (Chief: confronta i report e motiva le divergenze) → Reviewer (Contrarian: contesta anche i pareri del consiglio) → Rischio (codice, nessuna deroga) → Esecutore. Ogni seduta finisce in `CouncilRecord` (SwiftData) e a 30 minuti alimenta la pagella per specialista nel pannello CONSIGLIO.
 
 ## Decisioni prese con i dati
 
