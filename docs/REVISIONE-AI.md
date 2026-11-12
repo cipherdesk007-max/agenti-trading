@@ -155,3 +155,69 @@ Nessun Co-Authored-By. Nessuna release, nessun `pubblica`, nessun dispatch di wo
 - Verifiche su telefono/conto: docs/VERIFICHE.md (10 controlli) + pagella Kimi (20–30 trade).
 - Non verificabili dalla sandbox: compilazione locale (solo CI), backtest con rete esterna
   (solo CI/locale), dispatch workflow (403), UI reale, screenshot.
+
+---
+
+# Sessione 12/11/2026 (seconda parte) · design 1.5.0 completo + controllo finale + versione
+
+Un commit su `main` per blocco, build verde prima del successivo (run CI indicato),
+nessuna riga Co-Authored-By. I commit solo-docs non avviano la workflow IPA.
+
+| Lavoro | Commit | Build CI |
+|---|---|---|
+| PROPOSTE.md: triage idee esterne (11–16, con link ufficiali e limiti) | `77a6ee5` | nessuna (docs) |
+| Design DETTAGLI (+ helper condivisi nello stile nuovo) | `2ff870f` | run#148 **success** |
+| Design BROKER | `1516b1c` | run#149 **success** |
+| Design SISTEMA (sezioni Conto/Strategia/Kimi/App/Stato) | `a186539` | run#150 **success** |
+| Design LOGIN (+ residui GRAFICO, helper morti rimossi da Theme) | `c9a0d69` | run#151 **success** |
+| Controllo finale A: niente try!/fatalError, via force-unwrap, AlpacaService testabile, test HTTP + parametrici 500–1M | `c4e3876` | run#152 **failure** (Swift 6 concurrency su `static var handler` del mock) |
+| fix concurrency mock | `3f354ff` | run#153 **failure** (`didReceive` vs `didLoad`) |
+| fix callback `urlProtocol(_:didLoad:)` + body da httpBodyStream + CONTROLLO-FINALE.md + GUIDA.md + screenshots | `a448de7` | run#155 **success** (153 unitari + 5 UI verdi) |
+| MARKETING_VERSION 1.5.0 (app e widget) | `9f6c534` | run#156 **success** → **build 156** |
+| CHANGELOG/README/STATO/REVISIONE-AI/RELEASE-NOTE per 1.5.0 | questo commit | nessuna (docs) |
+
+## Cosa è stato fatto
+
+- **Design 9c completo** (solo `Sources/Views` + `Theme.swift`): tutte le schermate nel
+  sistema nuovo (un accento, SF Pro + cifre tabellari, griglia 8 pt, AppCard piene senza
+  bordi, SectionHeader/ValueRow/StatusChip, SISTEMA a sezioni). Identificatori UI dei
+  test invariati (`STOP`, `START`, `CONTROLLA ORA`, `HARD KILL SWITCH`, tab `MERCATI`,
+  switch `PAPER TRADING`, `market-SPY`, `interval-picker`, `chart-price`,
+  `news-badge-XLF`, `Grafico a candele`, `buyableETF`).
+- **Proposte 11–16** (idee incollate dall'esterno): tutte solo in `docs/PROPOSTE.md` con
+  verifica preliminare (Alpaca non dà calendario macro né sentiment strutturato), link
+  ufficiali (.gov FOMC/BLS, docs Alpaca fractional) e limiti dichiarati. La 15
+  (fractional `notional`) documenta il vincolo grave: ordini solo Day → niente stop
+  GTC frazionario, e MOC/OPG della NOTTE non frazionari.
+- **Controllo finale A** (`docs/CONTROLLO-FINALE.md`): tabella file-per-file con
+  rischi e test; scenari "cosa può andare storto" per GIORNALIERA/VELOCE/NOTTE mappati
+  ai test; nessun `try!`/`fatalError` (grep verificato), via 4 force-unwrap su subscript;
+  nessun segreto nel codice/log (grep verificato); test parametrici 500/1.000/10.000/
+  100.000/1.000.000 $ per sizing, tetto 25%, rischio, divisione NOTTE; 12 test HTTP
+  mock su AlpacaService (normale + 422/404/parziale/rete assente/decode).
+- **Guida** `docs/GUIDA.md` (9 capitoli, numeri veri da STATO, "i risultati passati non
+  garantiscono quelli futuri", nessun guadagno promesso) + screenshot copiati in
+  `docs/screenshots/`. **GUIDA.pdf non generabile in questa sandbox** (no pandoc/
+  wkhtmltopdf/reportlab): lo genera l'altro revisore.
+- **Versione 1.5.0 build 156** (`9f6c534`, run#156 verde). `docs/RELEASE-NOTE.md` pronto
+  con tag `v1.5.0-b156`, testo e allegati. Pubblicazione (release GitHub, `pubblica`)
+  vietata a me: la fa l'altro revisore/a mano.
+
+## Cosa resta aperto
+
+- Screenshot post-design-1.5.0 da rifare sul ramo `screenshot` (l'altro revisore).
+- UI test (`uitest`) e backtest `quale=studi` + `overnight` (R1) da lanciare (403 per me).
+- `docs/VERIFICHE.md` da eseguire su telefono/conto vero (10 controlli).
+- `docs/GUIDA.pdf` da generare.
+- Pubblicazione release v1.5.0-b156 a mano (token Actions senza permesso release).
+- Proposte 11–16: da scegliere dall'utente; 13/14/16 richiedono prima uno script in
+  `tools/` (`quale=studi`); 15 richiede il backtest/paper e la valutazione del
+  rischio "stop solo Day".
+
+## Cosa non ho podido verificare
+
+- Compilazione locale (solo CI: tutte le build indicate sono verdi tranne le due
+  fallite e subito fixate, 152/153).
+- UI reale su telefono, Face ID, notifiche, widget, TRADUCI (solo simulatore).
+- Ordini reali su Alpaca paper/live (MOC/OPG accettati, stop GTC visibili).
+- Backtest con rete esterna (solo CI/locale dell'altro revisore).

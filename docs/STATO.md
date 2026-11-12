@@ -1,6 +1,6 @@
 # Stato del progetto · QuantSwarm Alpha Zero
 
-Aggiornato al 12/11/2026, versione **1.4.0 build 137** (commit su `main`).
+Aggiornato al 12/11/2026, versione **1.5.0 build 156** (commit `9f6c534` su `main`).
 Questo file è per chi studia o rivede il progetto (persone o AI): cosa fa l'app, come è collegata, cosa è già stato deciso con i dati e cosa resta aperto.
 
 ## Vincoli che non cambiano
@@ -65,12 +65,12 @@ Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia 
 - `reasoning_effort` medium accettato dal modello Kimi in uso (altrimenti l'app passa da sola a low).
 - Il foglio TRADUCI di Apple (non si apre sul simulatore).
 - Durata reale della prova: con 1.000 $ circa un segnale a settimana nella giornaliera; servono 20–30 trade chiusi prima di giudicare.
-- Documenti di sessione, proposte e design: [REVISIONE-AI.md](REVISIONE-AI.md), [PROPOSTE.md](PROPOSTE.md), [DESIGN.md](DESIGN.md).
-- Design in corso (solo viste): dopo ogni 2 schermate gli screenshot li lancia e rivede l'altro revisore (SCREENSHOT); restano DETTAGLI, BROKER, SISTEMA, LOGIN.
+- Documenti di sessione, proposte e design: [REVISIONE-AI.md](REVISIONE-AI.md), [PROPOSTE.md](PROPOSTE.md), [DESIGN.md](DESIGN.md), [CONTROLLO-FINALE.md](CONTROLLO-FINALE.md), [GUIDA.md](GUIDA.md), [RELEASE-NOTE.md](RELEASE-NOTE.md).
+- Design 1.5.0 **completo** (solo viste, un commit per schermata): Theme, CRUSCOTTO, MERCATI+GRAFICO, DETTAGLI, BROKER, SISTEMA, LOGIN. Da rifare dopo il rilascio: gli screenshot del ramo `screenshot` (ora sono pre-1.5.0, copiati in `docs/screenshots/` per la guida).
 
 ## Come verificare in modo indipendente
 
-- Test: 137 unitari (CI a ogni push, "Unsigned iOS IPA") + 5 di interfaccia in `UITests/` (solo a mano, opzione `uitest`).
-- Strategie: Actions → "Backtest filtro" → `quale` = `app`, `piccolo`, `overnight`, `segnali`, `oggi`.
+- Test: 153 unitari (CI a ogni push, "Unsigned iOS IPA": +12 HTTP AlpacaServiceTests con mock, +3 parametrici conti 500–1M) + 5 di interfaccia in `UITests/` (solo a mano, opzione `uitest`). Tabella file/rischi/test in [CONTROLLO-FINALE.md](CONTROLLO-FINALE.md).
+- Strategie: Actions → "Backtest filtro" → `quale` = `app`, `piccolo`, `overnight`, `segnali`, `studi`, `oggi`.
 - Ordini: confronta il report di sessione dell'app con lo storico ordini di Alpaca.
 - Indicatori: SMA200 e RSI(2) di Wilder su TradingView o Yahoo devono coincidere con la tabella di `oggi`.

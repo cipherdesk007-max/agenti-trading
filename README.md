@@ -1,6 +1,7 @@
 # FMLAB · QuantSwarm Alpha Zero
 
-Versione corrente: **1.4.0 build 137** (vedi [CHANGELOG.md](CHANGELOG.md) e, nell'app, **SISTEMA → VERSIONE**).
+Versione corrente: **1.5.0 build 156** (vedi [CHANGELOG.md](CHANGELOG.md) e, nell'app, **SISTEMA → VERSIONE**).
+Per chi usa l'app: la guida in italiano è [docs/GUIDA.md](docs/GUIDA.md) (PDF: `docs/GUIDA.pdf`).
 Per revisori umani o AI: lo stato del progetto, le decisioni prese e i numeri degli studi sono in [docs/STATO.md](docs/STATO.md).
 
 App iOS 17+ (Swift 6, SwiftUI, SwiftData) di trading con agenti AI: Kimi via API sceglie e contesta, il codice decide quantità e rischio, Alpaca esegue. Nessuna credenziale nel repository.
@@ -32,8 +33,8 @@ Scout (dati, conto, posizioni) → Strategia (segnali a regole, zero crediti) �
 
 ## Verifica indipendente
 
-- **Test automatici**: a ogni push GitHub Actions esegue i test XCTest (regole di rischio, filtro, strategia giornaliera) su simulatore; se un test fallisce l'IPA non viene pubblicata.
-- **Backtest**: Actions → "Backtest filtro" → Run workflow con `quale` = `tutti`, `app`, `piccolo`, `overnight`, `segnali`, `momentum`, `giornaliero`, `intraday15`, `veloce5m` oppure `oggi` (segnali di oggi con dati Yahoo, indipendenti dall'app). Il 1° di ogni mese parte da solo il controllo `mensile` (app, piccolo, overnight). Codice in `tools/`, risultati nel riepilogo del run.
+- **Test automatici**: a ogni push GitHub Actions esegue **153 test unitari** (regole di rischio, filtro, strategia giornaliera, ciclo notte, HTTP Alpaca con mock, parametrici su conti 500–1.000.000 $) su simulatore; se un test fallisce l'IPA non viene pubblicata. I 5 test di interfaccia girano solo a mano.
+- **Backtest**: Actions → "Backtest filtro" → Run workflow con `quale` = `tutti`, `app`, `piccolo`, `overnight`, `segnali`, `momentum`, `giornaliero`, `intraday15`, `veloce5m`, `studi` (studi solo-da-studiare: trailing stop, risk-parity NOTTE, filtro evento 48h, filtro VIX) oppure `oggi` (segnali di oggi con dati Yahoo, indipendenti dall'app). Il 1° di ogni mese parte da solo il controllo `mensile` (app, piccolo, overnight). Codice in `tools/`, risultati nel riepilogo del run.
 - **Broker**: confronta il registro dell'app con l'estratto conto Alpaca.
 
 ## Build e IPA
@@ -78,7 +79,7 @@ xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -d
 - **Promemoria** lun–ven 15:30 New York (21:30 in Italia) per aprire l'app. Un controllo automatico in background non è possibile senza togliere la protezione Face ID alle chiavi.
 - **Crash e blocchi** raccolti con MetricKit e riportati nel report di sessione.
 - **CSV dei trade chiusi** (DETTAGLI), per il commercialista e il confronto con l'estratto conto.
-- **Test**: unitari (rischio, strategia, ciclo con broker e Kimi finti) e di interfaccia (conferma live, HARD KILL, START/STOP).
+- **Test**: 153 unitari (rischio, strategia, cicli con broker/Kimi finti, HTTP Alpaca con mock, parametrici per taglie di conto) e 5 di interfaccia (conferma live, HARD KILL, START/STOP, prezzo su ogni intervallo, badge notizie). Vedi [docs/CONTROLLO-FINALE.md](docs/CONTROLLO-FINALE.md).
 
 ## Sicurezza e privacy
 
