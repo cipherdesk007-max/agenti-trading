@@ -5,7 +5,7 @@ Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Sem
 La versione installata si legge in **SISTEMA → VERSIONE** (con il numero di build della CI).
 Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
-## [Non rilasciato]
+## [1.4.0 · build N] - 2026-11-12
 
 ### Corretto
 - **NOTTE: registro vecchio (senza quantità) resta a una sola vendita.** Nella riconciliazione R7 la voce legacy restava in coda: se la giornaliera aveva lo stesso simbolo il detenuto non tornava a zero e ogni sera veniva ri-messa in coda la vendita di TUTTO il detenuto. Ora la voce senza quantità esce subito dopo l'invio dell'OPG, come prima di R7. Test.
