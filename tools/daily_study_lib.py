@@ -22,9 +22,32 @@ WINDOWS = [("2006-01-01", None, "2006\u2013oggi"),
            (None, "3y", "ultimi 3 anni")]
 
 
+FIELDS = ("Open", "High", "Low", "Close")
+_KNOWN_FIELDS = set(FIELDS) | {"Adj Close", "Volume"}
+
+
+def flat_by_field(df):
+    """yfinance può restituire colonne MultiIndex (field, ticker) oppure
+    (ticker, field), a seconda della versione: le porta sempre a (field, ticker)."""
+    if not isinstance(df.columns, pd.MultiIndex):
+        return df
+    if set(df.columns.get_level_values(0)) & _KNOWN_FIELDS:
+        return df
+    return df.swaplevel(0, 1, axis=1).sort_index(axis=1)
+
+
 def load(start="2004-06-01"):
-    df = yf.download(ETFS, start=start, auto_adjust=True, progress=False, group_by="column")
-    return tuple(df[k][ETFS].astype(float) for k in ("Open", "High", "Low", "Close"))
+    df = flat_by_field(yf.download(ETFS, start=start, auto_adjust=True, progress=False, group_by="column"))
+    return tuple(df[k][ETFS].astype(float) for k in FIELDS)
+
+
+def load_series(ticker, field="Close", start="2004-06-01", auto_adjust=True):
+    """Serie di un singolo ticker (es. ^VIX), robusta al MultiIndex di yfinance."""
+    df = flat_by_field(yf.download(ticker, start=start, auto_adjust=auto_adjust, progress=False))
+    s = df[field]
+    if isinstance(s, pd.DataFrame):  # (field, ticker) con un solo ticker → una colonna
+        s = s.iloc[:, 0]
+    return s.astype(float)
 
 
 def wilder_rsi(c, n=2):

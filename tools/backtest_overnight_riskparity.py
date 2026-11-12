@@ -12,25 +12,18 @@ su CAGR/maxDD, non sul picco di Sharpe.
 
 import numpy as np
 import pandas as pd
-import yfinance as yf
+
+from daily_study_lib import load_series
 
 LIQUID = ["SPY", "QQQ", "IWM", "GLD"]
 COST = 0.00003
 
 
 def main():
-    closes = {}
-    for sym in LIQUID:
-        d = yf.download(sym, start="2006-01-01", auto_adjust=False, progress=False)
-        if isinstance(d.columns, pd.MultiIndex):
-            d.columns = d.columns.get_level_values(0)
-        closes[sym] = d["Close"]
-    c = pd.DataFrame(closes).dropna()
-    o = pd.DataFrame({s: yf.download(s, start="2006-01-01", auto_adjust=False, progress=False)["Open"]
-                      for s in LIQUID})
-    if isinstance(o.columns, pd.MultiIndex):
-        o.columns = o.columns.get_level_values(0)
-    o = o.reindex(c.index)
+    c = pd.DataFrame({s: load_series(s, "Close", start="2006-01-01", auto_adjust=False)
+                      for s in LIQUID}).dropna()
+    o = pd.DataFrame({s: load_series(s, "Open", start="2006-01-01", auto_adjust=False)
+                      for s in LIQUID}).reindex(c.index)
 
     night = (o.shift(-1) / c - 1).dropna()  # close t -> open t+1
     vol = night.rolling(20).std()

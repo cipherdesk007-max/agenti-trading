@@ -14,12 +14,12 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from daily_study_lib import HEADER, load, row, simulate
+from daily_study_lib import HEADER, load, load_series, row, simulate
 
 
 def main():
     o, h, l, c = load()
-    vix = yf.download("^VIX", start="2004-06-01", auto_adjust=True, progress=False)["Close"].reindex(c.index).ffill()
+    vix = load_series("^VIX").reindex(c.index).ffill()
     vix_ma = vix.rolling(20).mean()
     vix_sd = vix.rolling(20).std()
 

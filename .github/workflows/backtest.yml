@@ -11,6 +11,12 @@ on:
         description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi"
         default: "tutti"
 
+# pipefail: se uno script va in errore il passo FALLISCE anche se il tee ha scritto
+# l'output (prima "| tee" nascondeva l'errore e le tabelle restavano vuote).
+defaults:
+  run:
+    shell: bash -e -o pipefail {0}
+
 jobs:
   backtest:
     runs-on: ubuntu-latest

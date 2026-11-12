@@ -16,13 +16,13 @@ import numpy as np
 import pandas as pd
 import yfinance as yf
 
-from daily_study_lib import HEADER, load, row, simulate
+from daily_study_lib import HEADER, load, load_series, row, simulate
 
 
 def main():
     o, h, l, c = load()
     spy_ret = c["SPY"].pct_change().abs()
-    vix = yf.download("^VIX", start="2004-06-01", auto_adjust=True, progress=False)["Close"]
+    vix = load_series("^VIX")
     vix_ret = vix.pct_change()
     event = ((spy_ret > 0.025) | (vix_ret > 0.20)).rolling(2).max().reindex(c.index).fillna(False)
 
