@@ -60,6 +60,7 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
         NSFaceIDUsageDescription: "Face ID protegge l'accesso alle credenziali API salvate nel Keychain."
         ITSAppUsesNonExemptEncryption: false
+        LSApplicationQueriesSchemes: [livecontainer, sidestore]
     scheme:
       gatherCoverageData: false
       testTargets:

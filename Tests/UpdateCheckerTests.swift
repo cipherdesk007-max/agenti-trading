@@ -38,4 +38,39 @@ final class UpdateCheckerTests: XCTestCase {
         let comps = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
         XCTAssertEqual(comps.queryItems?.first?.value, latest.downloadURL.absoluteString)
     }
+
+    func testSideStoreLinkEncodesTheIPAURL() throws {
+        let latest = try XCTUnwrap(UpdateChecker.latest(from: source))
+        let url = try XCTUnwrap(UpdateChecker.sideStoreInstallURL(for: latest))
+        XCTAssertTrue(url.absoluteString.hasPrefix("sidestore://install?url=https"))
+        XCTAssertFalse(url.absoluteString.dropFirst("sidestore://install?url=".count).contains("&"))
+        let comps = try XCTUnwrap(URLComponents(url: url, resolvingAgainstBaseURL: false))
+        XCTAssertEqual(comps.queryItems?.first?.value, latest.downloadURL.absoluteString)
+    }
+
+    @MainActor
+    func testInstallURLFollowsTheStore() throws {
+        let latest = try XCTUnwrap(UpdateChecker.latest(from: source))
+        let lc = try XCTUnwrap(UpdateChecker.installURL(for: latest, store: .liveContainer))
+        let ss = try XCTUnwrap(UpdateChecker.installURL(for: latest, store: .sideStore))
+        XCTAssertTrue(lc.absoluteString.hasPrefix("livecontainer://install?url="))
+        XCTAssertTrue(ss.absoluteString.hasPrefix("sidestore://install?url="))
+        XCTAssertEqual(UpdateChecker.installURL(for: latest, store: .download), latest.downloadURL)
+    }
+
+    @MainActor
+    func testSourceURLPerStore() {
+        XCTAssertTrue(UpdateChecker.storeSourceURL(for: .liveContainer)?.absoluteString
+            .hasPrefix("livecontainer://source?url=") ?? false)
+        XCTAssertTrue(UpdateChecker.storeSourceURL(for: .sideStore)?.absoluteString
+            .hasPrefix("sidestore://source?url=") ?? false)
+        XCTAssertEqual(UpdateChecker.storeSourceURL(for: .download), UpdateChecker.sourceURL)
+    }
+
+    @MainActor
+    func testCurrentStorePrefersSideStoreThenFallsBackToDownload() {
+        XCTAssertFalse(UpdateChecker.isRunningInLiveContainer)
+        XCTAssertEqual(UpdateChecker.currentStore(canOpenScheme: { _ in true }), .sideStore)
+        XCTAssertEqual(UpdateChecker.currentStore(canOpenScheme: { _ in false }), .download)
+    }
 }

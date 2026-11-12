@@ -7,6 +7,10 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+### Corretto (app, 12/11/2026)
+- **Aggiornamenti in-app: Aggiorna apre il gestore GIUSTO.** L'app ora rileva com'è installata: dentro LiveContainer (classi host `LCAppInfo`/`LCSharedUtils` nel processo) apre `livecontainer://install?url=…`; installata da SideStore apre gli schemi ufficiali `sidestore://install?url=…` e `sidestore://source?url=…` (così l'aggiornamento finisce sulla copia SideStore, non "sopra" LiveContainer); senza gestori riconosciuti scarica l'IPA con Safari. Prima il pulsante apriva sempre LiveContainer anche per le copie installate con SideStore. Aggiunti `LSApplicationQueriesSchemes` (livecontainer, sidestore) all'Info.plist per `canOpenURL`. Test: 4 nuovi in `UpdateCheckerTests` (link SideStore codificato, URL di install per gestore, sorgente per gestore, rilevamento SideStore altrimenti download).
+
+
 ### Aggiunto (strumenti e CI, 12/11/2026)
 - **Workflow `Docs PDF`** (`.github/workflows/docs.yml`): genera `docs/GUIDA.pdf` da `docs/GUIDA.md` con pandoc + weasyprint a ogni modifica della guida e su dispatch manuale; il PDF viene caricato come artifact e committato in `docs/` dal bot di GitHub.
 
