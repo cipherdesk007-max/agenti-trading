@@ -3,6 +3,10 @@ import SwiftData
 
 enum SystemLimits {
     static let kimiModel = "kimi-k3.1-pro-highspeed"
+    /// Prefisso del client_order_id dello stop d'emergenza del flat-by-close:
+    /// lo stop si riconosce da qui, NON dal tipo d'ordine (anche la gamba stop del
+    /// bracket è una vendita stop).
+    static let emergencyStopPrefix = "qsv-emg-"
     static let marketStreamHost = "stream.data.alpaca.markets/v2/iex"
     static let atrPeriod = 14
     static let holdEvaluationSeconds: TimeInterval = 1800

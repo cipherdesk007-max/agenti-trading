@@ -663,42 +663,20 @@ final class QuantSwarmEngine: ObservableObject {
         #endif
     }
 
-    /// Flat by close fallito (bug B3): la posizione della modalità veloce
-    /// resterebbe overnight SENZA protezione, perché le gambe del bracket
-    /// hanno time_in_force "day" e scadono alla chiusura (regola Alpaca:
-    /// docs.alpaca.markets/docs/orders-at-alpaca). Si rimette subito uno
-    /// stop GTC sul broker, con la stessa regola della giornaliera
-    /// (chiusura − 2,5 ATR): resta attivo anche con l'app chiusa. Se anche
-    /// lo stop fallisce, l'utente viene avvisato di chiudere a mano.
-    private func restoreFlatByCloseStop(service: AlpacaService, symbol: String) async {
-        // Prima di rimettere lo stop si verifica che la posizione esista
-        // ancora: uno stop su una posizione già chiusa aprirebbe uno short.
+    /// Prezzo dello stop d'emergenza per il flat-by-close fallito (chiusura − 2,5 ATR,
+    /// stessa regola della giornaliera), solo se la posizione esiste ancora: uno stop
+    /// su una posizione già chiusa aprirebbe uno short. Nil se non calcolabile.
+    /// Il piazzamento vero avviene in FlatByClose.closeSymbol (con client_order_id
+    /// qsv-emg-… e controllo anti-duplicato).
+    private func emergencyStopPrice(service: AlpacaService, symbol: String) async -> Double? {
         guard let current = try? await service.positions(),
               let still = current.first(where: { $0.symbol.uppercased() == symbol }),
-              still.quantityValue > 0 else {
-            log("\(symbol): chiusura pre-mercato fallita ma la posizione risulta chiusa: nessuno stop da rimettere.", agent: .risk)
-            return
-        }
+              still.quantityValue > 0 else { return nil }
         guard let bars = try? await service.dailyBars(symbol: symbol),
-              let snapshot = DailyStrategy.snapshot(of: bars) else {
-            log("\(symbol): chiusura pre-mercato fallita e barre non disponibili: POSIZIONE SENZA STOP, chiudi dal broker panel.", agent: .risk)
-            NotificationManager.shared.notify("POSIZIONE SENZA STOP", body: "\(symbol): chiusura pre-mercato fallita, riprova o chiudi a mano dal broker panel.")
-            return
-        }
+              let snapshot = DailyStrategy.snapshot(of: bars) else { return nil }
         let stop = RiskRules.roundDown(snapshot.close - DailyStrategy.stopATR * snapshot.atr14, tick: 0.01)
-        guard stop > 0, stop < snapshot.close else {
-            log("\(symbol): stop calcolato non valido (\(format(stop))); POSIZIONE SENZA STOP, chiudi dal broker panel.", agent: .risk)
-            NotificationManager.shared.notify("POSIZIONE SENZA STOP", body: "\(symbol): chiudi a mano dal broker panel.")
-            return
-        }
-        do {
-            _ = try await service.submitStop(symbol: symbol, quantity: still.quantityValue, stopPrice: stop)
-            log("\(symbol): chiusura pre-mercato fallita; rimesso lo stop GTC a \(format(stop)) USD (protezione overnight, 2,5 ATR).", agent: .risk)
-            NotificationManager.shared.notify("STOP OVERNIGHT", body: "\(symbol): chiusura pre-mercato fallita, stop GTC a \(format(stop)) USD.")
-        } catch {
-            log("\(symbol): chiusura E stop entrambi falliti (\(error.localizedDescription)); POSIZIONE SENZA STOP, chiudi subito dal broker panel.", agent: .risk)
-            NotificationManager.shared.notify("POSIZIONE SENZA STOP", body: "\(symbol): chiudi subito a mano dal broker panel.")
-        }
+        guard stop > 0, stop < snapshot.close else { return nil }
+        return stop
     }
 
     /// Promemoria locale: se iOS sospende l'app in background, l'utente viene
@@ -1216,24 +1194,31 @@ final class QuantSwarmEngine: ObservableObject {
                             agent: .risk
                         )
                         let service = AlpacaService(credentials: credentials.alpaca)
+                        let day = NightStrategy.dayStampET(Date())
                         var failed: [String] = []
-                        let open = (try? await service.openOrders()) ?? []
                         for symbol in intradaySymbols {
-                            for order in open where order.symbol.uppercased() == symbol {
-                                // Mai annullare gli stop protettivi di vendita (es. lo
-                                // stop GTC d'emergenza appena rimesso da
-                                // restoreFlatByCloseStop): il retry di flat-by-close non
-                                // deve togliere la protezione overnight.
-                                if order.side == "sell" && (order.type == "stop" || order.type == "stop_limit") {
-                                    continue
-                                }
-                                try? await service.cancelOrder(id: order.id)
+                            // FlatByClose: annulla TUTTI gli ordini del simbolo (gambe del
+                            // bracket + stop d'emergenza), verifica l'annullo, chiude a
+                            // mercato; se fallisce rimette subito lo stop d'emergenza con
+                            // client_order_id qsv-emg-SIMBOLO-GIORNO (mai due insieme).
+                            // Nota: DELETE /v2/positions/{symbol} non annulla gli ordini
+                            // aperti e con ordini sell aperti le azioni restano riservate
+                            // (chiusura rifiutata "insufficient qty"):
+                            // docs.alpaca.markets/us/reference/deleteopenposition-1
+                            let emgStop = await emergencyStopPrice(service: service, symbol: symbol)
+                            let closed = await FlatByClose.closeSymbol(broker: service, symbol: symbol,
+                                                                       emergencyStopPrice: emgStop, day: day) { [weak self] msg in
+                                await self?.log(msg, agent: .risk)
                             }
-                            do {
-                                try await service.closePosition(symbol: symbol)
-                            } catch {
+                            if !closed {
                                 failed.append(symbol)
-                                await restoreFlatByCloseStop(service: service, symbol: symbol)
+                                if let emgStop {
+                                    NotificationManager.shared.notify("STOP OVERNIGHT",
+                                        body: "\(symbol): flat-by-close fallito, stop GTC d'emergenza a \(format(emgStop)) USD (qsv-emg).")
+                                } else {
+                                    NotificationManager.shared.notify("POSIZIONE SENZA STOP",
+                                        body: "\(symbol): flat-by-close fallito e stop non calcolabile: chiudi a mano dal broker panel.")
+                                }
                             }
                         }
                         if failed.isEmpty {

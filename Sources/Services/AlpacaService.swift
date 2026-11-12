@@ -17,6 +17,8 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
     let stopPrice: String?
     /// Prezzo limite (ingresso limite o gamba take-profit).
     let limitPrice: String?
+    /// client_order_id: serve a riconoscere lo stop d'emergenza (prefisso qsv-emg-).
+    let clientOrderId: String?
 
     enum CodingKeys: String, CodingKey {
         case id
@@ -32,6 +34,7 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
         case parentOrderId = "parent_order_id"
         case stopPrice = "stop_price"
         case limitPrice = "limit_price"
+        case clientOrderId = "client_order_id"
     }
 
     var stopPriceValue: Double? { stopPrice.flatMap(Double.init) }
@@ -60,6 +63,12 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
 
     /// True se è un ordine di ingresso (non una gamba stop/target di un bracket).
     var isEntryOrder: Bool { parentOrderId == nil }
+
+    /// Stop d'emergenza del flat-by-close: riconosciuto dal client_order_id
+    /// (prefisso qsv-emg-), non dal tipo d'ordine.
+    var isEmergencyStop: Bool {
+        clientOrderId?.hasPrefix(SystemLimits.emergencyStopPrefix) ?? false
+    }
 
     /// True se l'ordine esiste sul broker e può ancora eseguirsi (o si è già
     /// eseguito). Usato nel recupero per client_order_id: un ordine rifiutato
@@ -616,8 +625,9 @@ actor AlpacaService {
 
     /// Stop protettivo semplice (vendita stop GTC), usato per ripristinare la
     /// protezione quando manca.
-    func submitStop(symbol: String, quantity: Double, stopPrice: Double) async throws -> AlpacaOrder {
-        let body: [String: Any] = [
+    func submitStop(symbol: String, quantity: Double, stopPrice: Double,
+                    clientOrderId: String? = nil) async throws -> AlpacaOrder {
+        var body: [String: Any] = [
             "symbol": symbol.uppercased(),
             "qty": decimalString(quantity, fractionDigits: 0),
             "side": "sell",
@@ -625,6 +635,7 @@ actor AlpacaService {
             "time_in_force": "gtc",
             "stop_price": decimalString(stopPrice, fractionDigits: priceFractionDigits(stopPrice))
         ]
+        if let clientOrderId { body["client_order_id"] = clientOrderId }
         let data = try await send(path: "/v2/orders", method: "POST", body: body)
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
     }
