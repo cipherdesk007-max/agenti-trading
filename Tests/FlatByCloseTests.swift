@@ -68,7 +68,7 @@ final class FlatByCloseTests: XCTestCase {
 
     /// Bracket aperto a T-10: gamba stop + gamba take-profit vengono annullate,
     /// poi la posizione si chiude a mercato. Nessuno stop residuo.
-    func testBracketLegsCanceledThenPositionClosed() async {
+    func testBracketLegsCanceledThenPositionClosed() async throws {
         let broker = FakeFlatBroker()
         await broker.setOrders([
             order(id: "leg-stop", side: "sell", type: "stop", parent: "e1", stop: 90),
@@ -109,7 +109,7 @@ final class FlatByCloseTests: XCTestCase {
 
     /// Secondo tentativo riuscito: il retry annulla anche lo stop d'emergenza
     /// (annulla TUTTI gli ordini del simbolo), chiude, e non ne mette un altro.
-    func testSecondAttemptSucceedsWithNoResidualOrders() async {
+    func testSecondAttemptSucceedsWithNoResidualOrders() async throws {
         let broker = FakeFlatBroker()
         await broker.setPositionQty(5)
         await broker.setFailClose(true)
@@ -133,7 +133,7 @@ final class FlatByCloseTests: XCTestCase {
 
     /// Mai due stop d'emergenza insieme: se qsv-emg-… è già aperto (e il suo annullo
     /// è fallito, quindi resta vivo sul broker), non si rimette.
-    func testNeverTwoEmergencyStopsTogether() async {
+    func testNeverTwoEmergencyStopsTogether() async throws {
         let broker = FakeFlatBroker()
         await broker.setPositionQty(5)
         await broker.setFailClose(true)
@@ -152,7 +152,7 @@ final class FlatByCloseTests: XCTestCase {
 
     /// Annulllo di una gamba fallito: si chiude lo stesso a mercato, ma il log avvisa
     /// che restano ordini aperti (le azioni possono risultare ancora riservate).
-    func testFailedCancelIsLoggedAndCloseStillAttempted() async {
+    func testFailedCancelIsLoggedAndCloseStillAttempted() async throws {
         let broker = FakeFlatBroker()
         await broker.setOrders([order(id: "leg-stop", side: "sell", type: "stop", parent: "e1", stop: 90)])
         await broker.setFailCancelIds(["leg-stop"])
