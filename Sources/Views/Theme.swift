@@ -104,7 +104,7 @@ extension Theme {
 
 extension View {
     /// Numero con cifre tabellari (mai font monospaziato pieno, réservé al registro eventi).
-    func tabularNumber(_ font: Font = .title3, weight: Font.Weight = .heavy) -> some View {
+    func tabularNumber(_ font: Font = .title3, _ weight: Font.Weight = .heavy) -> some View {
         self.font(font.weight(weight)).monospacedDigit()
     }
 }

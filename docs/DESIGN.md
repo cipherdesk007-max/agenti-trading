@@ -39,7 +39,7 @@ visibili (in PRO spariscono ma la struttura resta "da prototipo").
 - Sfondo e superfici: toni actuales (`Theme.background`/`surface`/`surfaceHigh`), ma
   **card a superficie piena senza bordo colorato**; bordo solo hairline
   `white.opacity(0.06)` se serve separare.
-- **Accento único: il verde** (`Theme.green`) per l'azione primaria e gli stati
+- **Accento unico: il verde** (`Theme.green`) per l'azione primaria e gli stati
   positivi. **Rosso/verde solo per guadagno/perdita e stati semantici**;
   **arancione solo per avvisi**. Il ciano (`DashboardPalette.cyan`) sparisce: al suo
   posto accento o `textSecondary`.
