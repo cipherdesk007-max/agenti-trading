@@ -22,6 +22,10 @@ private actor FakeNightBroker: NightBroker {
     var rejectAuction = false
     /// Calendario di borsa finto: nil = endpoint non disponibile (il ciclo usa solo clock).
     var calendar: [TradingDay]? = nil
+    /// orderId → prezzo di esecuzione (filled_avg_price).
+    var fills: [String: Double] = [:]
+    /// "SIMBOLO|giorno|kind" → prezzo reale dell'asta.
+    var auctions: [String: Double] = [:]
 
     init(isOpen: Bool, nextClose: Date?) {
         self.isOpen = isOpen
@@ -34,6 +38,8 @@ private actor FakeNightBroker: NightBroker {
     func set(account: BrokerAccount) { acct = account }
     func set(rejectAuction: Bool) { self.rejectAuction = rejectAuction }
     func set(calendar: [TradingDay]?) { self.calendar = calendar }
+    func set(fills: [String: Double]) { self.fills = fills }
+    func set(auctions: [String: Double]) { self.auctions = auctions }
 
     func nightClock() async throws -> (isOpen: Bool, nextClose: Date?) { (isOpen, nextClose) }
     func account() async throws -> BrokerAccount { acct }
@@ -85,6 +91,10 @@ private actor FakeNightBroker: NightBroker {
     func tradingDays(from: Date, to: Date) async throws -> [TradingDay] {
         if let calendar { return calendar }
         throw NightFakeError()
+    }
+    func orderFillPrice(orderId: String) async throws -> Double? { fills[orderId] }
+    func auctionPrice(symbol: String, day: String, kind: AuctionKind) async throws -> Double? {
+        auctions["\(symbol.uppercased())|\(day)|\(kind.rawValue)"]
     }
 }
 
@@ -441,5 +451,54 @@ final class NightCycleTests: XCTestCase {
         XCTAssertEqual(sent.count, 2, "l'OPG sparita viene rimessa in coda")
         XCTAssertEqual(sent.last?.qty, 2, "solo le 2 azioni della notte, non le 6 detenute")
         XCTAssertEqual(second.book.positions["SPY"]?.sellQueuedHeld, 6)
+    }
+
+    // MARK: - Misura executed-vs-asta (solo report)
+
+    func testAuctionDiffIsMeasuredOnceAndReported() async {
+        // Sera 11/11: OPG in coda per SPYM (nel finto l'id è "o-SPYM").
+        let broker = FakeNightBroker(isOpen: false, nextClose: nil)
+        await broker.set(held: [BrokerPosition(symbol: "SPYM", quantity: 2, averageEntryPrice: 89, unrealizedPL: 0)])
+        var book = NightBook()
+        book.positions["SPYM"] = NightPosition(day: "2026-11-10", quantity: 2)
+        let evening = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: book, today: "2026-11-11", now: et(20))) { _ in }
+        XCTAssertEqual(evening.book.fillChecks.count, 1, "l'OPG in coda viene tracciata per la misura")
+        // L'OPG si è eseguita all'apertura del 12/11: asta reale 90.00, eseguito 90.25.
+        await broker.set(held: [])
+        await broker.set(orders: [])
+        await broker.set(fills: ["o-SPYM": 90.25])
+        await broker.set(auctions: ["SPYM|2026-11-12|open": 90.00])
+        let next = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: evening.book, today: "2026-11-12", now: et(day: 12, 20))) { _ in }
+        XCTAssertEqual(next.auctionDiffs.count, 1)
+        let d = next.auctionDiffs.first!
+        XCTAssertEqual(d.symbol, "SPYM")
+        XCTAssertEqual(d.side, "sell")
+        XCTAssertEqual(d.executed, 90.25, accuracy: 1e-9)
+        XCTAssertEqual(d.auction, 90.00, accuracy: 1e-9)
+        XCTAssertEqual(d.diff, 0.25, accuracy: 1e-9)
+        XCTAssertTrue(next.book.fillChecks.isEmpty, "la misura è one-shot: tolta dal registro")
+        let sent = await broker.submitted
+        XCTAssertEqual(sent.count, 1, "la misura non genera ordini")
+    }
+
+    func testAuctionMeasurementIsOptional() async {
+        // API aste/fill che non rispondono: nessun diff, nessun ordine, e il
+        // check viene tolto quando l'ordine non è più aperto (niente blocchi).
+        let broker = FakeNightBroker(isOpen: false, nextClose: nil)
+        await broker.set(held: [BrokerPosition(symbol: "SPYM", quantity: 2, averageEntryPrice: 89, unrealizedPL: 0)])
+        var book = NightBook()
+        book.positions["SPYM"] = NightPosition(day: "2026-11-10", quantity: 2)
+        let evening = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: book, today: "2026-11-11", now: et(20))) { _ in }
+        await broker.set(held: [])
+        await broker.set(orders: [])
+        let next = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: evening.book, today: "2026-11-12", now: et(day: 12, 20))) { _ in }
+        XCTAssertTrue(next.auctionDiffs.isEmpty)
+        XCTAssertTrue(next.book.fillChecks.isEmpty)
+        let sent = await broker.submitted
+        XCTAssertEqual(sent.count, 1)
     }
 }

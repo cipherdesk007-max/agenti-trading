@@ -117,11 +117,38 @@ enum NightStrategy {
 }
 
 /// Giorno di borsa dal calendario Alpaca (GET /v2/calendar): `close` è la
-/// chiusura esatta del giorno (fuso New York), incluse le mezze jornadas.
+/// chiusura esatta del giorno (fuso New York), incluse le mezze giornate.
 struct TradingDay: Sendable, Equatable {
     /// yyyy-MM-dd del giorno di borsa, fuso America/New_York.
     let date: String
     let close: Date
+}
+
+/// Quale asta misura il prezzo reale.
+enum AuctionKind: String, Sendable {
+    case open = "open"    // asta di apertura (OPG)
+    case close = "close"  // asta di chiusura (MOC)
+}
+
+/// Confronto eseguito-vs-asta registrato nel report dopo un ordine d'asta della notte.
+struct AuctionDiff: Sendable, Equatable {
+    let symbol: String
+    let side: String
+    let executed: Double
+    let auction: Double
+    let diff: Double
+    let diffPct: Double
+}
+
+/// Ordine d'asta della notte in attesa di misura: al ciclo dopo si confronta il
+/// prezzo eseguito (filled_avg_price) con il prezzo reale dell'asta
+/// (GET /v2/stocks/{symbol}/auctions). Solo report: mai un ordine cambia.
+struct NightFillCheck: Codable, Sendable, Equatable {
+    var symbol: String
+    var side: String      // "buy" (MOC) o "sell" (OPG)
+    var orderId: String
+    var queueDay: String  // giorno in cui l'ordine è stato messo in coda
+    var refPrice: Double  // ultimo prezzo noto al momento dell'invio
 }
 
 /// Posizione della modalità notte nel registro locale.
@@ -150,6 +177,8 @@ struct NightBook: Codable, Sendable, Equatable {
     /// simbolo → giorno di borsa (New York) dell'acquisto e azioni comprate.
     var positions: [String: NightPosition] = [:]
     var nights = 0
+    /// Ordini d'asta in attesa di misura executed-vs-asta (solo report).
+    var fillChecks: [NightFillCheck] = []
 
     init() {}
 
@@ -157,6 +186,7 @@ struct NightBook: Codable, Sendable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         nights = try container.decodeIfPresent(Int.self, forKey: .nights) ?? 0
+        fillChecks = try container.decodeIfPresent([NightFillCheck].self, forKey: .fillChecks) ?? []
         if let modern = try? container.decode([String: NightPosition].self, forKey: .positions) {
             positions = modern
         } else if let legacy = try? container.decode([String: String].self, forKey: .positions) {
@@ -213,6 +243,11 @@ protocol NightBroker: Sendable {
     /// Recupero per client_order_id: conta solo se l'ordine è vivo (non
     /// rifiutato/annullato/scaduto).
     func orderRef(byClientOrderId: String) async throws -> BrokerOrderRef?
+    /// Prezzo medio di esecuzione di un ordine (filled_avg_price): solo misura.
+    func orderFillPrice(orderId: String) async throws -> Double?
+    /// Prezzo reale dell'asta di un giorno (GET /v2/stocks/{symbol}/auctions):
+    /// solo misura. Errore = dato non disponibile, l'app va avanti come prima.
+    func auctionPrice(symbol: String, day: String, kind: AuctionKind) async throws -> Double?
 }
 
 struct NightCycleInput: Sendable {
@@ -232,6 +267,8 @@ struct NightCycleResult: Sendable {
     var sells: [String] = []
     var buys: [NightStrategy.Pick] = []
     var exposure: Double = 0
+    /// Misure executed-vs-asta degli ordini della notte (solo report).
+    var auctionDiffs: [AuctionDiff] = []
 }
 
 struct NightCycleRunner: Sendable {
@@ -260,6 +297,27 @@ struct NightCycleRunner: Sendable {
         result.marketOpen = clock.isOpen
         result.equity = account.equity
         await emit(.init(stage: .scout, state: .done, detail: "mercato \(clock.isOpen ? "aperto" : "chiuso") · \(book.positions.count) posizioni notte"))
+
+        // Misura aste (SOLO report): per ogni ordine d'asta della notte già chiuso,
+        // confronta il prezzo eseguito con il prezzo reale dell'asta
+        // (GET /v2/stocks/{symbol}/auctions). Mai obbligatoria: se l'API non
+        // risponde non si registra nulla e nessun ordine cambia.
+        for check in book.fillChecks {
+            let stillOpen = orders.contains { $0.id == check.orderId }
+            let fill = try? await broker.orderFillPrice(orderId: check.orderId)
+            let kind: AuctionKind = check.side == "buy" ? .close : .open
+            let auctionDay = check.side == "buy" ? check.queueDay : input.today
+            let auction = try? await broker.auctionPrice(symbol: check.symbol, day: auctionDay, kind: kind)
+            if let fill, let auction, fill > 0, auction > 0 {
+                let diff = fill - auction
+                let pct = diff / auction * 100
+                result.auctionDiffs.append(AuctionDiff(symbol: check.symbol, side: check.side,
+                                                      executed: fill, auction: auction, diff: diff, diffPct: pct))
+                let asta = check.side == "buy" ? "chiusura" : "apertura"
+                await emit(.init(log: "\(check.symbol): asta di \(asta) — eseguito \(fmt(fill)) vs asta reale \(fmt(auction)): diff \(fmt(diff)) USD (\(String(format: "%+.3f", pct))%).", agent: .risk))
+            }
+            if !stillOpen { book.fillChecks.removeAll { $0.orderId == check.orderId } }
+        }
 
         // Registro: via ciò che non c'è più sul broker (venduto o mai eseguito).
         func heldQty(_ s: String) -> Double { positions.first { $0.symbol.uppercased() == s }?.quantity ?? 0 }
@@ -331,8 +389,11 @@ struct NightCycleRunner: Sendable {
                 let own = ownedQty(symbol, held: held, book: book)
                 guard own > 0 else { continue }
                 let id = "qsn-s-\(symbol)-\(input.today)-\(Int(input.now.timeIntervalSince1970 / 3600))"
-                if await submit(symbol: symbol, qty: own, side: "sell", tif: "opg", id: id, emit: emit) {
+                if let orderId = await submit(symbol: symbol, qty: own, side: "sell", tif: "opg", id: id, emit: emit) {
                     result.sells.append(symbol)
+                    book.fillChecks.append(NightFillCheck(symbol: symbol, side: "sell", orderId: orderId,
+                                                          queueDay: input.today,
+                                                          refPrice: positions.first { $0.symbol.uppercased() == symbol }?.averageEntryPrice ?? 0))
                     if var p = book.positions[symbol], let q = p.quantity, q > 0 {
                         // La posizione RESTA nel registro, marcata "in coda": se l'OPG
                         // non si esegue (rifiutata dopo l'accettazione o annullata
@@ -432,8 +493,10 @@ struct NightCycleRunner: Sendable {
             await emit(.init(stage: .executor, state: .working, detail: "metto in coda gli acquisti in chiusura"))
             for pick in picks {
                 let id = "qsn-b-\(pick.symbol)-\(input.today)"
-                if await submit(symbol: pick.symbol, qty: pick.quantity, side: "buy", tif: "cls", id: id, emit: emit) {
+                if let orderId = await submit(symbol: pick.symbol, qty: pick.quantity, side: "buy", tif: "cls", id: id, emit: emit) {
                     book.positions[pick.symbol] = NightPosition(day: input.today, quantity: Double(pick.quantity))
+                    book.fillChecks.append(NightFillCheck(symbol: pick.symbol, side: "buy", orderId: orderId,
+                                                          queueDay: input.today, refPrice: pick.price))
                     result.buys.append(pick)
                 }
             }
@@ -458,15 +521,14 @@ struct NightCycleRunner: Sendable {
     /// NON va bloccato il retry (è il bug B4: la vendita OPG rifiutata dal
     /// broker veniva dichiarata riuscita e la posizione restava in conto).
     private func submit(symbol: String, qty: Int, side: String, tif: String, id: String,
-                        emit: @Sendable (DailyCycleEvent) async -> Void) async -> Bool {
-        if let ref = try? await broker.orderRef(byClientOrderId: id), ref.countsAsPlaced { return true }
+                        emit: @Sendable (DailyCycleEvent) async -> Void) async -> String? {
+        if let ref = try? await broker.orderRef(byClientOrderId: id), ref.countsAsPlaced { return ref.id }
         do {
-            _ = try await broker.submitAuction(symbol: symbol, quantity: qty, side: side, timeInForce: tif, clientOrderId: id)
-            return true
+            return try await broker.submitAuction(symbol: symbol, quantity: qty, side: side, timeInForce: tif, clientOrderId: id)
         } catch {
-            if let ref = try? await broker.orderRef(byClientOrderId: id), ref.countsAsPlaced { return true }
+            if let ref = try? await broker.orderRef(byClientOrderId: id), ref.countsAsPlaced { return ref.id }
             await emit(.init(log: "\(symbol): ordine \(tif.uppercased()) rifiutato (\(error.localizedDescription)).", agent: .risk))
-            return false
+            return nil
         }
     }
 

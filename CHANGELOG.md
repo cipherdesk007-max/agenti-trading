@@ -13,6 +13,7 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ### Aggiunto
 - **Etichetta "NOTIZIE 48H" nel CRUSCOTTO** sulle posizioni aperte: mostra quante notizie delle ultime 48 ore ci sono sul simbolo (stessa API già usata per Brain/Reviewer e il grafico). Solo interfaccia: nessun effetto sugli ordini. Test UI `testNewsBadgeOnOpenPosition`.
+- **NOTTE: misura executed-vs-asta nel report.** Dopo ogni acquisto MOC e vendita OPG il ciclo registra nel report la differenza fra prezzo eseguito (`filled_avg_price`) e prezzo reale dell'asta (`GET /v2/stocks/{symbol}/auctions`, feed sip). Solo misura, mai obbligatoria: se l'API non risponde non si registra nulla e nessun ordine cambia. Nuovo studio `tools/backtest_overnight_auctions.py` (runner `overnight`, chiavi Alpaca via env — senza chiavi stampa solo una nota). Test in `Tests/NightCycleTests.swift`.
 - **Calendario di borsa Alpaca (`GET /v2/calendar`)** per le finestre della NOTTE e i promemoria: la chiusura esatta del giorno (anche nelle mezze jornadas) decide il cutoff della MOC, e nei festivi non si mettono ordini d'asta. I promemoria si programmano solo sui giorni di borsa del calendario. Mai obbligatorio: se il calendario non risponde l'app si comporta come prima (solo `clock`, promemoria settimanali lun–ven). Test in `Tests/NightCycleTests.swift`.
 
 ## [1.4.0 · build 137] - 2026-11-12

@@ -149,6 +149,26 @@ struct AlpacaClock: Decodable, Sendable {
     var nextCloseDate: Date? { Self.parse(nextClose) }
 }
 
+/// Risposta di GET /v2/stocks/{symbol}/auctions: per giorno, aste di apertura
+/// ("o") e di chiusura ("c") con prezzo, timestamp, size, exchange.
+private struct AlpacaAuctionsResponse: Decodable {
+    let auctions: [String: [AlpacaDayAuctions]]
+}
+
+private struct AlpacaDayAuctions: Decodable {
+    let d: String
+    let o: [AlpacaAuctionPrint]
+    let c: [AlpacaAuctionPrint]
+}
+
+private struct AlpacaAuctionPrint: Decodable {
+    let p: Double?
+    let s: Int?
+    let t: String?
+    let x: String?
+    let c: String?
+}
+
 /// Giorno di borsa dal calendario USA (GET /v2/calendar): open/close in ora di
 /// New York, con le chiusure anticipate (mezze giornate) già applicate.
 struct AlpacaCalendarDay: Decodable, Sendable, Equatable {
@@ -278,6 +298,27 @@ actor AlpacaService {
     func clock() async throws -> AlpacaClock {
         let data = try await send(path: "/v2/clock", method: "GET")
         return try JSONDecoder().decode(AlpacaClock.self, from: data)
+    }
+
+    /// Prezzo reale dell'asta di un giorno (GET /v2/stocks/{symbol}/auctions,
+    /// feed sip): kind "open" = asta di apertura (OPG), "close" = asta di chiusura
+    /// (MOC). Restituisce l'ultima stampa dell'asta. Solo misura: in caso di
+    /// errore l'app si comporta come prima (nil).
+    func auctionPrice(symbol: String, day: String, kind: String) async throws -> Double? {
+        guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else { return nil }
+        let data = try await send(
+            baseURL: credentials.marketDataBaseURL,
+            path: "/v2/stocks/\(escaped)/auctions",
+            method: "GET",
+            query: [URLQueryItem(name: "start", value: day),
+                    URLQueryItem(name: "end", value: day),
+                    URLQueryItem(name: "feed", value: "sip"),
+                    URLQueryItem(name: "limit", value: "10000")]
+        )
+        let resp = try JSONDecoder().decode(AlpacaAuctionsResponse.self, from: data)
+        guard let entry = resp.auctions[symbol.uppercased()]?.first(where: { $0.d == day }) else { return nil }
+        let prints = kind == "open" ? entry.o : entry.c
+        return prints.compactMap { $0.p }.last
     }
 
     /// Calendario di borsa USA (GET /v2/calendar): stesso piano e stesso limite
@@ -793,6 +834,14 @@ extension AlpacaBroker: NightBroker {
             guard let close = day.closeDate else { return nil }
             return TradingDay(date: day.date, close: close)
         }
+    }
+
+    func orderFillPrice(orderId: String) async throws -> Double? {
+        try await service.order(id: orderId).filledAveragePriceValue
+    }
+
+    func auctionPrice(symbol: String, day: String, kind: AuctionKind) async throws -> Double? {
+        try await service.auctionPrice(symbol: symbol, day: day, kind: kind == .open ? "open" : "close")
     }
 
     func submitAuction(symbol: String, quantity: Int, side: String, timeInForce: String,
