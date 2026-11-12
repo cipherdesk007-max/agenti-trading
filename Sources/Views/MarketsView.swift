@@ -217,8 +217,8 @@ struct MarketDetailView: View {
 
     static func color(for state: MarketInsight.State) -> Color {
         switch state {
-        case .held: return Theme.green
-        case .signal: return Theme.cyan
+        case .held: return Theme.accent
+        case .signal: return Theme.accent
         case .unaffordable: return Theme.amber
         case .trendUp: return Theme.textSecondary
         case .trendDown: return Theme.red
@@ -352,7 +352,8 @@ struct MarketDetailView: View {
                         slowLabel: interval.slowLabel, fastLabel: "MEDIA 5",
                         levels: levels)
                 .frame(height: 300)
-                .themedCard(Theme.green, padding: 10)
+                .padding(Layout.paddingS)
+                .background(Theme.surface, in: Theme.shape())
 
             legend(slowLabel: interval.slowLabel, levels: levels)
             if let last = candles.last {
@@ -366,6 +367,7 @@ struct MarketDetailView: View {
 
         if let snap = insight.snapshot, explains {
             VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "Dati tecnici")
                 row("Chiusura", snap.close)
                 row("Media 200 giorni", snap.sma200)
                 row("Media 5 giorni", snap.sma5)
@@ -374,7 +376,8 @@ struct MarketDetailView: View {
                 row("Stop se compra (2,5 ATR)", snap.close - DailyStrategy.stopATR * snap.atr14)
                 row("Target se compra (2 ATR)", snap.close + DailyStrategy.takeProfitATR * snap.atr14)
             }
-            .themedCard(Theme.cyan)
+            .padding(Layout.paddingM)
+            .background(Theme.surface, in: Theme.shape())
 
             Text("Regola: compra se sopra la media a 200 giorni e RSI2 sotto 10 (ribasso forte in un trend che sale). Esce sopra la media a 5 giorni, dopo \(DailyStrategy.maxHoldingDays) sedute, allo stop o al target.")
                 .font(.caption)
@@ -388,17 +391,17 @@ struct MarketDetailView: View {
     @ViewBuilder private var newsSection: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text("NOTIZIE · 48 ORE")
-                    .font(.system(.caption, design: .monospaced, weight: .heavy))
-                    .foregroundStyle(Theme.cyan)
+                Text("Notizie · 48 ore")
+                    .font(.headline)
+                    .foregroundStyle(Theme.textPrimary)
                 Spacer()
                 if let news, !news.isEmpty, translationAvailable {
                     Button {
                         showTranslation = true
                     } label: {
                         Label("TRADUCI", systemImage: "character.bubble")
-                            .font(.system(.caption, design: .monospaced, weight: .bold))
-                            .foregroundStyle(Theme.cyan)
+                            .font(.caption.weight(.bold))
+                            .foregroundStyle(Theme.accent)
                     }
                     .buttonStyle(.plain)
                 }
@@ -422,7 +425,8 @@ struct MarketDetailView: View {
                     .font(.caption).foregroundStyle(Theme.textSecondary)
             }
         }
-        .themedCard(Theme.cyan)
+        .padding(Layout.paddingM)
+        .background(Theme.surface, in: Theme.shape())
         .modifier(NewsTranslation(isPresented: $showTranslation,
                                   text: (news ?? []).prefix(8).map(\.headline).joined(separator: "\n\n")))
     }
@@ -436,12 +440,12 @@ struct MarketDetailView: View {
     private func legend(slowLabel: String, levels: BrokerLevels) -> some View {
         HStack(spacing: 12) {
             legendItem(Theme.amber, slowLabel)
-            legendItem(Theme.cyan, "MEDIA 5")
-            if levels.entry != nil || levels.pendingEntry != nil { legendItem(.white, "INGRESSO") }
-            if levels.stop != nil { legendItem(Theme.red, "STOP") }
-            if levels.target != nil { legendItem(Theme.green, "TARGET") }
+            legendItem(Theme.textSecondary, "Media 5")
+            if levels.entry != nil || levels.pendingEntry != nil { legendItem(Theme.textPrimary, "Ingresso") }
+            if levels.stop != nil { legendItem(Theme.red, "Stop") }
+            if levels.target != nil { legendItem(Theme.accent, "Target") }
         }
-        .font(.system(.caption2, design: .monospaced, weight: .bold))
+        .font(.caption2.weight(.semibold))
     }
 
     private func legendItem(_ color: Color, _ text: String) -> some View {
@@ -457,7 +461,7 @@ struct MarketDetailView: View {
             Spacer()
             Text(String(format: "%.\(digits)f", value)).foregroundStyle(Theme.textPrimary).monospacedDigit()
         }
-        .font(.system(.caption, design: .monospaced, weight: .semibold))
+        .font(.caption.weight(.semibold))
     }
 }
 
@@ -506,7 +510,7 @@ private struct CandleChart: View {
             ForEach(Array(fast.enumerated()), id: \.offset) { index, value in
                 if let value {
                     LineMark(x: .value("Seduta", index), y: .value(fastLabel, value), series: .value("Serie", fastLabel))
-                        .foregroundStyle(Theme.cyan.opacity(0.9))
+                        .foregroundStyle(Theme.textSecondary)
                         .lineStyle(StrokeStyle(lineWidth: 1))
                 }
             }
@@ -514,19 +518,19 @@ private struct CandleChart: View {
                 RuleMark(y: .value("Ingresso", entry))
                     .foregroundStyle(.white.opacity(0.8))
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .annotation(position: .top, alignment: .leading) { tag(levels.entry == nil ? "IN ATTESA" : "INGRESSO", entry, .white) }
+                    .annotation(position: .top, alignment: .leading) { tag(levels.entry == nil ? "In attesa" : "Ingresso", entry, Theme.textPrimary) }
             }
             if let stop = levels.stop {
                 RuleMark(y: .value("Stop", stop))
                     .foregroundStyle(Theme.red)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .annotation(position: .bottom, alignment: .leading) { tag("STOP", stop, Theme.red) }
+                    .annotation(position: .bottom, alignment: .leading) { tag("Stop", stop, Theme.red) }
             }
             if let target = levels.target {
                 RuleMark(y: .value("Target", target))
                     .foregroundStyle(Theme.green)
                     .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .annotation(position: .top, alignment: .leading) { tag("TARGET", target, Theme.green) }
+                    .annotation(position: .top, alignment: .leading) { tag("Target", target, Theme.accent) }
             }
         }
         .chartYScale(domain: domain)
@@ -534,7 +538,7 @@ private struct CandleChart: View {
         .chartYAxis {
             AxisMarks(position: .trailing, values: .automatic(desiredCount: 5)) { _ in
                 AxisGridLine().foregroundStyle(Theme.stroke)
-                AxisValueLabel().font(.system(size: 9, design: .monospaced)).foregroundStyle(Theme.textTertiary)
+                AxisValueLabel().font(.system(size: 9)).foregroundStyle(Theme.textTertiary)
             }
         }
         .accessibilityLabel("Grafico a candele")
@@ -542,7 +546,7 @@ private struct CandleChart: View {
 
     private func tag(_ text: String, _ value: Double, _ color: Color) -> some View {
         Text("\(text) \(String(format: "%.2f", value))")
-            .font(.system(size: 9, weight: .heavy, design: .monospaced))
+            .font(.system(size: 9, weight: .heavy))
             .foregroundStyle(color)
             .padding(.horizontal, 4)
             .background(Theme.background.opacity(0.8), in: Capsule())

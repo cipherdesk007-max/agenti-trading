@@ -61,28 +61,7 @@ private struct ExplanationModifier: ViewModifier {
 extension View {
     func explanation() -> some View { modifier(ExplanationModifier()) }
 
-    /// Superficie a scheda: fondo a strati, bordo sottile, accento colorato.
-    func themedCard(_ accent: Color = Theme.green, padding: CGFloat = 16) -> some View {
-        self
-            .padding(padding)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(
-                LinearGradient(colors: [Theme.surfaceHigh, Theme.surface], startPoint: .top, endPoint: .bottom),
-                in: Theme.shape()
-            )
-            .overlay(Theme.shape().strokeBorder(accent.opacity(0.22), lineWidth: 1))
     }
-
-    /// Etichetta a pillola (stato, modalità).
-    func themedChip(_ color: Color, filled: Bool = false) -> some View {
-        self
-            .font(.system(.caption2, design: .monospaced, weight: .heavy))
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .foregroundStyle(filled ? Theme.background : color)
-            .background(filled ? color : color.opacity(0.14), in: Capsule())
-    }
-}
 
 // MARK: - Sistema nuovo (docs/DESIGN.md): griglia 8 pt, un solo accento, componenti unici
 

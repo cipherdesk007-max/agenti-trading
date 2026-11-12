@@ -11,25 +11,28 @@ struct LoginView: View {
     @State private var showLiveConfirmation = false
     @State private var liveConfirmText = ""
 
-    private let terminalGreen = Color(red: 0.1, green: 1.0, blue: 0.55)
-
     var body: some View {
         ZStack {
             Theme.background.ignoresSafeArea()
             ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
+                VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("QUANTSWARM // ALPHA ZERO")
-                            .font(.system(.title2, design: .monospaced, weight: .bold))
-                            .foregroundStyle(terminalGreen)
-                        Text("KIMI DECISION CORE · ALPACA EXECUTION")
+                        HStack(spacing: 6) {
+                            Text("QuantSwarm")
+                                .font(.title2.weight(.bold))
+                                .foregroundStyle(Theme.accent)
+                            Text("Alpha Zero")
+                                .font(.title2.weight(.medium))
+                                .foregroundStyle(Theme.textSecondary)
+                        }
+                        Text("Kimi decision core · Alpaca execution")
                             .font(.caption)
-                            .foregroundStyle(.gray)
+                            .foregroundStyle(Theme.textTertiary)
                     }
 
-                    credentialField(title: "MOONSHOT / KIMI API KEY", text: $moonshotAPIKey)
-                    credentialField(title: "ALPACA KEY ID", text: $alpacaKeyID)
-                    credentialField(title: "ALPACA SECRET KEY", text: $alpacaSecretKey)
+                    credentialField(title: "Moonshot / Kimi API key", text: $moonshotAPIKey)
+                    credentialField(title: "Alpaca key ID", text: $alpacaKeyID)
+                    credentialField(title: "Alpaca secret key", text: $alpacaSecretKey)
 
                     VStack(alignment: .leading, spacing: 8) {
                         Toggle("PAPER TRADING", isOn: Binding(
@@ -44,8 +47,8 @@ struct LoginView: View {
                                 }
                             }
                         ))
-                            .font(.system(.callout, design: .monospaced, weight: .bold))
-                            .tint(terminalGreen)
+                            .font(.callout.weight(.semibold))
+                            .tint(Theme.accent)
                             .alert("PASSARE AL LIVE?", isPresented: $showLiveConfirmation) {
                                 TextField("scrivi LIVE", text: $liveConfirmText)
                                     .textInputAutocapitalization(.characters)
@@ -59,15 +62,15 @@ struct LoginView: View {
                             }
                         Text(paperTrading
                              ? "Ordini inviati all'ambiente paper Alpaca."
-                             : "ATTENZIONE: ordini su capitale reale. Verifica prima in paper trading.")
+                             : "Attenzione: ordini su capitale reale. Verifica prima in paper trading.")
                             .font(.caption)
-                            .foregroundStyle(paperTrading ? .gray : .red)
+                            .foregroundStyle(paperTrading ? Theme.textTertiary : Theme.red)
                     }
 
                     if let errorMessage {
                         Text(errorMessage)
                             .font(.caption)
-                            .foregroundStyle(.red)
+                            .foregroundStyle(Theme.red)
                             .textSelection(.enabled)
                     }
 
@@ -77,26 +80,23 @@ struct LoginView: View {
                         HStack {
                             Spacer()
                             if validating {
-                                ProgressView().tint(.black)
+                                ProgressView().tint(Theme.background)
                             } else {
                                 Text("VALIDA · FACE ID · SBLOCCA")
-                                    .font(.system(.body, design: .monospaced, weight: .bold))
+                                    .font(.headline)
                             }
                             Spacer()
                         }
-                        .padding()
-                        .background(terminalGreen)
-                        .foregroundStyle(.black)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
                     }
+                    .primaryButton()
                     .disabled(validating || !canSubmit)
                     .opacity(validating ? 0.6 : 1)
 
                     Text("Le credenziali sono salvate come generic password nel Keychain con protezione biometrica e accessibilità ThisDeviceOnly. Il Keychain non rende le API key chiavi private del Secure Enclave.")
                         .font(.caption)
-                        .foregroundStyle(.gray)
+                        .foregroundStyle(Theme.textTertiary)
                 }
-                .padding(24)
+                .padding(Layout.paddingL)
             }
         }
     }
@@ -104,15 +104,14 @@ struct LoginView: View {
     private func credentialField(title: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(title)
-                .font(.system(.caption, design: .monospaced, weight: .bold))
-                .foregroundStyle(terminalGreen)
-            SecureField("INSERISCI CREDENZIALE", text: text)
-                .font(.system(.body, design: .monospaced))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.textSecondary)
+            SecureField("Inserisci credenziale", text: text)
+                .font(.body)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .padding(12)
-                .background(Color(white: 0.08), in: Theme.shape(Theme.smallRadius))
-                .overlay(Theme.shape(Theme.smallRadius).strokeBorder(terminalGreen.opacity(0.55), lineWidth: 1))
+                .background(Theme.surfaceHigh, in: Theme.shape(Theme.smallRadius))
         }
     }
 
