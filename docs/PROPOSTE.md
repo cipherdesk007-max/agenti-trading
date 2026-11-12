@@ -149,3 +149,15 @@ riconsiderare solo per un filtro eventi 8-K, vedi proposta 4).
   https://fred.stlouisfed.org/docs/api/fred/errors.html · ToU:
   https://fred.stlouisfed.org/docs/api/terms_of_use.html · serie:
   https://fred.stlouisfed.org/series/VIXCLS
+
+---
+
+## Stato · 12/11/2026 (dopo il giro di lavoro)
+
+- **5 · badge notizie nel CRUSCOTTO**: FATTO (`8606d32`, solo interfaccia, test UI `testNewsBadgeOnOpenPosition`).
+- **6 · calendario Alpaca `/v2/calendar`**: FATTO (`9cdaba1`) — finestre NOTTE con chiusura esatta (anche mezze jornadas), niente ordini d'asta nei festivi, promemoria solo nei giorni di borsa. Mai obbligatorio.
+- **8 · prezzi reali delle aste**: FATTO come misura (`95790fa`): executed-vs-asta nel report dopo MOC/OPG + `tools/backtest_overnight_auctions.py` nel workflow (`overnight`; senza chiavi in env stampa solo una nota).
+- **1 trailing stop, 2 risk-parity NOTTE, 4 filtro evento 48h, 10 filtro VIX**: solo studi pronti in `tools/` (`c540afc`, runner `quale=studi`), con criterio di scarto e nota Deflated Sharpe. L'app non cambia: lancia l'altro revisore, decide l'utente.
+- **9 · screener per la VELOCE**: SCARTATA (la veloce resta sconsigliata con soldi veri).
+- **7 · riconciliazione corporate actions**: RIMANDATA (gli split sugli ETF del paniere sono rari).
+- **3 · frazione adattiva NOTTE**: SCARTATA — il backtest R1 mostra rendimento e perdita in proporzione: resta 97%.

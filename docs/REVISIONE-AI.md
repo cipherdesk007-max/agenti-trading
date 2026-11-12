@@ -123,3 +123,35 @@ UI test, screenshot e backtest della frazione R1 (`overnight`) li lancia l'altro
 - Pagella Kimi: servono ~20–30 trade chiusi in paper.
 - R7 da confermare su paper (no doppie vendite); limite noto: se la giornaliera vende lo stesso simbolo, il calo del detenuto può far uscire la voce di registro prima dell'esecuzione dell'OPG.
 - Non verificabili dalla sandbox: compilazione/test locali (no Xcode — solo CI), backtest (no rete), dispatch workflow (403), UI reale/Face ID/notifiche/aste (servono il telefono e il conto).
+
+---
+
+# Sessione 12/11/2026 · punti 5–7 + design (9a–9c parziale)
+
+Ordine seguito: punto 5 (bug grafico), poi 6a/6b/6c, poi 7, poi 9. Un commit su `main`
+per punto, build verde prima del successivo (dove il commit toccava Sources/Tests).
+Nessun Co-Authored-By. Nessuna release, nessun `pubblica`, nessun dispatch di workflow.
+
+| Punto | Commit | Build CI |
+|---|---|---|
+| 5 · bug grafico (prezzo su 1H/15M/5M) | `384a8d3` (fallback ultimo prezzo noto + test UI `testChartPriceVisibleOnEveryInterval`) | 43148613953 success (build di 05c3542: 43146688980 success, verificata verde prima) |
+| 6a · calendario Alpaca | `9cdaba1` (finestre NOTTE: chiusura esatta/festivi; promemoria per data; mai obbligatorio) | 43150103222 success |
+| 6b · badge NOTIZIE 48H | `8606d32` (solo UI + test `testNewsBadgeOnOpenPosition`) | 43151647878 success |
+| 6c · misura executed-vs-asta | `95790fa` (report NOTTE + `backtest_overnight_auctions.py` nel workflow) | 43153907464 success |
+| 7 · 4 studi (quale=studi) | `c540afc` (tools/ + workflow; app invariata) | nessuna build (solo tools/workflow) |
+| 9a · studio design | `d8e901d` (docs/DESIGN.md: schermata per schermata + sistema nuovo) | nessuna build (docs) |
+| 9c · Theme e componenti | `6d81fc3` | 43156429606 success |
+| 9c · CRUSCOTTO | `cecf367` | 43157416051 success |
+| 9c · MERCATI e GRAFICO | `0ac0e50` + fix `dafcf67` (tabularNumber posizionale) | 43158777488 failure (compilazione) → 43159120191 in corso |
+
+## Resta aperto
+
+- **SCREENSHOT**: dopo CRUSCOTTO + MERCATI/GRAFICO l'altro revisore lancia gli screenshot
+  (`screenshot` branch) e rivede; poi si procede con DETTAGLI, BROKER, SISTEMA, LOGIN
+  (un commit per schermata, SCREENSHOT ogni 2 schermate).
+- Studi `quale=studi` e `overnight` (con/senza chiavi aste): li lancia l'altro revisore;
+  le decisioni (trailing, risk-parity, evento, VIX, frazione) sono dell'utente.
+- R1 frazione NOTTE resta 97% (scartata la variante adattiva: rendimento e perdita in proporzione).
+- Verifiche su telefono/conto: docs/VERIFICHE.md (10 controlli) + pagella Kimi (20–30 trade).
+- Non verificabili dalla sandbox: compilazione locale (solo CI), backtest con rete esterna
+  (solo CI/locale), dispatch workflow (403), UI reale, screenshot.

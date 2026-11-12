@@ -65,11 +65,12 @@ Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia 
 - `reasoning_effort` medium accettato dal modello Kimi in uso (altrimenti l'app passa da sola a low).
 - Il foglio TRADUCI di Apple (non si apre sul simulatore).
 - Durata reale della prova: con 1.000 $ circa un segnale a settimana nella giornaliera; servono 20–30 trade chiusi prima di giudicare.
-- Documenti di sessione e proposte: [REVISIONE-AI.md](REVISIONE-AI.md) (cosa è stato fatto e cosa non si è potuto verificare) e [PROPOSTE.md](PROPOSTE.md) (5 idee non implementate, solo le 3 API).
+- Documenti di sessione, proposte e design: [REVISIONE-AI.md](REVISIONE-AI.md), [PROPOSTE.md](PROPOSTE.md), [DESIGN.md](DESIGN.md).
+- Design in corso (solo viste): dopo ogni 2 schermate gli screenshot li lancia e rivede l'altro revisore (SCREENSHOT); restano DETTAGLI, BROKER, SISTEMA, LOGIN.
 
 ## Come verificare in modo indipendente
 
-- Test: 132 unitari (CI a ogni push, "Unsigned iOS IPA") + 3 di interfaccia in `UITests/` (solo a mano, opzione `uitest`).
+- Test: 137 unitari (CI a ogni push, "Unsigned iOS IPA") + 5 di interfaccia in `UITests/` (solo a mano, opzione `uitest`).
 - Strategie: Actions → "Backtest filtro" → `quale` = `app`, `piccolo`, `overnight`, `segnali`, `oggi`.
 - Ordini: confronta il report di sessione dell'app con lo storico ordini di Alpaca.
 - Indicatori: SMA200 e RSI(2) di Wilder su TradingView o Yahoo devono coincidere con la tabella di `oggi`.
