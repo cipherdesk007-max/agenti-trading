@@ -7,6 +7,13 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+### Aggiunto (strumenti e CI, 12/11/2026)
+- **Workflow `Docs PDF`** (`.github/workflows/docs.yml`): genera `docs/GUIDA.pdf` da `docs/GUIDA.md` con pandoc + weasyprint a ogni modifica della guida e su dispatch manuale; il PDF viene caricato come artifact e committato in `docs/` dal bot di GitHub.
+
+### Corretto (strumenti e CI, 12/11/2026)
+- **`daily_study_lib.atr`: ATR per simbolo.** Il true range veniva calcolato con `pd.concat(..., axis=1).max(axis=1)`, che schiacciava i 15 ETF su una sola colonna (Series): `a.iloc[t, j]` esplodeva con `IndexingError: Too many indexers` e tutti gli studi `quale=studi` fallivano. Ora stack + `groupby(level=0).max()`, come `backtest_app.py`.
+- **`daily_study_lib.simulate`: mai sovrascrivere una posizione esistente.** Il segnale RSI2<10 dura spesso più giorni mentre la posizione è detenuta: senza il controllo `j in pos` l'ingresso nuovo rimpiazzava quello vecchio nel registro e le azioni già comprate sparivano dai libri (cash scalato all'ingresso, mai riaccreditato). Effetto: conto polverizzato (maxDD −100%), 93 trade totali e zero operazioni dopo il 2016, riprodotto identico a ogni run. Con il controllo i numeri tornano coerenti con `backtest_app.py` (1586 trade, BASE +0,1% annuo 2006–oggi).
+
 ### Corretto (revisione esterna sulla 1.5.0 build 157)
 - **NOTTE: la vendita OPG si conferma dallo STATO dell'ordine, non dal calo del detenuto.** Il registro salva ora il `client_order_id` dell'OPG (`sellQueuedOrderId`): a ogni ciclo si rilegge lo stato sul broker — `filled` toglie la voce, `canceled`/`rejected`/`expired` resta come residuo (poi chiusa come leftover), vivo resta in coda. Prima con la giornaliera sullo stesso simbolo il detenuto poteva risalire e la conferma sul calo era inaffidabile: il pomeriggio poteva vendere le azioni sbagliate. Test: `testOPGFilledByOrderStatusClearsBookEvenWhenHeldDidNotDrop`, `testOPGCanceledByOrderStatusStaysAsResidual`, `testExecutedOPGWithSharedSymbolClearsTheBook` (aggiornato allo stato).
 - **NOTTE: acquisti MOC parziali.** Se alcune MOC vengono rifiutate si ritenta SOLO le famiglie mancanti, con il gemello economico (es. QQQ rifiutato → QQQM). E a livello di famiglia: con un residuo su SPYM non si compra SPY (stesso indice, stesso rischio raddoppiato). Test: `testPartialMOCRetriesOnlyMissingFamiliesWithTwin`, `testResidualOnTwinBlocksOriginalOfSameFamily`.

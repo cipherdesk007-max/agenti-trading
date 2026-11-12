@@ -27,6 +27,7 @@ Questo file è per chi studia o rivede il progetto (persone o AI): cosa fa l'app
 | Interfaccia | `Sources/Views/*.swift` | CRUSCOTTO, MERCATI e grafici, DETTAGLI (curva del capitale, pagella), BROKER, SISTEMA, conti |
 | Test | `Tests/*.swift` | Rischio, strategia, ciclo giornaliero, ciclo notte, pagella, conti, aggiornamenti |
 | Studi | `tools/*.py`, `.github/workflows/backtest.yml` | Backtest con yfinance; controllo mensile automatico |
+| Documentazione PDF | `docs/GUIDA.pdf`, `.github/workflows/docs.yml` | PDF della guida rigenerato in CI (pandoc + weasyprint) a ogni modifica di `docs/GUIDA.md` |
 
 Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia (regole, zero crediti) → Analyst (quadro) → Brain (Kimi) → Reviewer (Kimi avversario) → Rischio (codice) → Esecutore (limite + stop + target sul broker). Kimi viene chiamato solo per candidati che il capitale può comprare. Brain e Reviewer ricevono indicatori, ultime 20 chiusure, correlazione a 60 sedute e notizie delle ultime 48 ore.
 
@@ -41,6 +42,7 @@ Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia 
 | Intraday da 20 minuti a 1 ora | Filtro 15m, ORB, VWAP, momentum della prima ora, rimbalzo di fine giornata: tutti negativi dopo i costi | Veloce resta sperimentale, sconsigliata con soldi veri |
 | Overnight (`overnight`) | SPY/QQQ/IWM/GLD a peso uguale, costi 0,003% per lato: +8,0% annuo, perdita massima −22%, Sharpe 0,81; ultimi 2 anni +13,9%; gemelli positivi | Costruita la modalità NOTTE |
 | Secondo modello locale (Qwen3.5 su iPhone con MLX) | Possibile tecnicamente; pochi segnali da giudicare, rischio di memoria sotto LiveContainer | Rimandato: si riconsidera se la pagella mostra che il Brain sbaglia |
+| Studi del 12/11/2026 (trailing stop, risk-parity NOTTE, filtro evento 48h, filtro VIX) | Trailing 2,0/2,5/3,0 ATR: nessun miglioramento stabile di CAGR/maxDD su entrambi i periodi lunghi. Risk-parity 1/vol(20): maxDD −19% ( meglio di −22%) ma CAGR 7,9% < 8,0%. Filtro evento 48h (proxy prezzo/volume): +0,3%/−17% su 2006–oggi e meglio anche 2016–oggi, ma è un proxy della notizia vera. Filtro VIX: soglia >SMA20+2σ migliora i due periodi lunghi (+0,8%/−11%) ma peggiora i 3 anni recenti (6,2% vs 7,2%) | Nessun cambiamento all'app; filtro evento e filtro VIX restano candidati per una prova in ombra prima di qualunque adozione |
 
 ## Correzioni di sicurezza (12/11/2026, revisione esterna su 1.5.0 build 157 — tutte con test in `Tests/`)
 
