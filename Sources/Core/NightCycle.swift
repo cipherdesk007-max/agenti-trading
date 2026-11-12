@@ -100,11 +100,41 @@ enum NightStrategy {
     }
 }
 
+/// Posizione della modalità notte nel registro locale.
+/// quantity nil = registro scritto da una versione precedente del bug B1:
+/// quantità ignota, si vende tutto il detenuto del simbolo (vedi
+/// nightQuantity). I nuovi acquisti registrano sempre la quantità esatta.
+struct NightPosition: Codable, Sendable, Equatable {
+    var day: String
+    var quantity: Double?
+}
+
 /// Posizioni della modalità notte, separate da quelle della giornaliera.
+/// La quantità è FONDAMENTALE: sul conto può esserci lo stesso simbolo
+/// comprato anche dalla modalità giornaliera (SPY/QQQ/IWM/GLD sono in
+/// entrambi i panieri), quindi la notte deve vendere solo le SU azioni.
 struct NightBook: Codable, Sendable, Equatable {
-    /// simbolo → giorno di borsa (New York) dell'acquisto.
-    var positions: [String: String] = [:]
+    /// simbolo → giorno di borsa (New York) dell'acquisto e azioni comprate.
+    var positions: [String: NightPosition] = [:]
     var nights = 0
+
+    init() {}
+
+    /// Retrocompatibilità: il formato vecchio era simbolo → giorno (stringa).
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        nights = try container.decodeIfPresent(Int.self, forKey: .nights) ?? 0
+        if let modern = try? container.decode([String: NightPosition].self, forKey: .positions) {
+            positions = modern
+        } else if let legacy = try? container.decode([String: String].self, forKey: .positions) {
+            positions = legacy.mapValues { NightPosition(day: $0, quantity: nil) }
+        }
+    }
+
+    /// Azioni della notte per un simbolo; nil = quantità ignota (registro vecchio).
+    func nightQuantity(_ symbol: String) -> Double? {
+        positions[symbol]?.quantity
+    }
 }
 
 enum NightBookStore {
@@ -133,11 +163,19 @@ protocol NightBroker: Sendable {
     func positions() async throws -> [BrokerPosition]
     func openOrders() async throws -> [BrokerOrder]
     func latestPrice(symbol: String) async throws -> Double
+    /// Chiude a mercato TUTTA la posizione del simbolo: usare solo quando la
+    /// notte possiede tutto il detenuto del simbolo.
     func closePosition(symbol: String) async throws -> String?
+    /// Vendita a mercato di una quantità precisa (per chiudere solo le azioni
+    /// della notte quando la giornaliera ha lo stesso simbolo).
+    func submitMarket(symbol: String, quantity: Int, side: String,
+                      clientOrderId: String) async throws -> String
     /// Ordine a mercato in asta: "cls" (chiusura) o "opg" (apertura).
     func submitAuction(symbol: String, quantity: Int, side: String, timeInForce: String,
                        clientOrderId: String) async throws -> String
-    func orderId(byClientOrderId: String) async throws -> String?
+    /// Recupero per client_order_id: conta solo se l'ordine è vivo (non
+    /// rifiutato/annullato/scaduto).
+    func orderRef(byClientOrderId: String) async throws -> BrokerOrderRef?
 }
 
 struct NightCycleInput: Sendable {
@@ -191,9 +229,17 @@ struct NightCycleRunner: Sendable {
         func pending(_ s: String, side: String) -> Bool {
             orders.contains { $0.symbol.uppercased() == s && $0.side == side }
         }
+        /// Azioni della notte da vendere per un simbolo: quelle del registro
+        /// (mai oltre il detenuto). Registro vecchio senza quantità (nil):
+        /// si vende tutto il detenuto del simbolo, come prima di questo fix.
+        func ownedQty(_ s: String, held: Int, book: NightBook) -> Int {
+            guard held > 0 else { return 0 }
+            guard let recorded = book.nightQuantity(s) else { return held }
+            return min(Int(recorded.rounded(.down)), held)
+        }
         // Gli acquisti di oggi a mercato aperto restano: si eseguono in chiusura.
         for symbol in book.positions.keys.sorted() where heldQty(symbol) <= 0 && !pending(symbol, side: "buy") {
-            if clock.isOpen, book.positions[symbol] == input.today { continue }
+            if clock.isOpen, book.positions[symbol]?.day == input.today { continue }
             book.positions[symbol] = nil
         }
 
@@ -222,11 +268,17 @@ struct NightCycleRunner: Sendable {
             await emit(.init(stage: .risk, state: .done, detail: "vendite: rischio solo in calo"))
             await emit(.init(stage: .executor, state: .working, detail: "metto in coda le vendite all'apertura"))
             for symbol in toSell {
-                let qty = Int(heldQty(symbol).rounded(.down))
-                guard qty > 0 else { continue }
+                let held = Int(heldQty(symbol).rounded(.down))
+                let own = ownedQty(symbol, held: held, book: book)
+                guard own > 0 else { continue }
                 let id = "qsn-s-\(symbol)-\(input.today)-\(Int(input.now.timeIntervalSince1970 / 3600))"
-                if await submit(symbol: symbol, qty: qty, side: "sell", tif: "opg", id: id, emit: emit) {
+                if await submit(symbol: symbol, qty: own, side: "sell", tif: "opg", id: id, emit: emit) {
                     result.sells.append(symbol)
+                    // Tolgo subito la posizione dal registro: l'OPG in coda è
+                    // esattamente per le azioni della notte. Se lo lasciassi,
+                    // il prossimo ciclo (con la giornaliera che tiene lo
+                    // stesso simbolo) venderebbe anche le SUE azioni.
+                    book.positions[symbol] = nil
                 }
             }
             await emit(.init(stage: .executor, state: .done, detail: "vendite all'apertura in coda: \(result.sells.joined(separator: ", "))",
@@ -237,13 +289,24 @@ struct NightCycleRunner: Sendable {
         case .buyWindow:
             // Posizioni rimaste dalla notte prima (app non aperta la mattina):
             // si chiudono ora a mercato, così il bot resta solo "di notte".
-            let leftovers = book.positions.keys.sorted().filter { heldQty($0) > 0 && book.positions[$0]! < input.today }
+            let leftovers = book.positions.keys.sorted().filter { heldQty($0) > 0 && book.positions[$0]!.day < input.today }
             for symbol in leftovers where !pending(symbol, side: "sell") {
+                let held = Int(heldQty(symbol).rounded(.down))
+                let own = ownedQty(symbol, held: held, book: book)
+                guard own > 0 else { continue }
                 do {
-                    _ = try await broker.closePosition(symbol: symbol)
+                    if own >= held {
+                        // La notte possiede tutto il detenuto: chiusura intera.
+                        _ = try await broker.closePosition(symbol: symbol)
+                    } else {
+                        // Sul conto c'è anche la giornaliera con lo stesso
+                        // simbolo: chiudo SOLO le azioni della notte.
+                        let id = "qsn-l-\(symbol)-\(input.today)-\(Int(input.now.timeIntervalSince1970 / 3600))"
+                        _ = try await broker.submitMarket(symbol: symbol, quantity: own, side: "sell", clientOrderId: id)
+                    }
                     book.positions[symbol] = nil
                     result.sells.append(symbol)
-                    await emit(.init(log: "\(symbol): non venduta all'apertura (app non aperta la mattina); chiusa ora a mercato.", agent: .risk))
+                    await emit(.init(log: "\(symbol): non venduta all'apertura (app non aperta la mattina); chiuse ora a mercato \(own) az. della notte.", agent: .risk))
                 } catch {
                     await emit(.init(log: "\(symbol): chiusura non riuscita (\(error.localizedDescription)).", agent: .risk))
                 }
@@ -254,7 +317,7 @@ struct NightCycleRunner: Sendable {
                 if let p = try? await broker.positions() { positions = p }
                 if let o = try? await broker.openOrders() { orders = o }
             }
-            let already = book.positions.keys.filter { book.positions[$0] == input.today }
+            let already = book.positions.keys.filter { book.positions[$0]?.day == input.today }
             if !already.isEmpty {
                 let text = "acquisti in chiusura di oggi già in coda: \(already.sorted().joined(separator: ", "))"
                 await emit(.init(stage: .strategy, state: .done, detail: text, log: "Notte: \(text).", agent: .scout))
@@ -292,7 +355,7 @@ struct NightCycleRunner: Sendable {
             for pick in picks {
                 let id = "qsn-b-\(pick.symbol)-\(input.today)"
                 if await submit(symbol: pick.symbol, qty: pick.quantity, side: "buy", tif: "cls", id: id, emit: emit) {
-                    book.positions[pick.symbol] = input.today
+                    book.positions[pick.symbol] = NightPosition(day: input.today, quantity: Double(pick.quantity))
                     result.buys.append(pick)
                 }
             }
@@ -312,15 +375,18 @@ struct NightCycleRunner: Sendable {
     }
 
     /// Invio con recupero: se la rete cade, si cerca l'ordine per id prima di
-    /// rinviarlo. Mai due ordini uguali.
+    /// rinviarlo. Mai due ordini uguali. Ma l'ordine ritrovato conta solo se è
+    /// VIVO: uno stato rejected/canceled/expired non è un invio riuscito, e
+    /// NON va bloccato il retry (è il bug B4: la vendita OPG rifiutata dal
+    /// broker veniva dichiarata riuscita e la posizione restava in conto).
     private func submit(symbol: String, qty: Int, side: String, tif: String, id: String,
                         emit: @Sendable (DailyCycleEvent) async -> Void) async -> Bool {
-        if let found = try? await broker.orderId(byClientOrderId: id), found != nil { return true }
+        if let ref = try? await broker.orderRef(byClientOrderId: id), ref.countsAsPlaced { return true }
         do {
             _ = try await broker.submitAuction(symbol: symbol, quantity: qty, side: side, timeInForce: tif, clientOrderId: id)
             return true
         } catch {
-            if let found = try? await broker.orderId(byClientOrderId: id), found != nil { return true }
+            if let ref = try? await broker.orderRef(byClientOrderId: id), ref.countsAsPlaced { return true }
             await emit(.init(log: "\(symbol): ordine \(tif.uppercased()) rifiutato (\(error.localizedDescription)).", agent: .risk))
             return false
         }

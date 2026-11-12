@@ -32,6 +32,24 @@ struct BrokerOrder: Sendable, Equatable {
     var isTakeProfit: Bool { side == "sell" && type == "limit" }
 }
 
+/// Riferimento a un ordine ritrovato per client_order_id dopo un invio
+/// fallito. Lo stato conta: un ordine rifiutato o annullato NON è un invio
+/// riuscito, riprovarlo non è un duplicato (gli stati "morti" sono quelli
+/// da cui un ordine non può più eseguirsi; lista da
+/// docs.alpaca.markets/reference/postorder).
+struct BrokerOrderRef: Sendable, Equatable {
+    let id: String
+    let status: String
+
+    /// Stati vivi di Alpaca (un ordine si può annullare finché non è
+    /// filled/canceled/expired) più "filled": l'ordine esiste sul broker e
+    /// può eseguirsi o si è già eseguito.
+    var countsAsPlaced: Bool {
+        ["new", "partially_filled", "accepted", "pending_new", "pending_replace",
+         "pending_cancel", "held", "done_for_day", "filled"].contains(status)
+    }
+}
+
 /// Tutto ciò che il ciclo giornaliero chiede al broker.
 protocol BrokerClient: Sendable {
     func isMarketOpen() async throws -> Bool
@@ -48,7 +66,10 @@ protocol BrokerClient: Sendable {
     func submitEntryWithStop(symbol: String, quantity: Double, limitPrice: Double,
                              stopPrice: Double, takeProfitPrice: Double?, clientOrderId: String) async throws -> String
     func submitStop(symbol: String, quantity: Double, stopPrice: Double) async throws -> String
-    func orderId(byClientOrderId: String) async throws -> String?
+    /// Recupero dopo un invio fallito: ritorna l'ordine solo se esiste sul
+    /// broker E può ancora eseguirsi (o è già eseguito); nil o stato morto
+    /// (rejected/canceled/expired) = da trattare come non inviato.
+    func orderRef(byClientOrderId: String) async throws -> BrokerOrderRef?
     func filledAveragePrice(orderId: String) async throws -> Double?
     /// Titoli delle notizie recenti (Benzinga via Alpaca) per i simboli dati.
     func news(symbols: [String], hours: Int) async throws -> [NewsHeadline]
@@ -507,8 +528,11 @@ struct DailyCycleRunner: Sendable {
                                                                takeProfitPrice: takeProfit,
                                                                clientOrderId: clientOrderId)
             } catch {
-                // Timeout: l'ordine potrebbe essere comunque arrivato. Mai un secondo invio.
-                orderId = try? await broker.orderId(byClientOrderId: clientOrderId)
+                // Timeout: l'ordine potrebbe essere comunque arrivato. Mai un secondo invio,
+                // ma solo se l'ordine ritrovato è vivo: uno rifiutato non protegge nessuno.
+                if let ref = try? await broker.orderRef(byClientOrderId: clientOrderId), ref.countsAsPlaced {
+                    orderId = ref.id
+                }
                 if orderId == nil {
                     await emit(.init(stage: .executor, state: .failed, detail: "\(symbol): invio fallito",
                                      log: "\(symbol): invio ordine fallito: \(error.localizedDescription)", agent: .risk))

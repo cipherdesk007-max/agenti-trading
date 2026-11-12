@@ -239,6 +239,46 @@ enum RiskRules {
         return min(freeCash, capital * maximumPositionFraction) >= limit && risk >= stopDistance + 0.01
     }
 
+    // MARK: - Circuit breaker (formula pura, testabile)
+
+    /// Stop giornaliero: P&L = equity − last_equity, limite = frazione del
+    /// capitale bot (min(last_equity, tetto)). ATTENZIONE (nota del bug B5):
+    /// il P&L di Alpaca include movimenti di cassa, quindi un prelievo dal
+    /// conto appare come una perdita e può fermare il bot. Con le fonti
+    /// disponibili (docs Alpaca sugli ordini) la semantica precisa di
+    /// last_equity non è verificabile: la formula resta questa, ma estratta
+    /// e testata, così il comportamento è noto e documentato.
+    struct DailyStopCheck: Equatable, Sendable {
+        let dayPnL: Double
+        let limit: Double
+        let shouldStop: Bool
+    }
+
+    static func dailyStopCheck(equity: Double, lastEquity: Double,
+                               stopFraction: Double, capitalCap: Double) -> DailyStopCheck? {
+        guard lastEquity > 0, lastEquity.isFinite, equity.isFinite else { return nil }
+        let dayPnL = equity - lastEquity
+        let limit = stopFraction * min(lastEquity, capitalCap)
+        return DailyStopCheck(dayPnL: dayPnL, limit: limit, shouldStop: dayPnL <= -limit)
+    }
+
+    /// Stop drawdown: equity sotto il picco storico oltre la frazione massima,
+    /// misurata sul capitale bot (min(picco, tetto)). Come sopra: i prelievi
+    /// abbassano l'equity e possono far scattare il blocco.
+    struct DrawdownCheck: Equatable, Sendable {
+        let peak: Double
+        let floor: Double
+        let shouldLock: Bool
+    }
+
+    static func drawdownCheck(equity: Double, peak: Double,
+                              maxDrawdownFraction: Double, capitalCap: Double) -> DrawdownCheck? {
+        guard peak > 0, equity.isFinite else { return nil }
+        let base = min(peak, capitalCap)
+        let floor = peak - base * maxDrawdownFraction
+        return DrawdownCheck(peak: peak, floor: floor, shouldLock: equity <= floor)
+    }
+
     static func roundUp(_ value: Double, tick: Double) -> Double {
         guard tick > 0 else { return value }
         return ((value / tick) - 1e-9).rounded(.up) * tick

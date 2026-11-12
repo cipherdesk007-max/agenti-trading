@@ -170,7 +170,11 @@ actor RiskExecutionAgent {
                 measuredLatencyMilliseconds: latency
             )
         } catch {
-            if let existing = try? await service.order(byClientOrderId: clientOrderId) {
+            // L'ordine ritrovato conta solo se è VIVO: uno status rejected/
+            // canceled/expired non è un invio riuscito (bug B4) e non deve
+            // produrre una ricevuta di successo.
+            if let existing = try? await service.order(byClientOrderId: clientOrderId),
+               existing.countsAsPlaced {
                 emit("Invio fallito ma l'ordine esiste sul broker (\(existing.id)): recuperato, nessun duplicato.")
                 return ExecutionReceipt(
                     orderID: existing.id,

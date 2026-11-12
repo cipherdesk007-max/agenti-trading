@@ -15,6 +15,8 @@ private actor FakeBroker: BrokerClient {
     var price: Double = 142
     var failClose = false
     var timeoutButCreated = false
+    /// Bug B4: l'ordine creato prima del timeout viene poi rifiutato dal broker.
+    var rejectedRecovered = false
     var newsItems: [NewsHeadline] = []
     func news(symbols: [String], hours: Int) async throws -> [NewsHeadline] { newsItems }
     func set(news: [NewsHeadline]) { newsItems = news }
@@ -32,6 +34,7 @@ private actor FakeBroker: BrokerClient {
     func set(marketOpen: Bool) { self.marketOpen = marketOpen }
     func set(failClose: Bool) { self.failClose = failClose }
     func set(timeoutButCreated: Bool) { self.timeoutButCreated = timeoutButCreated }
+    func set(rejectedRecovered: Bool) { self.rejectedRecovered = rejectedRecovered }
     func set(brokerDown: Bool) { self.brokerDown = brokerDown }
 
     func isMarketOpen() async throws -> Bool {
@@ -74,7 +77,9 @@ private actor FakeBroker: BrokerClient {
         stopCalls.append((symbol, quantity, stopPrice))
         return "stop-\(stopCalls.count)"
     }
-    func orderId(byClientOrderId clientOrderId: String) async throws -> String? { created[clientOrderId] }
+    func orderRef(byClientOrderId clientOrderId: String) async throws -> BrokerOrderRef? {
+        created[clientOrderId].map { BrokerOrderRef(id: $0, status: rejectedRecovered ? "rejected" : "new") }
+    }
     func filledAveragePrice(orderId: String) async throws -> Double? { price }
 }
 
@@ -253,6 +258,18 @@ final class DailyCycleTests: XCTestCase {
         XCTAssertEqual(result.orders.count, 1)
         let entries = await broker.entryCalls.count
         XCTAssertEqual(entries, 1, "Mai un secondo invio dopo un timeout")
+    }
+
+    func testTimeoutWithRejectedOrderIsNotAnEntry() async {
+        // Bug B4: l'invio va in timeout e l'ordine ritrovato per client_order_id
+        // è STATO RIFIUTATO dal broker: non è un ingresso riuscito. Prima il
+        // solo fatto di trovarlo lo dichiarava riuscito.
+        let broker = FakeBroker(bars: ["SPY": pullback])
+        await broker.set(timeoutButCreated: true)
+        await broker.set(rejectedRecovered: true)
+        let result = await runner(broker, FakeBrain()).run(input()) { _ in }
+        XCTAssertTrue(result.orders.isEmpty, "un ordine rifiutato non finisce negli ordini riusciti")
+        XCTAssertNil(result.book.entries["SPY"], "nessun ingresso segnato nel registro")
     }
 
     func testAlreadyDecidedTodayIsNotPaidAgain() async {

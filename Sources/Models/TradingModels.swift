@@ -402,13 +402,6 @@ struct KimiDecision: Codable, Sendable {
             ? stopLoss < entryPrice && entryPrice < takeProfit
             : takeProfit < entryPrice && entryPrice < stopLoss
     }
-
-    /// R/R calcolato in codice dai livelli (mai fidarsi del payoff dichiarato).
-    var riskRewardRatio: Double? {
-        let risk = abs(entryPrice - stopLoss)
-        guard risk > 0 else { return nil }
-        return abs(takeProfit - entryPrice) / risk
-    }
 }
 
 /// Scelta del Brain giornaliero su un candidato.

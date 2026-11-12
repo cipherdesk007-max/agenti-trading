@@ -625,8 +625,22 @@ final class QuantSwarmEngine: ObservableObject {
 
     /// Ripresa automatica opzionale: se l'app è stata chiusa col motore attivo,
     /// al prossimo sblocco Face ID riparte la sessione sugli stessi simboli.
+    /// MAI in automatico su conto LIVE: una sessione con soldi veri parte solo
+    /// dal bottone, con la conferma "AVVIO CON SOLDI VERI" (bug B2).
+    static func shouldAutoResume(enabled: Bool, isRunning: Bool, isPaper: Bool) -> Bool {
+        enabled && !isRunning && isPaper
+    }
+
     private func resumeSavedSessionIfNeeded() async {
-        guard strategyConfig.autoResumeOnLaunch, !isRunning else { return }
+        guard Self.shouldAutoResume(enabled: strategyConfig.autoResumeOnLaunch,
+                                    isRunning: isRunning,
+                                    isPaper: paperTrading) else {
+            if strategyConfig.autoResumeOnLaunch, !isRunning, !paperTrading {
+                log("Ripresa automatica saltata: conto LIVE. La sessione parte solo dal bottone AVVIA.", agent: .system)
+                NotificationManager.shared.notify("MODALITÀ LIVE", body: "Il motore non riparte da solo su un conto reale: apri la sessione dal bottone AVVIA.")
+            }
+            return
+        }
         if strategyConfig.sanitized.tradingMode.runsOnSchedule {
             log("Ripresa automatica della modalità \(strategyConfig.sanitized.tradingMode.shortLabel.lowercased()).")
             await start(symbolsText: "", news: "")
@@ -646,6 +660,44 @@ final class QuantSwarmEngine: ObservableObject {
         #if canImport(UIKit)
         UIApplication.shared.isIdleTimerDisabled = isRunning
         #endif
+    }
+
+    /// Flat by close fallito (bug B3): la posizione della modalità veloce
+    /// resterebbe overnight SENZA protezione, perché le gambe del bracket
+    /// hanno time_in_force "day" e scadono alla chiusura (regola Alpaca:
+    /// docs.alpaca.markets/docs/orders-at-alpaca). Si rimette subito uno
+    /// stop GTC sul broker, con la stessa regola della giornaliera
+    /// (chiusura − 2,5 ATR): resta attivo anche con l'app chiusa. Se anche
+    /// lo stop fallisce, l'utente viene avvisato di chiudere a mano.
+    private func restoreFlatByCloseStop(service: AlpacaService, symbol: String) async {
+        // Prima di rimettere lo stop si verifica che la posizione esista
+        // ancora: uno stop su una posizione già chiusa aprirebbe uno short.
+        guard let current = try? await service.positions(),
+              let still = current.first(where: { $0.symbol.uppercased() == symbol }),
+              still.quantityValue > 0 else {
+            log("\(symbol): chiusura pre-mercato fallita ma la posizione risulta chiusa: nessuno stop da rimettere.", agent: .risk)
+            return
+        }
+        guard let bars = try? await service.dailyBars(symbol: symbol),
+              let snapshot = DailyStrategy.snapshot(of: bars) else {
+            log("\(symbol): chiusura pre-mercato fallita e barre non disponibili: POSIZIONE SENZA STOP, chiudi dal broker panel.", agent: .risk)
+            NotificationManager.shared.notify("POSIZIONE SENZA STOP", body: "\(symbol): chiusura pre-mercato fallita, riprova o chiudi a mano dal broker panel.")
+            return
+        }
+        let stop = RiskRules.roundDown(snapshot.close - DailyStrategy.stopATR * snapshot.atr14, tick: 0.01)
+        guard stop > 0, stop < snapshot.close else {
+            log("\(symbol): stop calcolato non valido (\(format(stop))); POSIZIONE SENZA STOP, chiudi dal broker panel.", agent: .risk)
+            NotificationManager.shared.notify("POSIZIONE SENZA STOP", body: "\(symbol): chiudi a mano dal broker panel.")
+            return
+        }
+        do {
+            _ = try await service.submitStop(symbol: symbol, quantity: still.quantityValue, stopPrice: stop)
+            log("\(symbol): chiusura pre-mercato fallita; rimesso lo stop GTC a \(format(stop)) USD (protezione overnight, 2,5 ATR).", agent: .risk)
+            NotificationManager.shared.notify("STOP OVERNIGHT", body: "\(symbol): chiusura pre-mercato fallita, stop GTC a \(format(stop)) USD.")
+        } catch {
+            log("\(symbol): chiusura E stop entrambi falliti (\(error.localizedDescription)); POSIZIONE SENZA STOP, chiudi subito dal broker panel.", agent: .risk)
+            NotificationManager.shared.notify("POSIZIONE SENZA STOP", body: "\(symbol): chiudi subito a mano dal broker panel.")
+        }
     }
 
     /// Promemoria locale: se iOS sospende l'app in background, l'utente viene
@@ -1169,6 +1221,7 @@ final class QuantSwarmEngine: ObservableObject {
                                 try await service.closePosition(symbol: symbol)
                             } catch {
                                 failed.append(symbol)
+                                await restoreFlatByCloseStop(service: service, symbol: symbol)
                             }
                         }
                         if failed.isEmpty {
@@ -1357,11 +1410,16 @@ final class QuantSwarmEngine: ObservableObject {
                 setStage(.strategy, .done, "\(symbol): segnale")
                 // Con un conto piccolo: se il capitale non compra almeno 1 azione
                 // (tetto 25%, rischio con lo stop minimo di 0,5 ATR) Kimi non
-                // viene chiamato, crediti risparmiati.
+                // viene chiamato, crediti risparmiati. Il contante libero è il
+                // capitale bot MENO l'esposizione già aperta (bug B6: prima si
+                // usava equity intera e Kimi veniva chiamato per candidati che
+                // il sizing avrebbe bocciato per cassa insufficiente).
+                let openExposure = positions.reduce(0.0) { $0 + ($1.marketValueNumber ?? 0) }
                 let equity = min(account?.equityValue ?? 0, config.capitalCap)
                 guard RiskRules.canBuyOneShare(price: snapshot.lastPrice,
                                                stopDistance: RiskRules.minimumStopATR * atr,
-                                               capital: equity, freeCash: equity,
+                                               capital: equity,
+                                               freeCash: max(equity - openExposure, 0),
                                                riskFraction: config.riskFraction) else {
                     setStage(.risk, .blocked, "\(symbol): capitale insufficiente per 1 azione")
                     skipStages(after: .risk, "capitale insufficiente · 0 crediti")
@@ -1795,25 +1853,24 @@ final class QuantSwarmEngine: ObservableObject {
     /// riavvio dell'app non azzera il blocco. Le posizioni aperte restano
     /// protette dalle gambe del bracket.
     private func checkDailyLoss(_ snapshot: AccountSnapshot) {
-        guard let lastEquity = snapshot.lastEquityValue, lastEquity > 0 else { return }
         let config = strategyConfig.sanitized
-        let dayPnL = snapshot.equityValue - lastEquity
-        // Misurato sul capitale del bot: con 10.000 USD su un conto da 100.000
-        // il 2% vale 200 USD, non 2.000.
-        let limit = config.dailyStopFraction * min(lastEquity, config.capitalCap)
-        guard dayPnL <= -limit, !dailyStopActive else { return }
+        guard let check = RiskRules.dailyStopCheck(equity: snapshot.equityValue,
+                                                   lastEquity: snapshot.lastEquityValue ?? 0,
+                                                   stopFraction: config.dailyStopFraction,
+                                                   capitalCap: config.capitalCap),
+              check.shouldStop, !dailyStopActive else { return }
         guardState.dailyStopDayUTC = Self.dayStampUTC()
         RiskGuardStore.save(guardState)
         dailyStopOn = true
         let percent = format(config.dailyStopPercent)
         log(
-            "STOP GIORNALIERO: P&L \(format(dayPnL)) USD oltre il -\(percent)% del capitale bot; "
+            "STOP GIORNALIERO: P&L \(format(check.dayPnL)) USD oltre il -\(percent)% del capitale bot; "
                 + "nuovi segnali sospesi fino alla mezzanotte UTC.",
             agent: .risk
         )
         NotificationManager.shared.notify(
             "STOP GIORNALIERO -\(percent)%",
-            body: "P&L \(format(dayPnL)) USD; nuovi segnali sospesi fino alla mezzanotte UTC."
+            body: "P&L \(format(check.dayPnL)) USD; nuovi segnali sospesi fino alla mezzanotte UTC."
         )
     }
 
@@ -1825,10 +1882,11 @@ final class QuantSwarmEngine: ObservableObject {
             guardState.peakEquity = equity
             RiskGuardStore.save(guardState)
         }
-        // Perdita dal picco misurata sul capitale del bot (stessa base del rischio).
-        let base = min(guardState.peakEquity, strategyConfig.sanitized.capitalCap)
-        let floor = guardState.peakEquity - base * SystemLimits.maxDrawdownFraction
-        guard guardState.peakEquity > 0, equity <= floor, !guardState.drawdownLocked else { return }
+        guard let check = RiskRules.drawdownCheck(equity: equity,
+                                                  peak: guardState.peakEquity,
+                                                  maxDrawdownFraction: SystemLimits.maxDrawdownFraction,
+                                                  capitalCap: strategyConfig.sanitized.capitalCap),
+              check.shouldLock, !guardState.drawdownLocked else { return }
         guardState.drawdownLocked = true
         RiskGuardStore.save(guardState)
         drawdownLocked = true
@@ -2244,13 +2302,20 @@ extension QuantSwarmEngine {
     /// Esito di una posizione chiusa dalla regola d'uscita: il P&L è quello
     /// non realizzato al momento della chiusura (lo stop non è stato eseguito).
     fileprivate func recordDailyExit(symbol: String, pnl: Double?) {
+        // Il filtro per simbolo sta nel predicato (bug R5: prima si leggevano
+        // solo gli ultimi 50 record non risolti e poi si filtrava in memoria,
+        // quindi con più di 50 posizioni aperte l'esito del più vecchio andava
+        // perso). Il simbolo si salva maiuscolo, ma si confronta in entrambi i
+        // casi per non perdere i record storici.
+        let upper = symbol.uppercased()
         var descriptor = FetchDescriptor<TradeRecord>(
-            predicate: #Predicate<TradeRecord> { !$0.outcomeRecorded },
+            predicate: #Predicate<TradeRecord> { record in
+                !record.outcomeRecorded && (record.symbol == symbol || record.symbol == upper)
+            },
             sortBy: [SortDescriptor(\.createdAt, order: .reverse)]
         )
-        descriptor.fetchLimit = 50
-        guard let records = try? modelContext.fetch(descriptor),
-              let record = records.first(where: { $0.symbol.uppercased() == symbol }) else { return }
+        descriptor.fetchLimit = 200
+        guard let record = (try? modelContext.fetch(descriptor))?.first else { return }
         record.netPnL = pnl ?? 0
         record.outcomeRecorded = true
         linkOutcomeToSample(record)

@@ -60,6 +60,15 @@ struct AlpacaOrder: Decodable, Sendable, Identifiable {
 
     /// True se è un ordine di ingresso (non una gamba stop/target di un bracket).
     var isEntryOrder: Bool { parentOrderId == nil }
+
+    /// True se l'ordine esiste sul broker e può ancora eseguirsi (o si è già
+    /// eseguito). Usato nel recupero per client_order_id: un ordine rifiutato
+    /// o annullato non è un invio riuscito. Stati da
+    /// docs.alpaca.markets/reference/postorder.
+    var countsAsPlaced: Bool {
+        ["new", "partially_filled", "accepted", "pending_new", "pending_replace",
+         "pending_cancel", "held", "done_for_day", "filled"].contains(status)
+    }
 }
 
 struct AlpacaPosition: Decodable, Sendable, Identifiable {
@@ -550,6 +559,24 @@ actor AlpacaService {
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
     }
 
+    /// Vendita a mercato a quantità fissa (day). Serve alla modalità notte per
+    /// chiudere SOLO le azioni di sua proprietà quando sul conto c'è anche la
+    /// stessa azione comprata dalla modalità giornaliera: l'endpoint
+    /// /v2/positions/{symbol} chiuderebbe l'intera posizione.
+    func submitMarket(symbol: String, quantity: Int, side: String,
+                      clientOrderId: String) async throws -> AlpacaOrder {
+        let body: [String: Any] = [
+            "symbol": symbol.uppercased(),
+            "qty": String(quantity),
+            "side": side,
+            "type": "market",
+            "time_in_force": "day",
+            "client_order_id": clientOrderId
+        ]
+        let data = try await send(path: "/v2/orders", method: "POST", body: body)
+        return try JSONDecoder().decode(AlpacaOrder.self, from: data)
+    }
+
     /// Annulla un singolo ordine aperto (controllo manuale dal broker panel).
     func cancelOrder(id: String) async throws {
         guard let escaped = id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
@@ -689,8 +716,9 @@ struct AlpacaBroker: BrokerClient {
         try await service.submitStop(symbol: symbol, quantity: quantity, stopPrice: stopPrice).id
     }
 
-    func orderId(byClientOrderId clientOrderId: String) async throws -> String? {
-        try await service.order(byClientOrderId: clientOrderId)?.id
+    func orderRef(byClientOrderId clientOrderId: String) async throws -> BrokerOrderRef? {
+        guard let order = try await service.order(byClientOrderId: clientOrderId) else { return nil }
+        return BrokerOrderRef(id: order.id, status: order.status)
     }
 
     func filledAveragePrice(orderId: String) async throws -> Double? {
@@ -724,5 +752,11 @@ extension AlpacaBroker: NightBroker {
                        clientOrderId: String) async throws -> String {
         try await service.submitAuction(symbol: symbol, quantity: quantity, side: side,
                                         timeInForce: timeInForce, clientOrderId: clientOrderId).id
+    }
+
+    func submitMarket(symbol: String, quantity: Int, side: String,
+                      clientOrderId: String) async throws -> String {
+        try await service.submitMarket(symbol: symbol, quantity: quantity, side: side,
+                                       clientOrderId: clientOrderId).id
     }
 }

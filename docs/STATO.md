@@ -1,6 +1,6 @@
 # Stato del progetto · QuantSwarm Alpha Zero
 
-Aggiornato al 12/11/2026, versione **1.3.0 build 130** (commit su `main`).
+Aggiornato al 11/11/2026, versione **1.3.0 build 130** (commit su `main`).
 Questo file è per chi studia o rivede il progetto (persone o AI): cosa fa l'app, come è collegata, cosa è già stato deciso con i dati e cosa resta aperto.
 
 ## Vincoli che non cambiano
@@ -42,9 +42,23 @@ Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia 
 | Overnight (`overnight`) | SPY/QQQ/IWM/GLD a peso uguale, costi 0,003% per lato: +8,0% annuo, perdita massima −22%, Sharpe 0,81; ultimi 2 anni +13,9%; gemelli positivi | Costruita la modalità NOTTE |
 | Secondo modello locale (Qwen3.5 su iPhone con MLX) | Possibile tecnicamente; pochi segnali da giudicare, rischio di memoria sotto LiveContainer | Rimandato: si riconsidera se la pagella mostra che il Brain sbaglia |
 
+## Correzioni di sicurezza (11/11/2026, tutte con test in `Tests/`)
+
+- **B1 · la notte vende solo le sue azioni.** Il registro notte ora salva anche la quantità (`NightPosition`, retrocompatibile con il vecchio formato). Prima l'OPG vendeva TUTTE le azioni del simbolo: con SPY/QQQ/IWM/GLD in entrambi i panieri svuotava le posizioni della giornaliera e il suo stop GTC residuo poteva aprire uno short. La chiusura "leftover" del mattino fa lo stesso: vende solo la quantità della notte.
+- **B2 · mai ripresa automatica su conto LIVE.** Il motore riparte da solo solo su paper; in live la sessione parte dal bottone con la conferma.
+- **B3 · flat-by-close fallito = stop GTC di emergenza.** Se la chiusura della veloce fallisce a T-10 minuti e non si ripara entro la seduta, la posizione resterebbe overnight nuda (le gambe del bracket `day` scadono alla chiusura). Ora si rimette subito uno stop GTC (chiusura − 2,5 ATR, come la giornaliera); se anche quello fallisce: notifica "POSIZIONE SENZA STOP".
+- **B4 · un ordine rifiutato non è un invio riuscito.** Il recupero per `client_order_id` ora controlla lo stato: `rejected`/`canceled`/`expired` non bloccano il retry né producono ricevute (notte, giornaliera e veloce).
+- **B5 · circuit breaker estratti e testati.** Stop giornaliero e drawdown sono formule pure in `RiskRules` con test. Limite noto e documentato: un prelievo dal conto appare come perdita (con le API disponibili non è distinguibile).
+- **B6 · prefilter della veloce sul contante libero vero** (capitale meno esposizione aperta): meno chiamate Kimi a vuoto.
+- **R5 · l'esito dell'uscita si registra fino a 200 posizioni indietro** (prima 50, con filtro in memoria).
+- **R6 · rimosso `riskRewardRatio`** (codice morto).
+- Studio nuovo in `tools/backtest_overnight_fraction.py` (runner `overnight`): quanto CAGR e perdita massima cambiano se la NOTTE investisse solo una frazione del conto. La frazione resta 97% finché i numeri non dicano altro: la protezione resta il tetto del capitale.
+
 ## Da verificare sul telefono o sul conto vero
 
 - La NOTTE è testata con broker finto: va confermato che Alpaca paper accetti gli ordini `cls` e `opg` e li esegua alle aste.
+- Con B1, se una OPG in coda venisse annullata senza eseguirsi (asta saltata), le azioni resterebbero sul conto ma fuori dal registro notte: il ciclo non le rivende più. Capire se capita davvero su paper (le OPG a mercato eseguono in asta, è raro) e in caso decidere una riconciliazione.
+- Che il registro notte scritto dalla versione precedente (senza quantità) si rilegga: vende tutto il detenuto del simbolo finché non passa una notte.
 - `reasoning_effort` medium accettato dal modello Kimi in uso (altrimenti l'app passa da sola a low).
 - Il foglio TRADUCI di Apple (non si apre sul simulatore).
 - Durata reale della prova: con 1.000 $ circa un segnale a settimana nella giornaliera; servono 20–30 trade chiusi prima di giudicare.

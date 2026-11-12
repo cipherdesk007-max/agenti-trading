@@ -7,6 +7,19 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+### Corretto
+- **NOTTE: vende solo le sue azioni, mai quelle della giornaliera.** Il registro notte salva anche la quantità acquistata; l'OPG all'apertura e la chiusura "leftover" vendono esattamente quella. Prima, se la giornaliera aveva lo stesso simbolo (SPY, QQQ, IWM, GLD sono in entrambi i panieri), l'ordine d'asta vendeva TUTTE le azioni del conto e lo stop GTC residuo della giornaliera poteva aprire uno short. Il vecchio registro (senza quantità) si rilegge: vende tutto il detenuto finché non passa una notte.
+- **Mai ripresa automatica su conto LIVE**: il motore riparte da solo solo su paper. Con soldi veri la sessione parte dal bottone, con la conferma.
+- **VELOCE: flat-by-close fallito = stop GTC di emergenza.** Se la chiusura a T-10 minuti fallisce e non si ripara entro la seduta, la posizione restava overnight senza protezione (le gambe del bracket "day" scadono alla chiusura). Ora si rimette subito uno stop GTC sul broker (chiusura − 2,5 ATR) e, se anche quello fallisce, arriva la notifica POSIZIONE SENZA STOP.
+- **Un ordine rifiutato non è più un invio riuscito.** Il recupero per client_order_id controlla lo stato dell'ordine (notte, giornaliera e veloce): rejected/canceled/expired non producono vendite o ingressi finti e non bloccano il retry.
+- Il prefilter della modalità veloce usa il contante libero vero (capitale meno esposizione già aperta): meno chiamate Kimi spese per candidati che il sizing avrebbe bocciato.
+- L'esito di un'uscita si registra anche con più di 50 posizioni aperte (prima solo gli ultimi 50 record non risolti).
+- Le formule dello stop giornaliero e dello stop drawdown sono estratte in `RiskRules` e testate; il limite noto (un prelievo appare come perdita) è documentato in `docs/STATO.md`.
+- Rimosso `riskRewardRatio`, calcolato ma mai usato.
+
+### Aggiunto
+- Studio `tools/backtest_overnight_fraction.py` (runner `overnight`): CAGR e perdita massima sul conto se la NOTTE investisse solo una frazione del capitale. La frazione resta 97% finché i numeri non dicano altro.
+
 ## [1.3.0 · build 130] - 2026-11-11
 
 ### Aggiunto
