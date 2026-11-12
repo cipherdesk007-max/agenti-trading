@@ -1199,10 +1199,14 @@ final class QuantSwarmEngine: ObservableObject {
                    !positions.isEmpty, !flatByCloseTriggered {
                     flatByCloseTriggered = true
                     // Solo le posizioni della modalità veloce: quelle della
-                    // giornaliera (registro DailyBook) restano con il loro stop.
+                    // giornaliera (registro DailyBook) restano con il loro stop,
+                    // e quelle della NOTTE (registro NightBook) restano intatte:
+                    // sono dell'altra modalità e hanno la loro vendita OPG in coda.
                     let dailySymbols = Set(DailyBookStore.load(account: account?.accountNumber).entries.keys)
+                    let nightSymbols = Set(NightBookStore.load(account: account?.accountNumber).positions.keys
+                        .map { $0.uppercased() })
                     let intradaySymbols = positions.map { $0.symbol.uppercased() }
-                        .filter { !dailySymbols.contains($0) }
+                        .filter { !dailySymbols.contains($0) && !nightSymbols.contains($0) }
                     if intradaySymbols.isEmpty {
                         log("T-\(Int(toClose / 60)) min alla chiusura: nessuna posizione della modalità veloce da chiudere.", agent: .risk)
                     } else {
@@ -1216,6 +1220,13 @@ final class QuantSwarmEngine: ObservableObject {
                         let open = (try? await service.openOrders()) ?? []
                         for symbol in intradaySymbols {
                             for order in open where order.symbol.uppercased() == symbol {
+                                // Mai annullare gli stop protettivi di vendita (es. lo
+                                // stop GTC d'emergenza appena rimesso da
+                                // restoreFlatByCloseStop): il retry di flat-by-close non
+                                // deve togliere la protezione overnight.
+                                if order.side == "sell" && (order.type == "stop" || order.type == "stop_limit") {
+                                    continue
+                                }
                                 try? await service.cancelOrder(id: order.id)
                             }
                             do {

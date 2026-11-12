@@ -53,14 +53,25 @@ enum NightStrategy {
         return (c.hour ?? 0) * 60 + (c.minute ?? 0)
     }
 
-    /// Regole di Alpaca: le OPG si accettano dalle 19:00 alle 9:28 di New York,
-    /// le MOC fino alle 15:50 (qui con 10 minuti di margine sulla chiusura).
+    /// Giorno della settimana in ora di New York (1 = domenica, 7 = sabato).
+    static func weekdayET(_ date: Date) -> Int {
+        Calendar(identifier: .gregorian).dateComponents(in: TimeZone(identifier: "America/New_York")!, from: date).weekday ?? 0
+    }
+
+    /// Regole di Alpaca: le OPG si accettano FUORI da 9:28–19:00 ET (anche il
+    /// sabato e la domenica, per l'apertura di lunedì), le MOC fino alle 15:50
+    /// (qui con 10 minuti di margine sulla chiusura).
     /// `calendar` (GET /v2/calendar) dà la chiusura esatta del giorno — anche
-    /// nelle mezze jornadas — e i festivi: niente ordini d'asta nei festivi.
-    /// Se il calendario non risponde (nil) ci si comporta come prima (solo clock).
+    /// nelle mezze giornate — e i festivi infrasettimanali: niente ordini d'asta
+    /// in un giorno di festa. Nel FINE SETTIMANA invece la vendita OPG va messa in
+    /// coda fuori da 9:28–19:00 ET, perché lunedì si apre. Se il calendario non
+    /// risponde (nil) ci si comporta come prima (solo clock e regole orarie).
     static func phase(now: Date, isOpen: Bool, nextClose: Date?, calendar: [TradingDay]?, today: String) -> Phase {
+        let m = minutesET(now)
+        let weekday = weekdayET(now)
+        let isWeekend = weekday == 1 || weekday == 7
         let todayDay = calendar?.first { $0.date == today }
-        if let calendar, todayDay == nil, !isOpen {
+        if let calendar, !isWeekend, todayDay == nil, !isOpen {
             return .wait("oggi la borsa USA è chiusa (festivo): nessuna asta")
         }
         if isOpen {
@@ -70,12 +81,11 @@ enum NightStrategy {
             }
             return .wait("troppo vicino alla chiusura per l'asta: si compra domani")
         }
-        let m = minutesET(now)
-        if m >= 9 * 60 + 28 && m < 9 * 60 + 30 {
-            return .wait("apertura fra pochi minuti: vendita all'apertura non più accettata")
-        }
-        if m >= 16 * 60 && m < 19 * 60 {
-            return .wait("le vendite all'apertura si accettano dalle 19:00 di New York (01:00 in Italia)")
+        // Mercato chiuso: l'OPG va in coda solo FUORI da 9:28–19:00 ET. Dentro
+        // questa finestra (mattina, o pomeriggio dopo una chiusura anticipata come
+        // le 13:00 ET delle mezze giornate) Alpaca rifiuterebbe l'ordine: si aspetta.
+        if m >= 9 * 60 + 28 && m < 19 * 60 {
+            return .wait("le vendite all'apertura si accettano solo fuori da 9:28–19:00 di New York (ora ET)")
         }
         return .sellWindow
     }
@@ -167,6 +177,11 @@ struct NightPosition: Codable, Sendable, Equatable {
     /// giornaliera sullo stesso simbolo il totale non torna a zero, questa è
     /// la base per capire quanto è sceso.
     var sellQueuedHeld: Double? = nil
+    /// client_order_id dell'OPG in coda: la conferma dell'esecuzione arriva dallo
+    /// STATO dell'ordine sul broker (filled = venduto, canceled/rejected/expired =
+    /// residuo), non dal calo del detenuto, che con la giornaliera sullo stesso
+    /// simbolo non è affidabile.
+    var sellQueuedOrderId: String? = nil
 }
 
 /// Posizioni della modalità notte, separate da quelle della giornaliera.
@@ -349,9 +364,27 @@ struct NightCycleRunner: Sendable {
                 book.positions[symbol] = nil
                 continue
             }
-            if let p = book.positions[symbol], p.sellQueuedDay != nil, let q = p.quantity {
-                let baseline = p.sellQueuedHeld ?? held
-                if baseline - held >= q - 1e-6 { book.positions[symbol] = nil }
+            if let p = book.positions[symbol], p.sellQueuedDay != nil {
+                // La vendita in coda si conferma dallo STATO dell'ordine OPG sul
+                // broker (client_order_id salvato nel registro): filled = tolta,
+                // canceled/rejected/expired = residuo (resta e verrà chiusa come
+                // leftover). Il calo del detenuto non basta: con la giornaliera
+                // sullo stesso simbolo il totale può risalire.
+                if let orderId = p.sellQueuedOrderId, let ref = try? await broker.orderRef(byClientOrderId: orderId) {
+                    if ref.status == "filled" {
+                        book.positions[symbol] = nil
+                        continue
+                    }
+                    if ["canceled", "rejected", "expired"].contains(ref.status) {
+                        // Residuo: resta nel registro, marcata in coda.
+                    } else {
+                        continue // ordine ancora vivo in coda d'asta
+                    }
+                } else if let q = p.quantity {
+                    // Fallback per registro senza orderId: calo del detenuto.
+                    let baseline = p.sellQueuedHeld ?? held
+                    if baseline - held >= q - 1e-6 { book.positions[symbol] = nil; continue }
+                }
             }
         }
 
@@ -404,6 +437,7 @@ struct NightCycleRunner: Sendable {
                         // notte (fix B1).
                         p.sellQueuedDay = input.today
                         p.sellQueuedHeld = heldQty(symbol)
+                        p.sellQueuedOrderId = orderId
                         book.positions[symbol] = p
                     } else {
                         // Registro vecchio senza quantità: la vendita copre tutto il
@@ -481,8 +515,16 @@ struct NightCycleRunner: Sendable {
             }
             // Niente acquisti sopra un residuo non chiuso: i simboli ancora in
             // registro (giorno precedente) restano fuori dal paniere di stasera.
+            // A livello di FAMIGLIA: con un residuo su SPYM non si compra SPY
+            // (stesso indice S&P 500, stesso rischio raddoppiato).
+            let blocked = Set(book.positions.keys.map { $0.uppercased() })
             let picks = NightStrategy.allocate(budget: budget, prices: prices)
-                .filter { book.positions[$0.symbol] == nil }
+                .filter { pick in
+                    guard book.positions[pick.symbol] == nil else { return false }
+                    let family = NightStrategy.families.first(where: { $0.symbols.contains(pick.symbol) })
+                    else { return true }
+                    return family.symbols.allSatisfy { !blocked.contains($0.uppercased()) }
+                }
             guard !picks.isEmpty else {
                 let text = "capitale insufficiente per 1 azione (budget \(fmt(budget)) USD)"
                 await emit(.init(stage: .strategy, state: .blocked, detail: text, log: "Notte: \(text).", agent: .risk))
@@ -494,6 +536,8 @@ struct NightCycleRunner: Sendable {
             await emit(.init(stage: .strategy, state: .done, detail: "compro in chiusura: \(plan)"))
             await emit(.init(stage: .risk, state: .done, detail: "budget \(fmt(budget)) USD a peso uguale, azioni intere"))
             await emit(.init(stage: .executor, state: .working, detail: "metto in coda gli acquisti in chiusura"))
+            var failedPicks: [NightStrategy.Pick] = []
+            var spent = 0.0
             for pick in picks {
                 let id = "qsn-b-\(pick.symbol)-\(input.today)"
                 if let orderId = await submit(symbol: pick.symbol, qty: pick.quantity, side: "buy", tif: "cls", id: id, emit: emit) {
@@ -501,6 +545,32 @@ struct NightCycleRunner: Sendable {
                     book.fillChecks.append(NightFillCheck(symbol: pick.symbol, side: "buy", orderId: orderId,
                                                           queueDay: input.today, refPrice: pick.price))
                     result.buys.append(pick)
+                    spent += Double(pick.quantity) * pick.price
+                } else {
+                    failedPicks.append(pick)
+                }
+            }
+            // MOC parziali: se alcune sono rifiutate si ritenta SOLO le famiglie
+            // mancanti, col gemello economico se l'originale non basta più.
+            for pick in failedPicks {
+                guard let family = NightStrategy.families.first(where: { $0.symbols.contains(pick.symbol) }) else { continue }
+                let alt = family.symbols.first { s in
+                    s != pick.symbol
+                        && book.positions[s] == nil
+                        && !result.buys.contains { $0.symbol == s }
+                        && (prices[s] ?? 0) > 0
+                }
+                guard let alt, let price = prices[alt], price > 0 else { continue }
+                let qty = Int(min(Double(pick.quantity), max(budget - spent, 0) / price))
+                guard qty > 0 else { continue }
+                let id = "qsn-b-\(alt)-\(input.today)"
+                if let orderId = await submit(symbol: alt, qty: qty, side: "buy", tif: "cls", id: id, emit: emit) {
+                    book.positions[alt] = NightPosition(day: input.today, quantity: Double(qty))
+                    book.fillChecks.append(NightFillCheck(symbol: alt, side: "buy", orderId: orderId,
+                                                          queueDay: input.today, refPrice: price))
+                    result.buys.append(NightStrategy.Pick(symbol: alt, quantity: qty, price: price))
+                    spent += Double(qty) * price
+                    await emit(.init(log: "\(pick.symbol): MOC rifiutata, riprovato con \(alt) x\(qty) (stessa famiglia).", agent: .risk))
                 }
             }
             if !result.buys.isEmpty { book.nights += 1 }

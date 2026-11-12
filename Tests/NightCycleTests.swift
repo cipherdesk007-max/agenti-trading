@@ -20,6 +20,8 @@ private actor FakeNightBroker: NightBroker {
     var known: [String: String] = [:]
     /// Se true, submitAuction lancia e registra l'ordine come rifiutato.
     var rejectAuction = false
+    /// Simboli le cui aste vengono rifiutate (per simulare MOC parziali).
+    var rejectSymbols: Set<String> = []
     /// Calendario di borsa finto: nil = endpoint non disponibile (il ciclo usa solo clock).
     var calendar: [TradingDay]? = nil
     /// orderId → prezzo di esecuzione (filled_avg_price).
@@ -37,6 +39,9 @@ private actor FakeNightBroker: NightBroker {
     func set(isOpen: Bool, nextClose: Date?) { self.isOpen = isOpen; self.nextClose = nextClose }
     func set(account: BrokerAccount) { acct = account }
     func set(rejectAuction: Bool) { self.rejectAuction = rejectAuction }
+    func set(rejectSymbols: Set<String>) { self.rejectSymbols = rejectSymbols }
+    /// Cambia lo stato di un ordine noto (simula l'asta: filled, canceled…).
+    func markOrder(clientOrderId: String, status: String) { known[clientOrderId] = status }
     func set(calendar: [TradingDay]?) { self.calendar = calendar }
     func set(fills: [String: Double]) { self.fills = fills }
     func set(auctions: [String: Double]) { self.auctions = auctions }
@@ -77,7 +82,7 @@ private actor FakeNightBroker: NightBroker {
                        clientOrderId: String) async throws -> String {
         submitted.append((symbol, quantity, side, timeInForce, clientOrderId))
         events.append("auction \(side) \(timeInForce) \(symbol) \(quantity)")
-        if rejectAuction {
+        if rejectAuction || rejectSymbols.contains(symbol.uppercased()) {
             // Il broker ha registrato l'ordine ma lo ha rifiutato.
             known[clientOrderId] = "rejected"
             throw NightFakeError()
@@ -166,6 +171,153 @@ final class NightCycleTests: XCTestCase {
             .run(NightCycleInput(book: book, today: "2026-11-11", now: et(20))) { _ in }
         let sent = await broker.submitted
         XCTAssertTrue(sent.isEmpty, "nei festivi nessuna OPG/MOC")
+    }
+
+    // MARK: - Finestre: fine settimana, festivo infrasettimanale, mezza giornata
+
+    func testPhaseWeekendQueuesOPGOutsideAuctionWindow() {
+        // Sabato 14/11/2026 e domenica 15/11/2026: il calendario non li contiene,
+        // ma non sono festivi infrasettimanali.
+        let calendar = [TradingDay(date: "2026-11-16", close: et(day: 16, 16))]
+        // Sabato 12:00 ET (mercato chiuso): dentro 9:28–19:00 ET → wait.
+        if case .wait = NightStrategy.phase(now: et(day: 14, 12), isOpen: false, nextClose: nil,
+                                            calendar: calendar, today: "2026-11-14") {} else {
+            XCTFail("sabato di giorno si aspetta: le OPG si accettano solo fuori 9:28–19:00 ET")
+        }
+        // Sabato 20:00 ET: OPG in coda per lunedì.
+        XCTAssertEqual(NightStrategy.phase(now: et(day: 14, 20), isOpen: false, nextClose: nil,
+                                               calendar: calendar, today: "2026-11-14"), .sellWindow)
+        // Domenica 21:00 ET: idem.
+        XCTAssertEqual(NightStrategy.phase(now: et(day: 15, 21), isOpen: false, nextClose: nil,
+                                               calendar: calendar, today: "2026-11-15"), .sellWindow)
+    }
+
+    func testPhaseWeekdayHolidayStillWaits() {
+        // Giovedì 26/11/2026 (festivo infrasettimanale, es. Thanksgiving): wait festivo.
+        let calendar = [TradingDay(date: "2026-11-27", close: et(day: 27, 13))]
+        if case .wait(let why) = NightStrategy.phase(now: et(day: 26, 20), isOpen: false, nextClose: nil,
+                                                      calendar: calendar, today: "2026-11-26") {
+            XCTAssertTrue(why.contains("festivo"), "il wait deve dire che è festivo")
+        } else {
+            XCTFail("festivo infrasettimanale: nessuna asta nemmeno la sera")
+        }
+    }
+
+    func testPhaseEarlyCloseAfternoonWaits() {
+        // Venerdì 27/11/2026 mezza giornata: chiusura 13:00 ET. Alle 13:30 il mercato
+        // è chiuso ma siamo dentro 9:28–19:00 ET: l'OPG verrebbe rifiutata da Alpaca.
+        let calendar = [TradingDay(date: "2026-11-27", close: et(day: 27, 13))]
+        if case .wait = NightStrategy.phase(now: et(day: 27, 13, 30), isOpen: false, nextClose: nil,
+                                            calendar: calendar, today: "2026-11-27") {} else {
+            XCTFail("dopo una chiusura anticipata alle 13:00 ET non si mette OPG alle 13:30")
+        }
+        // Alle 19:30 ET invece sì.
+        XCTAssertEqual(NightStrategy.phase(now: et(day: 27, 19, 30), isOpen: false, nextClose: nil,
+                                               calendar: calendar, today: "2026-11-27"), .sellWindow)
+    }
+
+    func testWeekendEveningQueuesOPGForMonday() async {
+        // Sabato 14/11 20:00 ET con posizione in registro: OPG in coda per lundi 16.
+        let broker = FakeNightBroker(isOpen: false, nextClose: nil)
+        await broker.set(calendar: [TradingDay(date: "2026-11-16", close: et(day: 16, 16))])
+        await broker.set(held: [BrokerPosition(symbol: "SPYM", quantity: 2, averageEntryPrice: 89, unrealizedPL: 0)])
+        var book = NightBook()
+        book.positions["SPYM"] = NightPosition(day: "2026-11-13", quantity: 2)
+        let res = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: book, today: "2026-11-14", now: et(day: 14, 20))) { _ in }
+        let sent = await broker.submitted
+        XCTAssertEqual(sent.filter { $0.tif == "opg" && $0.side == "sell" }.count, 1,
+                       "sabato sera l'OPG va in coda per lundi")
+        XCTAssertEqual(res.book.positions["SPYM"]?.sellQueuedDay, "2026-11-14")
+        XCTAssertNotNil(res.book.positions["SPYM"]?.sellQueuedOrderId, "il client_order_id dell'OPG va salvato nel registro")
+    }
+
+    // MARK: - Conferma della vendita dallo stato dell'ordine OPG
+
+    func testOPGFilledByOrderStatusClearsBookEvenWhenHeldDidNotDrop() async {
+        // SPY: 2 azioni della notte + 4 della giornaliera. L'OPG risulta FILLED
+        // sul broker ma il detenuto resta 6: la conferma viene dallo STATO
+        // dell'ordine (client_order_id), non dal calo del detenuto.
+        let broker = FakeNightBroker(isOpen: false, nextClose: nil)
+        await broker.set(held: [BrokerPosition(symbol: "SPY", quantity: 6, averageEntryPrice: 700, unrealizedPL: 0)])
+        var book = NightBook()
+        book.positions["SPY"] = NightPosition(day: "2026-11-10", quantity: 2)
+        let evening = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: book, today: "2026-11-11", now: et(20))) { _ in }
+        let opgId = await broker.submitted.filter { $0.side == "sell" }.last!.4
+        await broker.markOrder(clientOrderId: opgId, status: "filled")
+        await broker.set(orders: [])
+        // Il detenuto resta 6 (la giornaliera non vende): solo lo stato "filled" toglie la voce.
+        let next = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: evening.book, today: "2026-11-12", now: et(day: 12, 20))) { _ in }
+        XCTAssertNil(next.book.positions["SPY"], "OPG filled (stato ordine) → via dal registro anche se il detenuto non è sceso")
+        let sent = await broker.submitted
+        XCTAssertEqual(sent.filter { $0.side == "sell" }.count, 1, "nessuna seconda vendita")
+    }
+
+    func testOPGCanceledByOrderStatusStaysAsResidual() async {
+        // L'OPG risulta CANCELED sul broker: la voce resta (residuo) e al prossimo
+        // buy window viene chiusa a mercato solo la quantità della notte.
+        let broker = FakeNightBroker(isOpen: false, nextClose: nil)
+        await broker.set(held: [BrokerPosition(symbol: "SPY", quantity: 6, averageEntryPrice: 700, unrealizedPL: 0)])
+        var book = NightBook()
+        book.positions["SPY"] = NightPosition(day: "2026-11-10", quantity: 2)
+        let evening = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: book, today: "2026-11-11", now: et(20))) { _ in }
+        let opgId = await broker.submitted.filter { $0.side == "sell" }.last!.4
+        await broker.markOrder(clientOrderId: opgId, status: "canceled")
+        await broker.set(orders: [])
+        await broker.set(isOpen: true, nextClose: et(day: 12, 16))
+        let morning = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: evening.book, today: "2026-11-12", now: et(day: 12, 10))) { _ in }
+        let sells = await broker.marketSells
+        XCTAssertEqual(sells.first?.1, 2, "chiusura a mercato di SOLO le 2 azioni della notte, non le 6 detenute")
+        if let spy = morning.book.positions["SPY"] {
+            XCTAssertEqual(spy.day, "2026-11-12", "se SPY è nel registro è un nuovo acquisto di oggi, non il residuo")
+        }
+    }
+
+    // MARK: - Acquisti MOC parziali e blocco famiglia con residuo
+
+    func testPartialMOCRetriesOnlyMissingFamiliesWithTwin() async {
+        // Budget per 4 originali; la MOC di QQQ è rifiutata: si ritenta solo quella
+        // famiglia, col gemello QQQM. Nessuna famiglia doppia.
+        let broker = FakeNightBroker(isOpen: true, nextClose: et(day: 12, 16))
+        await broker.set(account: BrokerAccount(equity: 100_000, cash: 100_000, buyingPower: 400_000))
+        await broker.set(rejectSymbols: ["QQQ"])
+        let res = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: NightBook(), today: "2026-11-12", now: et(day: 12, 10))) { _ in }
+        let sent = await broker.submitted
+        let buys = sent.filter { $0.side == "buy" && $0.tif == "cls" }.map { $0.0 }
+        func family(of s: String) -> Int {
+            NightStrategy.families.firstIndex { $0.symbols.contains(s) } ?? -1
+        }
+        XCTAssertEqual(Set(buys.map(family)).count, 4, "una sola MOC per famiglia: niente duplicati")
+        XCTAssertTrue(buys.contains("QQQM"), "la famiglia mancante viene ritentata col gemello")
+        XCTAssertTrue(buys.contains("SPY") && buys.contains("IWM") && buys.contains("GLD"))
+        XCTAssertEqual(Set(res.book.positions.keys), Set(buys))
+    }
+
+    func testResidualOnTwinBlocksOriginalOfSameFamily() async {
+        // Residuo SPYM del giorno prima con OPG ancora aperta: la famiglia S&P 500
+        // è bloccata, stasera non si compra né SPY né SPYM.
+        let broker = FakeNightBroker(isOpen: true, nextClose: et(day: 12, 16))
+        await broker.set(account: BrokerAccount(equity: 100_000, cash: 100_000, buyingPower: 400_000))
+        await broker.set(held: [BrokerPosition(symbol: "SPYM", quantity: 2, averageEntryPrice: 89, unrealizedPL: 0)])
+        await broker.set(orders: [BrokerOrder(id: "opg1", symbol: "SPYM", side: "sell", type: "market",
+                                               status: "new", quantity: 2, filledQuantity: 0,
+                                               stopPrice: nil, parentOrderId: nil, submittedAt: nil)])
+        await broker.markOrder(clientOrderId: "qsn-s-SPYM-2026-11-11-1", status: "new")
+        var book = NightBook()
+        book.positions["SPYM"] = NightPosition(day: "2026-11-11", quantity: 2, sellQueuedDay: "2026-11-11",
+                                               sellQueuedHeld: 2, sellQueuedOrderId: "qsn-s-SPYM-2026-11-11-1")
+        _ = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
+            .run(NightCycleInput(book: book, today: "2026-11-12", now: et(day: 12, 10))) { _ in }
+        let sent = await broker.submitted
+        let buySymbols = sent.filter { $0.side == "buy" }.map { $0.0 }
+        XCTAssertFalse(buySymbols.contains("SPY") || buySymbols.contains("SPYM"),
+                       "con un residuo su SPYM non si compra SPY (stessa famiglia)")
+        XCTAssertEqual(buySymbols.count, 3, "si comprano le altre 3 famiglie")
     }
 
     // MARK: - Divisione del capitale
@@ -441,11 +593,14 @@ final class NightCycleTests: XCTestCase {
         let evening = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
             .run(NightCycleInput(book: book, today: "2026-11-11", now: et(20))) { _ in }
         XCTAssertEqual(evening.book.positions["SPY"]?.sellQueuedHeld, 6)
+        // L'asta esegue: lo stato dell'OPG sul broker diventa "filled".
+        let opgId = await broker.submitted.filter { $0.side == "sell" }.last!.4
+        await broker.markOrder(clientOrderId: opgId, status: "filled")
         await broker.set(held: [BrokerPosition(symbol: "SPY", quantity: 4, averageEntryPrice: 700, unrealizedPL: 0)])
         await broker.set(orders: [])
         let next = await NightCycleRunner(broker: broker, settleWaitSeconds: 0)
             .run(NightCycleInput(book: evening.book, today: "2026-11-12", now: et(day: 12, 20))) { _ in }
-        XCTAssertNil(next.book.positions["SPY"], "detenuto sceso di 2 = OPG eseguita: via dal registro")
+        XCTAssertNil(next.book.positions["SPY"], "OPG executed (stato filled) = via dal registro")
         let sent = await broker.submitted
         XCTAssertEqual(sent.filter { $0.side == "sell" }.count, 1,
                        "nessuna seconda vendita: le 4 rimaste sono della giornaliera")
