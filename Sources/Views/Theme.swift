@@ -83,3 +83,152 @@ extension View {
             .background(filled ? color : color.opacity(0.14), in: Capsule())
     }
 }
+
+// MARK: - Sistema nuovo (docs/DESIGN.md): griglia 8 pt, un solo accento, componenti unici
+
+/// Griglia di spaziatura: multipli di 8 pt.
+enum Layout {
+    static let grid: CGFloat = 8
+    static let paddingS: CGFloat = 8
+    static let paddingM: CGFloat = 16
+    static let paddingL: CGFloat = 24
+}
+
+extension Theme {
+    /// Unico colore d'accento dell'app. Verde/rosso restano solo per
+    /// guadagno/perdita e stati; arancione solo per avvisi.
+    static let accent = green
+    /// Bordo hairline neutro (niente bordi colorati sulle card).
+    static let hairline = Color.white.opacity(0.06)
+}
+
+extension View {
+    /// Numero con cifre tabellari (mai font monospaziato pieno, réservé al registro eventi).
+    func tabularNumber(_ font: Font = .title3, weight: Font.Weight = .heavy) -> some View {
+        self.font(font.weight(weight)).monospacedDigit()
+    }
+}
+
+/// Card a superficie piena, senza bordo colorato (docs/DESIGN.md).
+struct AppCard<Content: View>: View {
+    private let content: Content
+    init(@ViewBuilder _ content: () -> Content) { self.content = content() }
+    var body: some View {
+        content
+            .padding(Layout.paddingM)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface, in: Theme.shape())
+    }
+}
+
+/// Riga valore: etichetta sinistra in caption secondaria, valore destra tabellare.
+struct ValueRow: View {
+    let label: String
+    let value: String
+    var valueColor: Color? = nil
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Layout.paddingS) {
+            Text(label)
+                .font(.caption)
+                .foregroundStyle(Theme.textSecondary)
+            Spacer()
+            Text(value)
+                .font(.body.weight(.semibold))
+                .monospacedDigit()
+                .foregroundStyle(valueColor ?? Theme.textPrimary)
+        }
+        .padding(.vertical, 4)
+    }
+}
+
+/// Pillola di stato con un solo colore semantico (verde/rosso stati, arancione avvisi).
+struct StatusChip: View {
+    let text: String
+    let color: Color
+    var filled = false
+    var body: some View {
+        Text(text)
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(filled ? Theme.background : color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(filled ? color : color.opacity(0.14), in: Capsule())
+    }
+}
+
+/// Intestazione di sezione: titolo headline + azione opzionale a destra.
+struct SectionHeader: View {
+    let title: String
+    var actionLabel: String? = nil
+    var action: (() -> Void)? = nil
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(Theme.textPrimary)
+            Spacer()
+            if let actionLabel, let action {
+                Button(actionLabel, action: action)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.accent)
+            }
+        }
+    }
+}
+
+/// Pulsante "i": mostra la spiegazione su tocco. In MODALITÀ PRO sparisce.
+struct InfoButton: View {
+    @Environment(\.proMode) private var proMode
+    let text: String
+    @State private var show = false
+    var body: some View {
+        if !proMode {
+            Button {
+                show.toggle()
+            } label: {
+                Image(systemName: "info.circle")
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .frame(minWidth: 44, minHeight: 44)
+            .accessibilityLabel("Informazioni")
+            .popover(isPresented: $show) {
+                Text(text)
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
+                    .padding(Layout.paddingM)
+                    .presentationCompactAdaptation(.popover)
+            }
+        }
+    }
+}
+
+/// Pulsante primario: pieno con l'unico accento, testo scuro, area ≥ 44 pt.
+struct PrimaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline)
+            .foregroundStyle(Theme.background)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.horizontal, Layout.paddingM)
+            .background(Theme.accent.opacity(configuration.isPressed ? 0.8 : 1), in: Theme.shape())
+    }
+}
+
+/// Pulsante secondario: ghost, testo accento, bordo hairline, area ≥ 44 pt.
+struct SecondaryButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Theme.accent)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .padding(.horizontal, Layout.paddingM)
+            .background(Theme.surfaceHigh, in: Theme.shape())
+            .overlay(Theme.shape().strokeBorder(Theme.hairline, lineWidth: 1))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+extension View {
+    func primaryButton() -> some View { buttonStyle(PrimaryButtonStyle()) }
+    func secondaryButton() -> some View { buttonStyle(SecondaryButtonStyle()) }
+}
