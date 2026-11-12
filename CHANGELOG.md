@@ -9,6 +9,7 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ### Corretto
 - Grafico: su 1H, 15M e 5M il prezzo non sparisce più; in alto restano ultimo prezzo dell'intervallo e variazione sulla candela precedente.
+- Grafico: il prezzo in alto resta visibile anche mentre le candele si stanno caricando o non arrivano: su 1H/15M/5M/LIVE si usa l'ultimo prezzo noto del simbolo (stream o barre giornaliere) come ripiego. Test UI `testChartPriceVisibleOnEveryInterval`.
 
 ## [1.4.0 · build 137] - 2026-11-12
 

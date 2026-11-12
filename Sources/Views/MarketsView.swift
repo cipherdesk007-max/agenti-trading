@@ -252,6 +252,7 @@ struct MarketDetailView: View {
                         ForEach(intervals) { Text($0.rawValue).tag($0) }
                     }
                     .pickerStyle(.segmented)
+                    .accessibilityIdentifier("interval-picker")
                     if interval == .live {
                         TimelineView(.periodic(from: .now, by: 5)) { _ in content }
                     } else {
@@ -299,37 +300,45 @@ struct MarketDetailView: View {
         let insight = MarketInsight.evaluate(symbol: symbol, bars: candles, held: held, capital: capital,
                                              riskFraction: engine.strategyConfig.sanitized.riskFraction)
 
+        // Prezzo in alto sempre visibile: ultima candela dell'intervallo, oppure
+        // ultimo prezzo noto del simbolo (stream o barre giornaliere) quando le
+        // candele sono in caricamento o non sono arrivate.
+        let fallbackPrice = engine.intradayLastPrice(for: symbol) ?? engine.marketBars[symbol]?.last?.close
         if explains {
             HStack {
                 Text(insight.state.rawValue).themedChip(Self.color(for: insight.state), filled: insight.state == .held)
                 Spacer()
-                if let close = insight.close {
+                if let close = insight.close ?? fallbackPrice {
                     Text(String(format: "%.2f", close))
                         .font(.system(.title3, design: .monospaced, weight: .heavy))
                         .monospacedDigit()
+                        .accessibilityIdentifier("chart-price")
                 }
             }
             Text(insight.reason)
                 .font(.footnote)
                 .foregroundStyle(Theme.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
-        } else if let last = candles.last {
+        } else if let price = candles.last?.close ?? fallbackPrice {
             // Sugli altri intervalli (1H, 15M, 5M, live) il prezzo resta sempre
             // visibile: ultima candela dell'intervallo e variazione sulla precedente.
-            let previous = candles.count > 1 ? candles[candles.count - 2].close : last.close
-            let change = previous > 0 ? (last.close / previous - 1) * 100 : 0
+            let previous = candles.count > 1 ? candles[candles.count - 2].close : candles.last?.close
+            let change = (previous ?? 0) > 0 ? (price / previous! - 1) * 100 : nil
             HStack(alignment: .firstTextBaseline) {
                 Text("ULTIMO PREZZO · \(interval.rawValue)")
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
-                Text(String(format: "%+.2f%%", change))
-                    .font(.system(.footnote, design: .monospaced, weight: .semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(change >= 0 ? Theme.green : Theme.red)
-                Text(String(format: "%.2f", last.close))
+                if let change {
+                    Text(String(format: "%+.2f%%", change))
+                        .font(.system(.footnote, design: .monospaced, weight: .semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(change >= 0 ? Theme.green : Theme.red)
+                }
+                Text(String(format: "%.2f", price))
                     .font(.system(.title3, design: .monospaced, weight: .heavy))
                     .monospacedDigit()
+                    .accessibilityIdentifier("chart-price")
             }
         }
 

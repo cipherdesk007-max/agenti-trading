@@ -68,4 +68,31 @@ final class CockpitUITests: XCTestCase {
         alert.buttons["ANNULLA"].tap()
         XCTAssertFalse(alert.exists)
     }
+
+    /// Bug grafico (segnalato dal telefono, build 138): pasando a 1H, 15M o 5M il
+    /// prezzo in alto non deve sparire. In anteprima (-QSPreview) le candele degli
+    /// intervalli brevi non arrivano mai (niente rete/chiavi), quindi il test copre
+    /// anche il caso "candele in caricamento o non arrivate": resta l'ultimo
+    /// prezzo noto del simbolo.
+    @MainActor
+    func testChartPriceVisibleOnEveryInterval() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-QSPreview"]
+        app.launch()
+        let markets = app.buttons["MERCATI"]
+        XCTAssertTrue(markets.waitForExistence(timeout: 20))
+        markets.tap()
+        let tile = app.buttons["market-SPY"]
+        XCTAssertTrue(tile.waitForExistence(timeout: 10), "la griglia MERCATI deve mostrare SPY")
+        tile.tap()
+        let picker = app.segmentedControls["interval-picker"]
+        XCTAssertTrue(picker.waitForExistence(timeout: 10), "il selettore dell'intervallo deve aprirsi")
+        XCTAssertTrue(app.staticTexts["chart-price"].waitForExistence(timeout: 5),
+                      "su 1G il prezzo c'è")
+        for interval in ["1H", "15M", "5M"] {
+            picker.buttons[interval].tap()
+            XCTAssertTrue(app.staticTexts["chart-price"].waitForExistence(timeout: 5),
+                          "il prezzo deve restare visibile su \(interval) anche senza candele")
+        }
+    }
 }
