@@ -10,11 +10,26 @@ final class AlpacaServiceTests: XCTestCase {
         // I test impostano l'handler prima di ogni chiamata e non girano in
         // parallelo: unsafe è intenzionale e isolato dentro questa classe.
         nonisolated(unsafe) static var handler: ((URLRequest) throws -> (URLResponse, Data))?
+        /// Body della richiesta catturato qui: URLSession può spostarlo su
+        /// httpBodyStream, quindi request.httpBody può essere nil nel mock.
+        nonisolated(unsafe) static var lastBody: Data?
 
         override class func canInit(with request: URLRequest) -> Bool { true }
         override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
         override func startLoading() {
+            Self.lastBody = request.httpBody ?? request.httpBodyStream.flatMap { stream in
+                stream.open()
+                defer { stream.close() }
+                var data = Data()
+                var buffer = [UInt8](repeating: 0, count: 8192)
+                while stream.hasBytesAvailable {
+                    let read = stream.read(&buffer, maxLength: buffer.count)
+                    if read <= 0 { break }
+                    data.append(buffer, count: read)
+                }
+                return data.isEmpty ? nil : data
+            }
             do {
                 let (response, data) = try Self.handler?(request)
                     ?? (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data())
@@ -47,6 +62,7 @@ final class AlpacaServiceTests: XCTestCase {
 
     override func tearDown() {
         MockURLProtocol.handler = nil
+        MockURLProtocol.lastBody = nil
         service = nil
         lastRequest = nil
         super.tearDown()
@@ -79,7 +95,7 @@ final class AlpacaServiceTests: XCTestCase {
         XCTAssertEqual(lastRequest?.httpMethod, "POST")
         XCTAssertTrue(lastRequest?.url?.absoluteString.hasSuffix("/v2/orders") ?? false)
         XCTAssertEqual(lastRequest?.value(forHTTPHeaderField: "APCA-API-KEY-ID"), "PK-TEST")
-        let body = try XCTUnwrap(lastRequest?.httpBody)
+        let body = try XCTUnwrap(MockURLProtocol.lastBody)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["time_in_force"] as? String, "gtc")
         XCTAssertEqual(json["order_class"] as? String, "oto")
@@ -113,7 +129,7 @@ final class AlpacaServiceTests: XCTestCase {
         respond(status: 200, body: Self.orderJSON)
         _ = try await service.submitAuction(symbol: "SPY", quantity: 3, side: "buy",
                                             timeInForce: "cls", clientOrderId: "qsn-moc-1")
-        let body = try XCTUnwrap(lastRequest?.httpBody)
+        let body = try XCTUnwrap(MockURLProtocol.lastBody)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["time_in_force"] as? String, "cls")
         XCTAssertEqual(json["type"] as? String, "market")
@@ -124,7 +140,7 @@ final class AlpacaServiceTests: XCTestCase {
         respond(status: 200, body: Self.orderJSON)
         _ = try await service.submitMarket(symbol: "SPY", quantity: 1, side: "sell",
                                            clientOrderId: "qsn-s-1")
-        let body = try XCTUnwrap(lastRequest?.httpBody)
+        let body = try XCTUnwrap(MockURLProtocol.lastBody)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["side"] as? String, "sell")
         XCTAssertEqual(json["time_in_force"] as? String, "day")
@@ -133,7 +149,7 @@ final class AlpacaServiceTests: XCTestCase {
     func testSubmitStopSuccessIsGTC() async throws {
         respond(status: 200, body: Self.orderJSON)
         _ = try await service.submitStop(symbol: "SPY", quantity: 2, stopPrice: 585)
-        let body = try XCTUnwrap(lastRequest?.httpBody)
+        let body = try XCTUnwrap(MockURLProtocol.lastBody)
         let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
         XCTAssertEqual(json["time_in_force"] as? String, "gtc")
         XCTAssertEqual(json["type"] as? String, "stop")
