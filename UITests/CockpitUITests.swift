@@ -95,4 +95,21 @@ final class CockpitUITests: XCTestCase {
                           "il prezzo deve restare visibile su \(interval) anche senza candele")
         }
     }
+
+    /// Etichetta "NOTIZIE 48H" nel CRUSCOTTO sulle posizioni aperte: solo
+    /// interfaccia. In anteprima XLF ha una notizia finta, quindi il badge c'è.
+    @MainActor
+    func testNewsBadgeOnOpenPosition() {
+        let app = XCUIApplication()
+        app.launchArguments = ["-QSPreview"]
+        app.launch()
+        XCTAssertTrue(app.buttons["STOP"].waitForExistence(timeout: 20))
+        let badge = app.staticTexts["news-badge-XLF"]
+        var swipes = 0
+        while !badge.exists && swipes < 10 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(badge.waitForExistence(timeout: 5), "la posizione aperta XLF deve mostrare il badge notizie 48h")
+    }
 }

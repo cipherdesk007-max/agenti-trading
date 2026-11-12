@@ -1609,10 +1609,13 @@ final class QuantSwarmEngine: ObservableObject {
     private var chartCache: [String: (at: Date, candles: [Candle])] = [:]
 
     private var newsCache: [String: (at: Date, items: [NewsHeadline])] = [:]
+    /// Notizie di esempio in modalità anteprima (-QSPreview, solo debug).
+    private var previewHeadlines: [String: [NewsHeadline]] = [:]
 
     /// Notizie delle ultime 48 ore per il grafico di un ETF (5 minuti in memoria).
     func headlines(symbol: String) async -> [NewsHeadline]? {
         if let hit = newsCache[symbol], Date().timeIntervalSince(hit.at) < 300 { return hit.items }
+        if let preview = previewHeadlines[symbol] { return preview }
         guard let credentials else { return nil }
         guard let items = try? await AlpacaService(credentials: credentials.alpaca)
             .news(symbols: [symbol], hours: 48, limit: 15) else { return nil }
@@ -2399,6 +2402,9 @@ extension QuantSwarmEngine {
         }
         marketBars = bars
         marketBarsDate = Date()
+        // Notizie di esempio per l'etichetta "NOTIZIE 48H" nel CRUSCOTTO (solo anteprima).
+        previewHeadlines = ["XLF": [NewsHeadline(id: 1, headline: "Banche USA: Outlook 2026 (anteprima)",
+                                                  createdAt: Date(), symbols: ["XLF"], source: "preview", url: nil)]]
         var shadow: [ShadowEntry] = []
         for i in 0..<36 {
             let outcome = [ShadowEntry.bought, ShadowEntry.brainSkip, ShadowEntry.noSlot, ShadowEntry.reviewerReject][i % 4]

@@ -1119,6 +1119,31 @@ struct TerminalDashboardView: View {
         }
     }
 
+    /// Etichetta "notizie 48h" su una posizione aperta: SOLO interfaccia, nessun
+    /// effetto sugli ordini. Se l'API notizie non risponde non compare nulla.
+    private struct NewsBadge: View {
+        @EnvironmentObject private var engine: QuantSwarmEngine
+        let symbol: String
+        @State private var count: Int?
+
+        var body: some View {
+            Group {
+                if let count, count > 0 {
+                    Text("NOTIZIE 48H · \(count)")
+                        .font(.system(size: 9, weight: .heavy, design: .monospaced))
+                        .foregroundStyle(DashboardPalette.cyan)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(DashboardPalette.cyan.opacity(0.15), in: Capsule())
+                        .accessibilityIdentifier("news-badge-\(symbol)")
+                }
+            }
+            .task {
+                if let items = await engine.headlines(symbol: symbol) { count = items.count }
+            }
+        }
+    }
+
     private var positionsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("POSIZIONI APERTE", color: terminalGreen)
@@ -1136,6 +1161,7 @@ struct TerminalDashboardView: View {
                             Text((position.side ?? "long").uppercased())
                                 .font(.caption)
                                 .foregroundStyle(position.side == "short" ? .red : terminalGreen)
+                            NewsBadge(symbol: position.symbol)
                             Spacer()
                             Text("qty \(Formatters.trimmed(position.quantity))")
                                 .font(.caption)
