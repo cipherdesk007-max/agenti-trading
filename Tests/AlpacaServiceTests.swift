@@ -19,7 +19,7 @@ final class AlpacaServiceTests: XCTestCase {
                 let (response, data) = try Self.handler?(request)
                     ?? (HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: nil)!, Data())
                 client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-                client?.urlProtocol(self, didReceive: data)
+                client?.urlProtocol(self, didLoad: data)
                 client?.urlProtocolDidFinishLoading(self)
             } catch {
                 client?.urlProtocol(self, didFailWithError: error)
