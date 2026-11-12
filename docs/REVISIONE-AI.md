@@ -87,3 +87,39 @@ verde prima del punto successivo; i commit solo-docs non avviano la workflow IPA
 - Backtest in locale: la sandbox non ha accesso di rete (yfinance non scarica i dati).
 - Dispatch manuale dei workflow: 403 con il token `GH_TOKEN` in uso.
 - UI reale, TRADUCI, Face ID, notifiche, aste Alpaca: richiedono il dispositivo e il conto.
+
+---
+
+# Giro finale 1.4.0 · 12/11/2026
+
+## Punto 1 · Revisione diff c86d1b1..HEAD e percorsi trade
+
+Riletti `Sources/` e `Tests/` dalla build 130 a oggi e percorsi end-to-end:
+- **GIORNALIERA** (`DailyCycle.swift` + `runDailyCycle`): scout → manutenzione registro → cancello residui ingressi → protezione stop (mai posizione senza stop) → uscite a regole solo a mercato aperto (annulla stop, chiude a mercato, se fallisce ripristina lo stop solo se la posizione esiste ancora) → segnali → prefilter capitale → Kimi → reviewer → sizing → ordine limite+stop+target GTC con recupero per `client_order_id` solo se vivo (B4).
+- **VELOCE** (`analysisLoop` in `QuantSwarmEngine.swift`): filtro gratuito su candela chiusa → prefilter contante libero (B6) → Kimi → race guard (stop/background/pausa) → precheck regole → reviewer → bracket `day` → flat-by-close a T-10 solo sulle sue posizioni, con ripristino stop GTC se la chiusura fallisce (B3).
+- **NOTTE** (`NightCycle.swift`): finestre asta, registro per conto, R7.
+
+**Bug dimostrato trovato e corretto** (commit `ff3db12`): regressione introdotta da R7 sulle voci legacy del registro notte (senza quantità) — restavano in coda e, con la giornaliera sullo stesso simbolo, venivano ri-messe in coda ogni sera vendendo TUTTO il detenuto. Fix: la voce legacy esce subito dopo l'invio dell'OPG (una sola vendita, come prima di R7); il re-invio con quantità note vende solo le azioni della notte. Test: `testSellWindowLegacyEntryWithoutQuantitySellsAllHeld` esteso e `testRequeuedOPGWithSharedSymbolSellsOnlyNightShares` nuovo. Fix di compilazione test `c3d6a17` (`await` fuori dall'autoclosure di XCTAssert).
+
+Build: run 43136621316 **failure** (compilazione test) → fix → run 43137804159 su `c3d6a17` **success** (test su simulatore passati).
+
+## Punto 2+3 · Versione 1.4.0
+
+- `311f9c6`: `MARKETING_VERSION` 1.4.0 in `project.yml` (app e widget); CHANGELOG `[Non rilasciato]` → `[1.4.0 · build N] - 2026-11-12`. Build run 43139568790 **success** → run_number **137**.
+- `6f26d33`: CHANGELOG con `build 137`.
+
+## Punto 4 · Documentazione dello stato reale
+
+- `972bc96`: README e `docs/STATO.md` a **1.4.0 build 137** (12/11/2026); test: **132 unitari** (CI a ogni push) + **3 UI** (solo a mano); "da verificare" aggiornato con puntatore a `VERIFICHE.md`, stato R1 (primo run 1° dicembre o dispatch manuale), nota legacy una-sola-vendita, puntatori a `REVISIONE-AI.md` e `PROPOSTE.md`.
+
+## Non fatto (divieto): release su GitHub, `pubblica = true`, dispatch di workflow
+
+UI test, screenshot e backtest della frazione R1 (`overnight`) li lancia l'altro revisore dopo il commit di versione.
+
+## Resta aperto
+
+- Tabella R1 frazione NOTTE (CAGR/perdita max/Sharpe per f) — primo run CI il 1° dicembre o dispatch manuale; decisione all'utente.
+- Le 10 verifiche di `docs/VERIFICHE.md` su dispositivo e conto paper.
+- Pagella Kimi: servono ~20–30 trade chiusi in paper.
+- R7 da confermare su paper (no doppie vendite); limite noto: se la giornaliera vende lo stesso simbolo, il calo del detenuto può far uscire la voce di registro prima dell'esecuzione dell'OPG.
+- Non verificabili dalla sandbox: compilazione/test locali (no Xcode — solo CI), backtest (no rete), dispatch workflow (403), UI reale/Face ID/notifiche/aste (servono il telefono e il conto).
