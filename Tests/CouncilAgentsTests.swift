@@ -89,11 +89,15 @@ final class CouncilAgentsTests: XCTestCase {
     }
 
     func testTechnicalNeutralOnMixedConditions() throws {
-        // Sopra SMA200 ma EMA in disaccordo e lontano dai massimi: né long né short.
+        // Sopra SMA200 (favorevole) ma EMA12<EMA26 su 15m (contrario), RSI
+        // fuori zona sana, lontano dai massimi e 1m disallineato: 1 favorevole
+        // contro 1 sfavorevole → né long (servono 3) né short (trend su).
         let c = context(
             closes15: Array(repeating: 100.0, count: 40) + [99.5],
-            i15: indicators(rsi14: 50, ema12: 99.4, ema26: 99.6, sma50: 100,
-                            sma200: 95, atr14: 0.5, high20: 105, low20: 98)
+            i15: indicators(rsi14: 30, ema12: 99.4, ema26: 99.6, sma50: 100,
+                            sma200: 95, atr14: 0.5, high20: 105, low20: 98),
+            i1: indicators(rsi14: 50, ema12: 99.8, ema26: 100.2, sma50: 100,
+                           sma200: 98, atr14: 0.4, high20: 101, low20: 99)
         )
         let report = TechnicalSpecialist.report(symbol: "SPY", context: c)
         XCTAssertEqual(report.signal, .neutral)
