@@ -79,7 +79,7 @@ Catena della giornaliera: Scout (conto, posizioni, ordini, barre) → Strategia 
 
 ## Come verificare in modo indipendente
 
-- Test: 161 unitari (CI a ogni push, "Unsigned iOS IPA": +12 HTTP AlpacaServiceTests con mock, +3 parametrici conti 500–1M, +8 revisione esterna 1.5.0: OPG per stato ordine, MOC parziali, blocco famiglia, finestre weekend/festivo/mezza giornata) + 5 di interfaccia in `UITests/` (solo a mano, opzione `uitest`). Tabella file/rischi/test in [CONTROLLO-FINALE.md](CONTROLLO-FINALE.md).
+- Test: 166 unitari (CI a ogni push, "Unsigned iOS IPA": +12 HTTP AlpacaServiceTests con mock, +3 parametrici conti 500–1M, +8 revisione esterna 1.5.0: OPG per stato ordine, MOC parziali, blocco famiglia, finestre weekend/festivo/mezza giornata, +5 FlatByCloseTests revisione build 161: flat-by-close VELOCE che annulla tutti gli ordini del simbolo e verifica l'annullo, chiude a mercato, rimette lo stop d'emergenza `qsv-emg-` mai duplicato) + 5 di interfaccia in `UITests/` (solo a mano, opzione `uitest`). Tabella file/rischi/test in [CONTROLLO-FINALE.md](CONTROLLO-FINALE.md).
 - Strategie: Actions → "Backtest filtro" → `quale` = `app`, `piccolo`, `overnight`, `segnali`, `studi`, `oggi`.
 - Ordini: confronta il report di sessione dell'app con lo storico ordini di Alpaca.
 - Indicatori: SMA200 e RSI(2) di Wilder su TradingView o Yahoo devono coincidere con la tabella di `oggi`.

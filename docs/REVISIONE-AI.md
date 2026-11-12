@@ -251,3 +251,72 @@ Un push per blocco, build verde prima del blocco successivo, niente Co-Authored-
 - Le nuove protezioni NOTTE/VELOCE sono coperte da test con broker finto; la conferma su
   Alpaca paper (OPG che passa da `new` a `filled`, MOC parziali reali) resta in
   VERIFICHE.md.
+
+---
+
+# Sessione 12/11/2026 (quarta parte) · revisione build 161 — unico punto rimasto: VELOCE flat-by-close
+
+Punto della revisione: a T-10 il flat-by-close saltava gli ordini sell di tipo
+stop/stop_limit, ma la gamba stop del bracket è una vendita stop: restava aperta, le
+azioni restavano riservate da quell'ordine e la chiusura a mercato rischiava il rifiuto
+per "insufficient qty".
+
+## Cosa ho trovato sulla documentazione Alpaca (verificata 12/11/2026)
+
+- `DELETE /v2/positions/{symbol}` — https://docs.alpaca.markets/us/reference/deleteopenposition-1 —
+  crea SOLO l'ordine di chiusura a mercato dell'intera posizione: **non annulla gli
+  ordini aperti** del simbolo (il close-all `DELETE /v2/positions` ha invece il
+  parametro `cancel_orders=true`).
+- Con ordini di vendita aperti le azioni restano riservate ("held"): una nuova vendita
+  sulle stesse azioni viene rifiutata con "insufficient qty", e anche la sequenza
+  cancel→close può fallire per corsa se le azioni risultano ancora riservate —
+  https://alpaca.markets/learn/how-to-fix-common-trading-api-errors-at-alpaca
+- Dalla stessa documentazione/OpenAPI: OPG rifiutata dentro 9:28–19:00 ET, CLS dopo
+  le 15:50 ET (già usati nelle finestre della NOTTE).
+
+## Correzione (un blocco, poi build verde prima dei docs)
+
+- `Sources/Core/FlatByClose.swift` (nuovo): protocollo `FlatCloseBroker` (conforme
+  `AlpacaService`) + `FlatByClose.closeSymbol`: annulla TUTTI gli ordini aperti del
+  simbolo → rilegge gli ordini aperti e logga i residui → chiude a mercato → se la
+  chiusura fallisce rimette subito lo stop d'emergenza GTC con `client_order_id`
+  `qsv-emg-SIMBOLO-GIORNO`, senza duplicati (se esiste già non si rimette). A fine
+  tentativo: posizione chiusa OPPURE un solo stop.
+- `AlpacaOrder` aggiunge `clientOrderId` + `isEmergencyStop` (riconosciuto dal prefisso
+  `SystemLimits.emergencyStopPrefix = "qsv-emg-"`, NON dal tipo d'ordine);
+  `AlpacaService.submitStop(..., clientOrderId:)` invia il `client_order_id` nel body.
+- Motore: `restoreFlatByCloseStop` sostituita da `emergencyStopPrice` (solo calcolo,
+  stesso criterio chiusura − 2,5 ATR) + chiamata a `FlatByClose.closeSymbol`;
+  notifiche "STOP OVERNIGHT" / "POSIZIONE SENZA STOP" nel chiamante.
+
+| Commit | Contenuto | Build CI |
+|---|---|---|
+| `6d201e4` | blocco completo (5 file: FlatByClose.swift nuovo, FlatByCloseTests.swift nuovo, AlpacaService, TradingModels, QuantSwarmEngine) + 5 test | run#163 **failure**: 14 errori tutti in `Tests/` — `await` dentro le autoclosure degli `XCTAssert` |
+| `4cfca20` | fix: letture dall'actor (`stops`/`openOrders`/`events`) in `let` fuori dagli assert | run#164 **failure**: `try await openOrders()` senza `throws` sui metodi test |
+| `27d73e3` | fix: 4 metodi test `async throws` | run#165 **cancelled** dal runner macOS (~15 min, nessun log): causa infrastruttura |
+| `74be3c1` | commit vuoto per retrigger | **nessuna run**: il workflow filtra i path (`Sources/**`, `Tests/**`, `project.yml`, …) e il commit vuoto non li tocca |
+| `4d517e7` | assert extra (nessun residuo se gli annulli riescono) — retrigger | run#166 **cancelled** dal runner come la #165 |
+| `743ce0d` | assert extra (chiusura tentata prima dello stop) — retrigger | run#167 **failure**: mancava `throws` su `testCloseFailsEmergencyStopPlaced` |
+| `6438649` | fix `throws` | run#168 **success**: **166 test, 0 fallimenti**, 5/5 `FlatByCloseTests` passati, test build + build app OK |
+| questo commit | docs: REVISIONE-AI, CHANGELOG, STATO (166 test), VERIFICHE (controllo 11) | nessuna (docs non triggerano la build IPA) |
+
+## Test aggiunti (`Tests/FlatByCloseTests.swift`, broker finto actor)
+
+- bracket aperto a T-10 (gamba stop + gamba take-profit) → entrambe annullate →
+  posizione chiusa a mercato, nessuno stop residuo, nessun ordine residuo;
+- chiusura fallita → stop d'emergenza presente con `client_order_id`
+  `qsv-emg-SPY-2026-11-12`, quantità e prezzo giusti, `isEmergencyStop` vero;
+- secondo tentativo riuscito → il retry annulla anche lo stop d'emergenza, chiude,
+  nessun ordine residuo e nessun secondo stop;
+- stop d'emergenza già vivo sul broker (annullo fallito) → non se ne mette un secondo;
+- annullo di una gamba fallito → il log avvisa "restano N ordini aperti" e la chiusura
+  viene tentata comunque.
+
+## Cosa non ho potuto verificare
+
+- Il comportamento reale di Alpaca paper con ordini sell aperti + `DELETE
+  /v2/positions/{symbol}` (rifiuto "insufficient qty") è documentato, non osservato
+  live: è il nuovo controllo 11 in `docs/VERIFICHE.md` da eseguire sul conto paper.
+- Run #165 e #166 cancellate dall'infrastruttura GitHub (runner macOS evicted, nessun
+  log): stesso codice ri-eseguito fino alla run#168 verde. Non posso rilanciare run o
+  dispatch (token read-only sulle mutazioni, 403).

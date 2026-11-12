@@ -79,6 +79,13 @@ nel Keychain protetto da Face ID.
 - **Atteso**: gli indicatori dell'app coincidono con la tabella di `oggi`.
 - **Se è diverso**: differenza → il feed barre (SIP/IEX) diverge dalla fonte esterna, da indagare prima di fidarsi del segnale.
 
+## 11 · VELOCE: flat-by-close a T-10 con ordini aperti (stop d'emergenza qsv-emg-)
+
+- **Nell'app**: modalità VELOCE, apri una posizione intraday con bracket (gamba stop + target, day) e lascia che il motore arrivi a T-10 dalla chiusura. Il flat-by-close gira anche in pausa: è protezione del capitale.
+- **Su Alpaca**: Orders → a T-10 gli ordini aperti del simbolo (gambe del bracket e un eventuale `qsv-emg-…`) passano a `canceled`, poi parte la vendita a mercato (`DELETE /v2/positions/{symbol}`); se fallisce compare un solo SELL stop GTC con `client_order_id` `qsv-emg-SIMBOLO-GIORNO`.
+- **Atteso**: a fine tentativo la posizione è chiusa OPPURE ha esattamente uno stop `qsv-emg-…`; mai due stop d'emergenza sullo stesso simbolo, mai ordini residui del simbolo. La doc Alpaca dice che `DELETE /v2/positions/{symbol}` NON annulla gli ordini aperti e che con ordini sell aperti le azioni restano riservate (rifiuto "insufficient qty"): https://docs.alpaca.markets/us/reference/deleteopenposition-1 — da confermare qui sul conto paper.
+- **Se è diverso**: più stop `qsv-emg-` sullo stesso simbolo → bug nell'anti-duplicato; ordine residuo del simbolo a posizione chiusa → l'annullo non è stato verificato rileggendo gli ordini; chiusura rifiutata "insufficient qty" → gli ordini sell non erano stati annullati (o restavano riservate: la sequenza cancel→close ha una corsa documentata, https://alpaca.markets/learn/how-to-fix-common-trading-api-errors-at-alpaca); posizione senza stop e senza chiusura → guarda la notifica "POSIZIONE SENZA STOP" e chiudi a mano dal broker panel.
+
 ## Come riportare un problema
 
 Screenshot dell'app (CRUSCOTTO con catena agenti ed eventi) + lo storico ordini di Alpaca
