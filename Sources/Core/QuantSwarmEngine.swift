@@ -2504,10 +2504,12 @@ extension QuantSwarmEngine {
         var shadow: [ShadowEntry] = []
         for i in 0..<36 {
             let outcome = [ShadowEntry.bought, ShadowEntry.brainSkip, ShadowEntry.noSlot, ShadowEntry.reviewerReject][i % 4]
+            // Un candidato ogni cinque con evento in giro (prova in ombra filtro 48h).
+            let eventful = i % 5 == 0
             var entry = ShadowEntry(symbol: DailyStrategy.basket[i % 15], day: String(format: "2026-09-%02d", i % 28 + 1),
-                                    entry: 100, stop: 95, outcome: outcome)
+                                    entry: 100, stop: 95, outcome: outcome, eventFlag: eventful)
             let ret = outcome == ShadowEntry.bought ? 0.012 - 0.0004 * Double(36 - i) : (outcome == ShadowEntry.reviewerReject ? -0.006 : 0.002)
-            entry.exitPrice = 100 * (1 + ret + 0.004 * sin(Double(i)))
+            entry.exitPrice = 100 * (1 + ret + 0.004 * sin(Double(i)) - (eventful ? 0.009 : 0))
             entry.exitDay = String(format: "2026-10-%02d", i % 28 + 1)
             shadow.append(entry)
         }

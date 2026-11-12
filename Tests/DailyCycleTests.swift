@@ -228,6 +228,28 @@ final class DailyCycleTests: XCTestCase {
         XCTAssertEqual(result.book.shadow.first?.day, today)
     }
 
+    func testShadowFlagsEventfulCandidates() async {
+        // Notizia con evento ad alto impatto: il registro ombra segna il
+        // candidato, ma gli ordini restano identici (prova in ombra).
+        let broker = FakeBroker(bars: ["SPY": pullback])
+        await broker.set(news: [NewsHeadline(id: 1, headline: "Fed holds rates steady", createdAt: Date(),
+                                             symbols: ["SPY"], source: "benzinga", url: nil)])
+        let result = await runner(broker, FakeBrain()).run(input()) { _ in }
+        XCTAssertEqual(result.book.shadow.first?.eventFlag, true)
+        XCTAssertEqual(result.orders.count, 1, "La prova in ombra non cambia nessun ordine")
+
+        // Notizia senza evento: flag false, non nil.
+        let quiet = FakeBroker(bars: ["SPY": pullback])
+        await quiet.set(news: [NewsHeadline(id: 2, headline: "Apple announces new colors", createdAt: Date(),
+                                            symbols: ["SPY"], source: "benzinga", url: nil)])
+        let quietResult = await runner(quiet, FakeBrain()).run(input()) { _ in }
+        XCTAssertEqual(quietResult.book.shadow.first?.eventFlag, false)
+
+        // Nessuna notizia: flag false da subito, mai nil nelle voci nuove.
+        let clean = await runner(FakeBroker(bars: ["SPY": pullback]), FakeBrain()).run(input()) { _ in }
+        XCTAssertEqual(clean.book.shadow.first?.eventFlag, false)
+    }
+
     func testOrphanTakeProfitCancelledBeforeRestoringStop() async {
         let broker = FakeBroker(bars: ["SPY": pullback])
         await broker.set(positions: [position(10)])

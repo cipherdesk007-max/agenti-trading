@@ -442,20 +442,27 @@ struct DailyCycleRunner: Sendable {
         // Esito di ogni candidato per il registro ombra (default: scartato).
         var status = Dictionary(fresh.map { ($0.symbol, ShadowEntry.brainSkip) }, uniquingKeysWith: { a, _ in a })
         for extra in ranked.dropFirst(slots) { status[extra.symbol.uppercased()] = ShadowEntry.noSlot }
-        func recordShadow(_ book: inout DailyBook) {
+        func recordShadow(_ book: inout DailyBook) async {
             for candidate in fresh {
                 let s = candidate.snapshot
+                // Prova in ombra del filtro evento 48h (candidato PROPOSTE.md):
+                // registra solo, non cambia nessuna decisione né ordine.
+                let eventful = EventFilter48h.isEventful(candidate.news)
+                if eventful, let words = EventFilter48h.matchedKeywords(in: candidate.news).first {
+                    await emit(.init(log: "\(candidate.symbol): evento in giro (\"\(words)\" nelle notizie 48h): il filtro evento l'avrebbe saltato. Prova in ombra, nessun cambiamento.", agent: .system))
+                }
                 book.addShadow(ShadowEntry(
                     symbol: candidate.symbol, day: today, entry: s.close,
                     stop: s.close - DailyStrategy.stopATR * s.atr14,
-                    outcome: status[candidate.symbol] ?? ShadowEntry.brainSkip
+                    outcome: status[candidate.symbol] ?? ShadowEntry.brainSkip,
+                    eventFlag: eventful
                 ))
             }
         }
         guard !buys.isEmpty else {
             await emit(.init(stage: .brain, state: .done, detail: "nessun acquisto scelto"))
             await skip(after: .brain, "Brain: nessun acquisto", emit)
-            recordShadow(&book)
+            await recordShadow(&book)
             result.book = book
             return result
         }
@@ -558,7 +565,7 @@ struct DailyCycleRunner: Sendable {
         if result.orders.isEmpty {
             await emit(.init(stage: .executor, state: .skipped, detail: "nessun ordine da inviare"))
         }
-        recordShadow(&book)
+        await recordShadow(&book)
         result.book = book
         return result
     }

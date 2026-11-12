@@ -32,6 +32,15 @@ codice.
 
 ## 4 · Filtro "evento" 48h prima dell'ingresso della GIORNALIERA
 
+**Stato: IN PROVA IN OMBRA dall'app dal 12/11/2026.** `EventFilter48h`
+esamina i titoli Benzinga delle 48h di ogni candidato (parole chiave: Fed, FOMC,
+CPI, payroll, earnings, halt, downgrade, tariff, ecc.) e scrive solo un flag
+`eventFlag` nel registro ombra. Nessun ordine e nessuna decisione cambia. La
+pagella confronta l'esito medio dei candidati CON evento contro i SENZA e mostra
+il "valore del filtro": positivo = saltarli avrebbe protetto. Si adotta solo se
+≥20 esiti lo confermano E un backtest con la stessa regola su dati storici
+conferma. Le righe sotto descrivono la proposta originale.
+
 - **API**: Alpaca Market Data News (le notizie delle 48h le prende già l'app per Brain/Reviewer; la regola sarebbe in codice, zero crediti Kimi in più).
 - **Guadagno atteso**: blocca ingressi dentro eventi che cambiano il quadro (Fed, CPI, halt), evitando parte dei drawdown post-evento.
 - **Rischio**: salta anche trade buoni subito dopo l'evento; la classificazione "hard event" è fuzzy e può degenerare in una regola che non scatta mai (o sempre).

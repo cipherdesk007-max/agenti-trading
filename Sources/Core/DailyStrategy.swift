@@ -231,10 +231,51 @@ struct ShadowEntry: Codable, Sendable, Equatable {
     let outcome: String
     var exitPrice: Double?
     var exitDay: String?
+    /// PROVA IN OMBRA del filtro evento 48h: le notizie Benzinga del candidato
+    /// contenevano un evento ad alto impatto? nil sulle voci registrate prima
+    /// della prova (si escludono dai gruppi del filtro, mai dagli altri conti).
+    var eventFlag: Bool?
 
     var resolved: Bool { exitPrice != nil }
     var ret: Double? { exitPrice.map { $0 / entry - 1 } }
     var chosen: Bool { outcome == Self.bought }
+}
+
+/// Filtro "evento 48h" CANDIDATO per la giornaliera (studio del 12/11/2026:
+/// col proxy prezzo/volume migliorava CAGR/maxDD su entrambi i periodi lunghi,
+/// ma il proxy non è la notizia vera). Questa è la PROVA IN OMBRA sulle
+/// notizie Benzinga REALI che l'app scarica già per il Brain: non cambia
+/// nemmeno un ordine, registra solo come sarebbero finiti i candidati con
+/// un evento in giro. Pura e deterministica, zero crediti.
+enum EventFilter48h {
+    /// Parole chiave (titoli Benzinga, inglese) che indicano un evento in
+    /// grado di cambiare il quadro entro 48 ore.
+    private static let keywords = [
+        "fed", "fomc", "cpi", "inflation", "payroll", "jobs report",
+        "rate decision", "rate cut", "rate hike", "earnings", "halt",
+        "downgrade", "default", "bankrupt", "war", "sanction", "tariff",
+        "recession", "crash", "selloff", "guidance", "gdp",
+    ]
+
+    /// True se almeno un titolo contiene una parola chiave ad alto impatto.
+    /// Corrispondenza a inizio parola (confine \b): "war" non falso-positiva
+    /// su "software" o "toward", ma resta presa da "wars" o "warning".
+    static func isEventful(_ headlines: [String]) -> Bool {
+        headlines.contains { headline in
+            keywords.contains { word in
+                headline.range(of: "\\b\(word)", options: [.regularExpression, .caseInsensitive]) != nil
+            }
+        }
+    }
+
+    /// Le parole chiave trovate (per l'evidenza nei log e nei test).
+    static func matchedKeywords(in headlines: [String]) -> [String] {
+        keywords.filter { word in
+            headlines.contains { headline in
+                headline.range(of: "\\b\(word)", options: [.regularExpression, .caseInsensitive]) != nil
+            }
+        }
+    }
 }
 
 enum ShadowEvaluator {
@@ -287,6 +328,18 @@ struct ShadowSummary: Sendable, Equatable {
     var chosen = Group()
     var skipped = Group()
     var reviewerRejected = Group()
+    /// PROVA IN OMBRA filtro evento 48h: esiti dei candidati CON evento in
+    /// giro contro quelli SENZA. Il filtro avrebbe saltato i primi: aiuta se
+    /// rendono meno dei secondi. Solo voci con eventFlag noto (le vecchie nil
+    /// restano fuori da questo confronto, dentro tutti gli altri).
+    var eventFlagged = Group()
+    var eventClean = Group()
+    /// Quanto rendono in meno i candidati con evento: positivo = il filtro
+    /// avrebbe protetto; negativo = il filtro avrebbe saltato occasioni buone.
+    var eventFilterEdge: Double? {
+        guard let flagged = eventFlagged.average, let clean = eventClean.average else { return nil }
+        return clean - flagged
+    }
     /// Valore di Kimi nella metà più vecchia e in quella più recente degli
     /// esiti (scelti meno tutti i segnali): dice se sta migliorando.
     var olderEdge: Double?
@@ -330,6 +383,12 @@ struct ShadowSummary: Sendable, Equatable {
         summary.chosen = Group(chosen)
         summary.skipped = Group(skipped)
         summary.reviewerRejected = Group(resolved.filter { $0.outcome == ShadowEntry.reviewerReject }.compactMap(\.ret))
+        // Prova in ombra del filtro evento 48h: solo le voci dove il flag è
+        // stato registrato (le storiche nil non entrano in questo confronto).
+        let flaggedReturns = resolved.filter { $0.eventFlag == true }.compactMap(\.ret)
+        let cleanReturns = resolved.filter { $0.eventFlag == false }.compactMap(\.ret)
+        summary.eventFlagged = Group(flaggedReturns)
+        summary.eventClean = Group(cleanReturns)
         // Tendenza: esiti in ordine di uscita, divisi a metà.
         let ordered = resolved.sorted { ($0.exitDay ?? $0.day, $0.symbol) < ($1.exitDay ?? $1.day, $1.symbol) }
         if ordered.count >= 10 {

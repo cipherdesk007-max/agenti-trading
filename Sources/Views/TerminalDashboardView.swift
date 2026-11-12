@@ -503,6 +503,28 @@ struct TerminalDashboardView: View {
                              color: recent >= older ? Theme.accent : Theme.amber)
             }
             portfolioRow("In corso", "\(s.pending)", color: Theme.textTertiary)
+            if s.eventFlagged.count + s.eventClean.count > 0 {
+                Divider().overlay(Color.gray.opacity(0.3))
+                panelHeader("Filtro evento 48h · prova in ombra")
+                stackedRow("Candidati CON evento (il filtro li saltava)", group(s.eventFlagged))
+                stackedRow("Candidati senza evento", group(s.eventClean))
+                portfolioRow(
+                    "Valore del filtro",
+                    s.eventFilterEdge.map { String(format: "%+.2f punti", $0 * 100) } ?? "—",
+                    color: (s.eventFilterEdge ?? 0) >= 0 ? Theme.accent : Theme.amber
+                )
+                if s.eventFlagged.count + s.eventClean.count < 20 {
+                    Text("Prova in ombra attiva: gli ingressi NON cambiano. Servono almeno 20 esiti (ora \(s.eventFlagged.count + s.eventClean.count)) prima di decidere se il filtro evento merita di diventare reale.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Valore del filtro positivo = i candidati con evento hanno reso meno: saltarli proteggeva. Negativo = il filtro avrebbe saltato occasioni buone. Decisione finale solo su questi numeri, con backtest.")
+                        .font(.caption)
+                        .foregroundStyle(.gray)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Text(verdict.0)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(verdict.1)
