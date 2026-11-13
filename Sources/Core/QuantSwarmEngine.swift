@@ -97,6 +97,8 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var updateStatus = "non controllato"
     /// Simboli della modalità veloce della sessione in corso.
     @Published private(set) var intradaySymbols: [String] = []
+    /// P&L separato per strategia in modalità PORTAFOGLIO (nil nelle altre modalità).
+    @Published private(set) var strategyPnL: StrategyPnL?
     /// Ordini d'ingresso giornalieri: inviati, mai eseguiti, eseguiti in parte.
     @Published private(set) var entryStats = (placed: 0, unfilled: 0, partial: 0)
 
@@ -879,6 +881,29 @@ final class QuantSwarmEngine: ObservableObject {
         NotificationManager.shared.notify(
             "DRAWDOWN SBLOCCATO",
             body: "Nuovi ordini riabilitati manualmente."
+        )
+    }
+
+    /// Riallinea la baseline (picco del drawdown + baseline P&L) all'equity
+    /// corrente: da usare quando il conto paper viene rigenerato o c'è un
+    /// prelievo, così il calo fittizio non fa scattare lo stop drawdown. Se il
+    /// drawdown era bloccato per quel calo, viene sbloccato.
+    func recalibrateEquityBaseline() {
+        guard let equity = account?.equityValue, equity > 0 else {
+            log("Ricalibra equity: saldo non ancora disponibile, riprova dopo il primo controllo.", agent: .risk)
+            return
+        }
+        guardState.peakEquity = RiskRules.recalibratedPeak(equity: equity, currentPeak: guardState.peakEquity)
+        baselineEquity = equity
+        if guardState.drawdownLocked {
+            guardState.drawdownLocked = false
+            drawdownLocked = false
+        }
+        RiskGuardStore.save(guardState)
+        log("Baseline riallineata a \(format(equity)) USD (conto rigenerato o prelievo): il drawdown non conta più il calo fittizio.", agent: .risk)
+        NotificationManager.shared.notify(
+            "BASELINE RIALLINEATA",
+            body: "Equity di riferimento aggiornata a \(format(equity)) USD."
         )
     }
 
@@ -2048,6 +2073,7 @@ final class QuantSwarmEngine: ObservableObject {
             }
         }
         computeCalibration()
+        refreshStrategyPnL()
     }
 
     /// Variante con throttling per il ciclo automatico: orologio ogni 5 min, crediti ogni 10 min.
@@ -2203,12 +2229,14 @@ extension QuantSwarmEngine {
         applyIdleTimer()
         NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
         sessionStartedAt = Date()
-        statusMessage = "\(night ? "Notte" : "Giornaliera") \(credentials.paperTrading ? "paper" : "live") attiva"
+        statusMessage = "\(mode == .portfolio ? "Portafoglio" : (night ? "Notte" : "Giornaliera")) \(credentials.paperTrading ? "paper" : "live") attiva"
         log("════════ SESSIONE AVVIATA · ORE \(Date().formatted(date: .omitted, time: .standard)) ════════")
         if night {
             log("Modalità NOTTE: compra in chiusura (asta MOC) S&P 500, Nasdaq-100, Russell 2000 e oro a peso uguale, "
                 + "vende all'apertura di domani (asta OPG). ETF originale o gemello economico secondo il saldo. "
                 + "Zero crediti Kimi. Apri l'app la mattina entro le 15:28 e il pomeriggio entro le 21:50.")
+        } else if mode == .portfolio {
+            log("Modalità PORTAFOGLIO: 30% del capitale alla GIORNALIERA (ETF con stop GTC sul broker) e 70% alla NOTTE (MOC/OPG), riequilibrato a ogni ciclo sull'equity corrente. Studio run 43338377889: CAGR +5,6%, perdita max -17%, Sharpe 0,79. Registri separati: ogni strategia gestisce solo le sue posizioni.")
         } else {
         log(
             "Modalità GIORNALIERA su \(DailyStrategy.basket.count) ETF: Trend (sopra SMA200) + Pullback (RSI2 < 10), "
@@ -2233,7 +2261,9 @@ extension QuantSwarmEngine {
         while isRunning, !Task.isCancelled {
             lastLoopBeat = Date()
             heartbeatAlerted = false
-            if activeMode == .night {
+            if activeMode == .portfolio {
+                await runPortfolioCycle(kimi: kimi, credentials: credentials)
+            } else if activeMode == .night {
                 await runNightCycle(credentials: credentials)
             } else {
                 await runDailyCycle(kimi: kimi, credentials: credentials)
@@ -2262,7 +2292,7 @@ extension QuantSwarmEngine {
         }
     }
 
-    fileprivate func runNightCycle(credentials: StoredCredentials) async {
+    fileprivate func runNightCycle(credentials: StoredCredentials, budgetCap: Double? = nil) async {
         let config = strategyConfig.sanitized
         pipeline = PipelineStage.initial()
         if let pause = computePauseReason() {
@@ -2284,7 +2314,7 @@ extension QuantSwarmEngine {
         let bookAccount = account?.accountNumber
         let input = NightCycleInput(book: NightBookStore.load(account: bookAccount),
                                     today: DailyStrategy.tradingDay(Date()), now: Date(),
-                                    capitalCap: config.capitalCap, entryBlock: entryBlock)
+                                    capitalCap: budgetCap ?? config.capitalCap, entryBlock: entryBlock)
         let runner = NightCycleRunner(broker: AlpacaBroker(credentials: credentials.alpaca))
         let result = await runner.run(input) { [weak self] event in
             await self?.apply(event)
@@ -2304,7 +2334,7 @@ extension QuantSwarmEngine {
         await refreshPortfolio()
     }
 
-    fileprivate func runDailyCycle(kimi: KimiService, credentials: StoredCredentials) async {
+    fileprivate func runDailyCycle(kimi: KimiService, credentials: StoredCredentials, budgetCap: Double? = nil) async {
         let config = strategyConfig.sanitized
         pipeline = PipelineStage.initial()
         if let pause = computePauseReason() {
@@ -2334,7 +2364,7 @@ extension QuantSwarmEngine {
             riskFraction: config.riskFraction,
             maxOpenPositions: config.maxOpenPositions,
             entryBlock: entryBlock,
-            capitalCap: config.capitalCap
+            capitalCap: budgetCap ?? config.capitalCap
         )
         let runner = DailyCycleRunner(broker: AlpacaBroker(credentials: credentials.alpaca), brain: kimi)
         let result = await runner.run(input) { [weak self] event in
@@ -2391,7 +2421,47 @@ extension QuantSwarmEngine {
         for exit in result.exits {
             recordDailyExit(symbol: exit.symbol, pnl: exit.realizedPnL)
         }
+        // P&L realizzato cumulativo della giornaliera (per il pannello PORTAFOGLIO).
+        let realizedNow = result.exits.compactMap { $0.realizedPnL }.reduce(0, +)
+        if realizedNow != 0 {
+            var pnlState = StrategyPnLStore.load(account: account?.accountNumber)
+            pnlState.dailyRealized += realizedNow
+            StrategyPnLStore.save(pnlState, account: account?.accountNumber)
+        }
         await refreshPortfolio()
+    }
+
+    /// Modalità PORTAFOGLIO: entrambi i cicli sullo stesso conto, budget separati
+    /// ri-bilanciati a ogni ciclo sull'equity corrente (split fisso 30/70, studio
+    /// tools/backtest_portfolio.py run 43338377889). Il tetto capitale si applica
+    /// al TOTALE prima dello split. I registri restano separati: ogni strategia
+    /// gestisce solo le proprie posizioni (pattern B1); il budget dimensiona SOLO
+    /// i nuovi ingressi, le posizioni aperte corrono fino alla loro uscita normale.
+    fileprivate func runPortfolioCycle(kimi: KimiService, credentials: StoredCredentials) async {
+        let config = strategyConfig.sanitized
+        await refreshPortfolio()
+        let equity = account?.equityValue
+        let budgets = PortfolioSplit.budgets(equity: equity, capitalCap: config.capitalCap)
+        log("PORTAFOGLIO: equity \(format(equity ?? 0)) USD → giornaliera 30% = \(format(budgets.daily)) USD, notte 70% = \(format(budgets.night)) USD (riequilibrato a ogni ciclo; il tetto vale sul totale).", agent: .risk)
+        await runNightCycle(credentials: credentials, budgetCap: budgets.night)
+        await runDailyCycle(kimi: kimi, credentials: credentials, budgetCap: budgets.daily)
+        refreshStrategyPnL()
+    }
+
+    /// P&L separato per strategia: non realizzato delle posizioni aperte di
+    /// ciascun registro (dal broker) + realizzato cumulativo persistito.
+    private func refreshStrategyPnL() {
+        guard strategyConfig.sanitized.tradingMode == .portfolio else { strategyPnL = nil; return }
+        let acct = account?.accountNumber
+        let dailyBook = DailyBookStore.load(account: acct)
+        let nightBook = NightBookStore.load(account: acct)
+        let realized = StrategyPnLStore.load(account: acct)
+        strategyPnL = StrategyPnL.legs(
+            positions: positions.map { (symbol: $0.symbol, unrealizedPL: $0.unrealizedPLValue) },
+            dailySymbols: Set(dailyBook.entries.keys.map { $0.uppercased() }),
+            nightSymbols: Set(nightBook.positions.keys.map { $0.uppercased() }),
+            realizedDaily: realized.dailyRealized, realizedNight: realized.nightRealized
+        )
     }
 
     private static func dayKey(_ date: Date) -> String {

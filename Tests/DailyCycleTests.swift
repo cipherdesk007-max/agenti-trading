@@ -5,7 +5,7 @@ import XCTest
 
 private struct FakeError: Error {}
 
-private actor FakeBroker: BrokerClient {
+actor FakeBroker: BrokerClient {
     var marketOpen = true
     var brokerDown = false
     var acct = BrokerAccount(equity: 100_000, cash: 100_000, buyingPower: 400_000)
@@ -83,7 +83,7 @@ private actor FakeBroker: BrokerClient {
     func filledAveragePrice(orderId: String) async throws -> Double? { price }
 }
 
-private actor FakeBrain: DailyBrain {
+actor FakeBrain: DailyBrain {
     var decideError = false
     var reviewApproves = true
     var decideCalls = 0

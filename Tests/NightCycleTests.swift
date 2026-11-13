@@ -1,9 +1,9 @@
 import XCTest
 @testable import QuantSwarmAlphaZero
 
-private struct NightFakeError: Error {}
+struct NightFakeError: Error {}
 
-private actor FakeNightBroker: NightBroker {
+actor FakeNightBroker: NightBroker {
     var isOpen: Bool
     var nextClose: Date?
     var acct = BrokerAccount(equity: 1_000, cash: 1_000, buyingPower: 1_000)
