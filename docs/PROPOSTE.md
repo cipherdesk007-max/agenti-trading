@@ -331,3 +331,39 @@ statico negli studi, non come API in app. Nessuna di queste proposte è nel codi
 - **STATO: FATTA il 13/11/2026** — modalità PORTAFOGLIO implementata con split 30/70 (cap sul
   totale prima dello split), P&L separato per strategia e "Ricalibra equity" in SISTEMA.
   Commit `1dfd61c`, `b29be39`, `aec072f`; CI run #185 e #186 verdi (215 test, 0 fallimenti).
+
+### 18 · CRYPTO · 24/7 + Balance Advisor + riscrittura prompt Kimi — richiesta 13/11/2026: ANALISI, **BLOCCATA** (documentata qui invece di implementarla)
+
+- **Cosa chiedeva**: nuova modalità crypto (BTC/USD, ETH/USD, SOL/USD, AVAX/USD, LINK/USD,
+  DOGE/USD) con ordini frazionati `notional`, stop GTC/OCO sul broker, loop live 60 s, radar
+  Kimi su volume/momentum 24 h; banner "Balance Advisor" in base al saldo; riscrittura dei
+  prompt Analyst/Brain/Reviewer; bump di versione e build di release su GitHub.
+- **Blocco 1 — nessuna strategia senza numeri**: in `tools/` non esiste alcuno studio crypto e
+  `docs/STATO.md` impone "ogni modifica alla strategia va provata con un backtest in `tools/`
+  prima di entrare nell'app". I parametri proposti (EMA100 su 1H/4H, RSI2 < 12, stop 3,5 ATR,
+  target 2,5 ATR) non hanno alcun backtest alle spalle. Per sbloccare: scrivere
+  `tools/backtest_crypto.py` (yfinance, dal 2021, con correzione Deflated Sharpe per le
+  varianti provate) + passo `quale=crypto` in `backtest.yml`, lanciato dall'altro revisore
+  (a me il dispatch dà 403 e non ho rete); poi decisione del proprietario sui numeri.
+- **Blocco 2 — frazioni e stop GTC sul broker sono incompatibili su Alpaca**: le frazioni
+  (`notional` / `qty` decimale) sono supportate **solo con ordini Day** — niente GTC/OCO
+  (vedi proposta 15 e https://docs.alpaca.markets/us/docs/brokerapi-trading). La richiesta
+  chiede entrambe le cose insieme: non è fattibile con questa API. Alternative da studiare:
+  stop Day riarmato ogni giorno, oppure protezione lato app (che però non gira ad app chiusa).
+- **Blocco 3 — iOS non esegue nulla 24/7 in background**: l'app gira solo quando è aperta
+  (docs/GUIDA.md). Un refresh live ogni 60 s è possibile solo in primo piano (come già fa la
+  VELOCE); "7 giorni su 7" richiederebbe stop sul broker sempre attivi, che è il blocco 2.
+- **Balance Advisor**: la raccomandazione verso CRYPTO è bloccata con la modalità. Per le
+  modalità esistenti la copertura c'è già: "ETF comprabili" (`buyableETF`) in SISTEMA e i
+  gemelli micro della NOTTE (SPYM/QQQM/VTWO/GLDM). Nessun codice nuovo necessario.
+- **Prompt Kimi**: riscriverli cambia il comportamento delle decisioni → stessa regola dei
+  numeri: prima validazione in paper/ombra (registro ombra e pagella già pronte in DETTAGLI).
+  Non si fa alla cieca.
+- **FASE 4 (build di release / `pubblica=true`)**: non è mia — dispatch vietato e token
+  read-only sulle mutazioni (403 verificato). La pubblicazione resta manuale dall'utente.
+- **Audit di sicurezza rifatto in questa analisi (verificato, nessun cambio di codice)**: 0
+  `try!`/`fatalError`/`preconditionFailure` in `Sources/`; 0 pattern di chiavi o segreti in
+  Sources/Tests/UITests/.github; retry su 429/5xx (3 tentativi) presente in `AlpacaService` e
+  `KimiService`; idempotenza ordini via `client_order_id` + recupero `orderRef(byClientOrderId:)`
+  in entrambi i cicli; HARD KILL = `emergencyFlatten` globale (annulla tutti gli ordini e
+  chiude tutte le posizioni del conto: coprirebbe anche eventuali posizioni crypto).

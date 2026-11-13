@@ -15,6 +15,15 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 - SISTEMA: divisione 30/70 e budget attuali per strategia; nuovo pulsante **"Ricalibra equity"** che riallinea picco del drawdown e baseline all'equity corrente (conto paper rigenerato o prelievo: niente stop drawdown per un calo fittizio).
 - Test: +14 in `Tests/PortfolioModeTests.swift` (split 30/70, cap applicato al totale, migrazione legacy, P&L separato, ricalibrazione drawdown, notte entro il suo budget, posizione esistente mai forzata, budget piccolo blocca solo i nuovi ingressi). Totale: **215 test unitari** + 5 di interfaccia (run #186 verde).
 
+### Bloccato e documentato (richiesta "CRYPTO 24/7 + Balance Advisor + prompt Kimi" del 13/11/2026)
+- Non implementata: vedi proposta 18 in [docs/PROPOSTE.md](docs/PROPOSTE.md). Motivi: nessuno
+  studio crypto in `tools/` (regola di progetto: ogni strategia entra solo con backtest
+  documentato), frazioni e stop GTC sul broker incompatibili su Alpaca (solo ordini Day),
+  iOS non esegue l'app 24/7 in background, e la build di release/`pubblica=true` non è mia
+  (dispatch vietato, token read-only). Audit di sicurezza rifatto: 0 `try!`/`fatalError` in
+  `Sources/`, 0 segreti, retry 429/5xx presente in entrambe le servizi, HARD KILL globale
+  verificato (copre tutte le posizioni del conto).
+
 ### Aggiunto (studio conto unico GIORNALIERA+NOTTE, 13/11/2026)
 - **`tools/backtest_portfolio.py` + passo `quale=portafoglio` nel workflow backtest.** Studio (non cambia l'app) per l'idea del proprietario di una modalità PORTAFOGLIO unica al posto di giornaliera e notte separate: due budget sullo stesso conto riequilibrati a ogni ciclo (capitalCap frazionario), 8 split fissi + 2 regole dinamiche decise solo sul semestre precedente (winner-tilt e risk-parity 1/vol), controllo a metà campione 2006–2015 vs 2016–oggi, sensibilità sui costi notte e sul niente riequilibro. Risultati in `docs/STATO.md` e proposta 17 in `docs/PROPOSTE.md`: la combinazione riduce la perdita massima molto più che in proporzione (correlazione +0,04), le regole "insegui chi guadagna" sono scartate dai numeri; split consigliato 30/70 in attesa di decisione del proprietario.
 
