@@ -426,8 +426,9 @@ non 730 giorni, vedi CHANGELOG).
   18), quindi prima un backtest locale; poi, se serve, 1 mese in ombra che confronta le
   quotazioni CMC con quelle di Alpaca sul paniere crypto.
 
-### 20 · CRYPTO 24/7 con regole NUOVE: trend-following a regime — IN VALUTAZIONE (13/11/2026)
+### 20 · CRYPTO 24/7 con regole NUOVE: trend-following a regime — CONSEGNATA (13/11/2026)
 
+- **Esito dello studio (run 43358878933, verde, costi 0,2%/lato)**: **V4 Donchian20 + chandelier 3ATR passa TUTTI i criteri pre-registrati** — +8,4%/anno, maxDD −9%, Sharpe 1,08; finestra orso 2024-11→oggi +7,4% (buy &amp; hold −31,8%); entrambe le metà positive. V3 passa A/C/D ma maxDD −15% supera il blocco drawdown al 10%: scartata. V1/V2 bocciate (maxDD −38%). Solo l'equal-weight regge: le regole per singola moneta perdono quasi tutte. A costi 0,1%: +8,5%/−9%/1,10. 4H controllo secondario: orso −0,9% contro −32,3% (capitale salvato).
 - **Perché una seconda proposta crypto**: la 18 (mean-reversion EMA100+RSI2) è stata bocciata
   dai numeri (run 43357136321). Il proprietario ha scelto la strada delle regole nuove +
   backtest prima di scrivere codice in app. La famiglia qui è l'opposta: trend-following a
@@ -437,14 +438,18 @@ non 730 giorni, vedi CHANGELOG).
   V1 SMA200 / V2 SMA200 isteresi / V3 EMA50>EMA200+chandelier / V4 Donchian20+chandelier,
   daily dal 2018 con criteri PRE-REGISTRATI (CAGR ≥ +3%, maxDD ≤ −20%, finestra orso
   2024-11→oggi ≥ −2%, entrambe le metà > 0), sensibilità costi 0,2% e 0,1% per lato.
-- **Cosa servirebbe in app SOLO se i numeri reggono**: client dati crypto Alpaca
-  (`/v1beta3/crypto/us/bars` e `/latest/quotes`), ordini `simple` frazionati SENZA bracket
-  (sulle crypto Alpaca risponde 422) con stop venditore separato GTC dopo il fill, live loop
-  60s quando l'app è in primo piano con badge LIVE, blocco drawdown 10%, max 3 posizioni,
-  budget crypto separato. Limite iOS dichiarato: niente esecuzione 24/7 in background, la
-  modalità lavora quando l'app è aperta.
-- **Balance Advisor**: la soglia che consiglia CRYPTO ai saldi bassi entra solo insieme alla
-  modalità. Senza CRYPTO il consiglio resta sulle due modalità esistenti (PORTAFOGLIO micro
-  SPYM/QQQM/VTWO/GLDM o VELOCE), copertura già presente con "ETF comprabili" in SISTEMA.
-- **Decisione**: solo sui numeri del daily + parere del proprietario. Nessun codice app scritto
-  prima del verdetto dello studio.
+- **Implementata in app come CRYPTO · 24/7**: client dati crypto Alpaca
+  (`/v1beta3/crypto/us/bars` barre 1D chiuse paginate + `/latest/quotes` mid), ordini `simple`
+  frazionati SENZA bracket (sulle crypto Alpaca risponde 422) con `stop_limit` venditore GTC
+  separato dopo il fill, live loop 60s quando l'app è in primo piano con badge LIVE, blocco
+  drawdown 10%, budget 1/5 per coppia (equal-weight fedele allo studio). Limite iOS
+  dichiarato: niente esecuzione 24/7 in background, la modalità lavora quando l'app è aperta;
+  ad app chiusa protegcono gli stop GTC sul broker.
+- **Deviazioni dichiarate**: paniere in-app a 5 coppie come richiesto (BTC, ETH, SOL, AVAX,
+  LINK; lo studio EW includeva DOGE); "max 3 posizioni" della vecchia spec non è stato
+  portato: fedeltà allo studio equal-weight 1/5; lo stop è `stop_limit` perché Alpaca crypto
+  non supporta l'ordine `stop` semplice; lo stop intraday del broker può eseguire PRIMA
+  della chiusura della barra (conservativo, dichiarato in docs/STATO.md).
+- **Balance Advisor consegnato insieme**: banner nel CRUSCOTTO e card in SISTEMA che consiglia
+  la modalità in base al saldo (< 1.500 → CRYPTO; 1.500–5.000 → PORTAFOGLIO micro o CRYPTO;
+  > 5.000 → PORTAFOGLIO completo).

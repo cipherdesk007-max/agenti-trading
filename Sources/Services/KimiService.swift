@@ -335,7 +335,8 @@ actor KimiService {
         market: [String: DailyStrategy.Snapshot],
         openPositions: [String],
         slotsAvailable: Int,
-        feedback: String? = nil
+        feedback: String? = nil,
+        shadow: ShadowDigest? = nil
     ) async throws -> [DailyVerdict] {
         let systemPrompt = """
         Sei l'agente decisionale (Brain) della modalità giornaliera di un sistema di trading \
@@ -356,7 +357,13 @@ actor KimiService {
         giornaliera, statistica, notizie, fondamentali sospesi): confrontali, segnala nel \
         rationale chi è d'accordo e chi no; la loro confidence NON è una probabilità calibrata. \
         Se c'è past_outcomes, tienine conto: se gli ETF che scarti vanno meglio di quelli che scegli, \
-        sii meno selettivo. \
+        sii meno selettivo. Se c'è shadow_outcomes, sono gli ultimi esiti MISURATI del registro \
+        ombra: ogni voce dice se l'hai scelta (chosen true) o scartata (outcome) e quanto ha \
+        reso davvero (return_pct). Usali per correggere i tuoi bias in modo ripetuto, non \
+        saltuario: se gli scartati rendono meglio degli scelti più volte, sei troppo selettivo; \
+        se gli stessi setup che scegli perdono in sequenza, alza l'asticella; se i bocciati dal \
+        revisore andavano bene, opponiti con più forza. Un singolo esito NON è un pattern: non \
+        stravolgere il metodo per un caso solo. \
         Non inventare dati. Non usare Markdown.
         """
         func snap(_ s: DailyStrategy.Snapshot) -> [String: Any] {
@@ -383,7 +390,8 @@ actor KimiService {
             "market_overview": market.mapValues(snap),
             "open_positions": openPositions,
             "slots_available": slotsAvailable,
-            "past_outcomes": feedback.map { $0 as Any } ?? NSNull()
+            "past_outcomes": feedback.map { $0 as Any } ?? NSNull(),
+            "shadow_outcomes": Self.shadowPayload(shadow) ?? NSNull()
         ]
         let payloadData = try JSONSerialization.data(withJSONObject: payload)
         let messages: [[String: String]] = [
@@ -429,7 +437,8 @@ actor KimiService {
     func dailyReview(
         candidate: DailyStrategy.Candidate,
         verdict: DailyVerdict,
-        market: [String: DailyStrategy.Snapshot]
+        market: [String: DailyStrategy.Snapshot],
+        shadow: ShadowDigest? = nil
     ) async throws -> KimiReview {
         let systemPrompt = """
         Sei il revisore avversario della modalità giornaliera. Assumi che l'acquisto proposto \
@@ -440,6 +449,12 @@ actor KimiService {
         un cambiamento vero (non un normale ribasso) o un evento imminente ad alto rischio. \
         specialist_digest contiene i pareri degli specialisti locali sul candidato: verifica \
         tu stesso se i loro motivi reggono sui dati, senza confermarli automaticamente. \
+        Se c'è shadow_outcomes, sono gli ultimi esiti MISURATI del registro ombra (scelti e \
+        scartati col rendimento reale): usali per pesare la tua sentenza, non per respingere \
+        a porte chiuse: se la proposta somiglia a un acquisto recente finito male (stesso \
+        simbolo ricomprato subito o stesso tipo di setup in sequenza negativa), dillo nel \
+        reason; se invece gli scartati rendevano meglio degli scelti più volte, questo è un \
+        rimprovero al Brain da citare, non un motivo automatico di respingimento. \
         Approva solo se non trovi nulla \
         di concreto. Non usare Markdown.
         """
@@ -456,6 +471,7 @@ actor KimiService {
                 "news_48h": candidate.news
             ],
             "specialist_digest": Self.specialistPayload(Council.dailyDigest(for: candidate)),
+            "shadow_outcomes": Self.shadowPayload(shadow) ?? NSNull(),
             "market_overview": market.mapValues { m -> [String: Double] in
                 ["close": m.close, "sma200": m.sma200, "rsi2": m.rsi2, "atr14": m.atr14]
             }
@@ -502,6 +518,27 @@ actor KimiService {
                 "invalidation": report.invalidation
             ] as [String: Any]
         }
+    }
+
+    /// Digest del registro ombra per i prompt (Brain e Reviewer): gli ultimi
+    /// esiti scelti vs scartati con il rendimento reale, più le medie. Leggero
+    /// per costruzione (max 10 voci): nessun record SwiftData aggiuntivo.
+    static func shadowPayload(_ shadow: ShadowDigest?) -> [String: Any]? {
+        guard let shadow, !shadow.recent.isEmpty else { return nil }
+        let recent: [[String: Any]] = shadow.recent.map { outcome in
+            [
+                "symbol": outcome.symbol,
+                "chosen": outcome.chosen,
+                "outcome": outcome.outcome,
+                "return_pct": outcome.returnPct.map { ($0 * 100).rounded() / 100 } as Any? ?? NSNull()
+            ]
+        }
+        return [
+            "note": "ultimi \(shadow.recent.count) esiti misurati del registro ombra (return_pct = rendimento % reale a fine trade)",
+            "recent": recent,
+            "chosen_avg_pct": shadow.chosenAveragePct.map { ($0 * 100).rounded() / 100 } as Any? ?? NSNull(),
+            "skipped_avg_pct": shadow.skippedAveragePct.map { ($0 * 100).rounded() / 100 } as Any? ?? NSNull()
+        ]
     }
 
     /// Serializzazione compatta del contesto candele: numeri a 4 decimali e
@@ -807,13 +844,15 @@ private struct ChatCompletionResponse: Decodable {
 
 extension KimiService: DailyBrain {
     func decide(candidates: [DailyStrategy.Candidate], market: [String: DailyStrategy.Snapshot],
-                openPositions: [String], slots: Int, feedback: String?) async throws -> [DailyVerdict] {
+                openPositions: [String], slots: Int, feedback: String?,
+                shadow: ShadowDigest?) async throws -> [DailyVerdict] {
         try await dailyDecide(candidates: candidates, market: market,
-                              openPositions: openPositions, slotsAvailable: slots, feedback: feedback)
+                              openPositions: openPositions, slotsAvailable: slots, feedback: feedback,
+                              shadow: shadow)
     }
 
     func review(candidate: DailyStrategy.Candidate, verdict: DailyVerdict,
-                market: [String: DailyStrategy.Snapshot]) async throws -> KimiReview {
-        try await dailyReview(candidate: candidate, verdict: verdict, market: market)
+                market: [String: DailyStrategy.Snapshot], shadow: ShadowDigest?) async throws -> KimiReview {
+        try await dailyReview(candidate: candidate, verdict: verdict, market: market, shadow: shadow)
     }
 }

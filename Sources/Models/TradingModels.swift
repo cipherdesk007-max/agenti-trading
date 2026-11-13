@@ -185,6 +185,15 @@ enum TradingMode: String, Codable, Sendable, CaseIterable {
     /// Legacy (prima di PORTAFOGLIO): compra in chiusura (MOC), vende
     /// all'apertura (OPG). Migrata a .portfolio.
     case night
+    /// CRYPTO · 24/7: trend-following a regime su coppie Alpaca (BTC/USD,
+    /// ETH/USD, SOL/USD, AVAX/USD, LINK/USD), long-only, paniere equal-weight.
+    /// Regole V4 validate dallo studio tools/backtest_trend_crypto.py (run
+    /// 43357136321-era: proposta 20, docs/PROPOSTE.md): ingresso a rottura del
+    /// massimo a 20 barre con chiusura sopra la SMA200, uscita chandelier
+    /// (massimo delle chiusure da ingresso − 3×ATR22) o chiusura sotto SMA200.
+    /// Daily dal 2018: +8,4%/anno, perdita max −9%, Sharpe 1,08; finestra orso
+    /// 2024-11→2026-11 +7,4% (B&H −31,8%). Zero crediti Kimi.
+    case crypto
 
     var label: String {
         switch self {
@@ -192,6 +201,7 @@ enum TradingMode: String, Codable, Sendable, CaseIterable {
         case .daily: return "GIORNALIERA · ETF"
         case .intraday: return "VELOCE · SPERIMENTALE"
         case .night: return "NOTTE · ETF"
+        case .crypto: return "CRYPTO · 24/7"
         }
     }
 
@@ -202,11 +212,12 @@ enum TradingMode: String, Codable, Sendable, CaseIterable {
         case .daily: return "GIORNALIERA"
         case .intraday: return "VELOCE"
         case .night: return "NOTTE"
+        case .crypto: return "CRYPTO"
         }
     }
 
-    /// Le modalità choices nel selettore: PORTAFOGLIO e VELOCE.
-    static var selectableModes: [TradingMode] { [.portfolio, .intraday] }
+    /// Le modalità choices nel selettore: PORTAFOGLIO, CRYPTO e VELOCE.
+    static var selectableModes: [TradingMode] { [.portfolio, .crypto, .intraday] }
 
     /// Migrazione dalle config salvate prima di PORTAFOGLIO: .daily e .night
     /// diventano .portfolio. Le posizioni già aperte restano nei rispettivi
@@ -215,12 +226,15 @@ enum TradingMode: String, Codable, Sendable, CaseIterable {
     var migrated: TradingMode {
         switch self {
         case .daily, .night: return .portfolio
-        case .portfolio, .intraday: return self
+        case .portfolio, .intraday, .crypto: return self
         }
     }
 
     /// Giornaliera e notte lavorano a controlli periodici con ordini che
-    /// restano sul broker: chiudere l'app è previsto.
+    /// restano sul broker: chiudere l'app è previsto. La crypto lavora a
+    /// controllo live ogni 60 secondi con l'app aperta (i mercati crypto non
+    /// chiudono mai); con l'app chiusa resta attivo sul broker lo stop
+    /// stop_limit GTC di protezione (aggiornato all'ultima chiusura di barra).
     var runsOnSchedule: Bool { self != .intraday }
 }
 

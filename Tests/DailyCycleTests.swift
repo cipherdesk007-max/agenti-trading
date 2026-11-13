@@ -94,7 +94,8 @@ actor FakeBrain: DailyBrain {
     func set(reviewApproves: Bool) { self.reviewApproves = reviewApproves }
 
     func decide(candidates: [DailyStrategy.Candidate], market: [String: DailyStrategy.Snapshot],
-                openPositions: [String], slots: Int, feedback: String?) async throws -> [DailyVerdict] {
+                openPositions: [String], slots: Int, feedback: String?,
+                shadow: ShadowDigest?) async throws -> [DailyVerdict] {
         decideCalls += 1
         lastCandidates = candidates
         if decideError { throw FakeError() }
@@ -102,7 +103,7 @@ actor FakeBrain: DailyBrain {
     }
 
     func review(candidate: DailyStrategy.Candidate, verdict: DailyVerdict,
-                market: [String: DailyStrategy.Snapshot]) async throws -> KimiReview {
+                market: [String: DailyStrategy.Snapshot], shadow: ShadowDigest?) async throws -> KimiReview {
         reviewCalls += 1
         return KimiReview(verdict: reviewApproves ? "approve" : "reject", reason: "test")
     }

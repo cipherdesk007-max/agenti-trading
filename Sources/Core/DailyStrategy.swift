@@ -413,3 +413,41 @@ struct ShadowSummary: Sendable, Equatable {
             + "scartati \(skippedCount) (medio \(pct(skippedAverage)))."
     }
 }
+
+/// Digest del REGISTRO OMBRA per i prompt Kimi (Brain e Reviewer): gli ultimi
+/// esiti risolti (scelti vs scartati) con il rendimento reale a fine trade,
+/// più le medie complessive. Serve all'auto-correzione dei bias: se gli
+/// scartati rendono meglio degli scelti, il Brain è troppo selettivo; se gli
+/// acquisti recenti finiscono male, il Reviewer deve pesarli.
+/// Record leggeri (struct valore, nessun @Model): costruito al volo dal
+/// registro esistente, non appesantisce SwiftData.
+struct ShadowDigest: Sendable, Equatable {
+    struct Outcome: Sendable, Equatable {
+        let symbol: String
+        /// Comprato dal Brain (true) o scartato/bocciato/bloccato (false).
+        let chosen: Bool
+        let outcome: String
+        /// Rendimento % reale a fine trade (nil se non ancora uscito).
+        let returnPct: Double?
+    }
+
+    /// Ultimi esiti risolti, i più recenti per ultimi.
+    var recent: [Outcome] = []
+    var chosenAveragePct: Double?
+    var skippedAveragePct: Double?
+
+    /// nil se il registro non ha ancora esiti risolti.
+    static func from(_ entries: [ShadowEntry], limit: Int = 10) -> ShadowDigest? {
+        let resolved = entries.filter(\.resolved)
+        guard !resolved.isEmpty else { return nil }
+        let ordered = resolved.sorted { ($0.exitDay ?? $0.day, $0.symbol) < ($1.exitDay ?? $1.day, $1.symbol) }
+        let recent = ordered.suffix(limit).map {
+            Outcome(symbol: $0.symbol, chosen: $0.chosen, outcome: $0.outcome,
+                   returnPct: $0.ret.map { $0 * 100 })
+        }
+        let chosen = resolved.filter(\.chosen).compactMap(\.ret)
+        let skipped = resolved.filter { !$0.chosen }.compactMap(\.ret)
+        func avg(_ v: [Double]) -> Double? { v.isEmpty ? nil : v.reduce(0, +) / Double(v.count) * 100 }
+        return ShadowDigest(recent: recent, chosenAveragePct: avg(chosen), skippedAveragePct: avg(skipped))
+    }
+}

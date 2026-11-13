@@ -67,6 +67,14 @@ private enum Formatters {
             : String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), value)
     }
 
+    /// Quantità frazionata crypto: fino a 8 decimali, senza zeri in coda.
+    static func qty(_ value: Double) -> String {
+        var text = String(format: "%.8f", locale: Locale(identifier: "en_US_POSIX"), value)
+        while text.hasSuffix("0") { text.removeLast() }
+        if text.hasSuffix(".") { text.removeLast() }
+        return text.isEmpty ? "0" : text
+    }
+
     static func time(_ date: Date?) -> String {
         guard let date else { return "n/d" }
         return date.formatted(date: .omitted, time: .standard)
@@ -117,9 +125,11 @@ struct TerminalDashboardView: View {
                             case .operations:
                                 if let update = engine.availableUpdate { updateBanner(update) }
                                 if !engine.paperTrading { liveBanner }
+                                balanceAdvisorBanner
                                 guardPanel
                                 heroPanel
                                 todayPanel
+                                if displayedMode == .crypto { cryptoPanel }
                                 positionsPanel
                                 DisclosureGroup(isExpanded: $showAgentsLog) {
                                     VStack(spacing: Layout.paddingM) {
@@ -288,6 +298,9 @@ struct TerminalDashboardView: View {
                     StatusChip(text: engine.paperTrading ? "Paper" : "Live",
                                color: engine.paperTrading ? Theme.accent : Theme.red,
                                filled: !engine.paperTrading)
+                    if engine.isRunning, engine.activeMode == .crypto, engine.cryptoLive {
+                        StatusChip(text: "LIVE · 60s", color: Theme.accent, filled: true)
+                    }
                     if let clock = engine.marketClock {
                         StatusChip(text: clock.isOpen ? "Mercato aperto" : "Mercato chiuso",
                                    color: clock.isOpen ? Theme.accent : Theme.amber)
@@ -669,6 +682,45 @@ struct TerminalDashboardView: View {
             .foregroundStyle(.white)
     }
 
+    /// BALANCE ADVISOR: consiglio automatico della modalità in base al saldo
+    /// (funzione pura, nessun ordine). Visibile nel CRUSCOTTO finché la
+    /// modalità configurata non coincide col consiglio; toccalo per aprire SISTEMA.
+    @ViewBuilder
+    private var balanceAdvisorBanner: some View {
+        let hidden = Formatters.sync(engine.strategyConfig.hideAmounts)
+        if let advice = BalanceAdvisor.advise(equity: engine.account?.equityValue, maskAmounts: hidden),
+           engine.strategyConfig.tradingMode != advice.recommended {
+            Button {
+                selectedSection = .system
+            } label: {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "lightbulb")
+                            .font(.caption.weight(.bold))
+                        Text(advice.headline)
+                            .font(.subheadline.weight(.semibold))
+                        Spacer()
+                        Text("Sistema →").font(.caption.weight(.semibold))
+                    }
+                    Text(advice.detail)
+                        .font(.caption)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let alternative = advice.alternative {
+                        Text(alternative)
+                            .font(.caption.weight(.medium))
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundStyle(Theme.background)
+                .padding(12)
+                .background(Theme.accent.opacity(0.85), in: Theme.shape(Theme.smallRadius))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("balanceAdvisor")
+        }
+    }
+
     private var displayedMode: TradingMode {
         engine.activeMode ?? engine.strategyConfig.tradingMode
     }
@@ -705,8 +757,9 @@ struct TerminalDashboardView: View {
             if engine.isRunning, engine.activeMode?.runsOnSchedule == true, let next = engine.nextCheckAt {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let left = max(0, next.timeIntervalSince(context.date))
+                    let cycle: TimeInterval = engine.activeMode == .crypto ? 60 : 15 * 60
                     VStack(alignment: .leading, spacing: 4) {
-                        ProgressView(value: 1 - min(left / (15 * 60), 1))
+                        ProgressView(value: 1 - min(left / cycle, 1))
                             .tint(terminalGreen)
                         Text(left > 0 ? String(format: "Prossimo controllo tra %d:%02d", Int(left) / 60, Int(left) % 60) : "Controllo in corso…")
                             .font(.caption.monospacedDigit())
@@ -783,6 +836,8 @@ struct TerminalDashboardView: View {
             return "Premi START: compra in chiusura S&P 500, Nasdaq-100, Russell 2000 e oro e li vende all'apertura di domani. Zero crediti Kimi. Meglio su un conto paper separato."
         case .intraday:
             return "Modalità veloce SPERIMENTALE: nei test perde. Tieni l'app aperta: chiude tutto prima della chiusura del mercato."
+        case .crypto:
+            return "Premi START: segue 5 coppie crypto (BTC, ETH, SOL, AVAX, LINK in USD) con rottura Donchian20 sopra la SMA200 e uscita chandelier. Aggiorna ogni 60 secondi con l'app aperta; con l'app chiusa gli stop restano sul broker, il mercato non dorme mai."
         }
     }
 
@@ -1287,6 +1342,68 @@ struct TerminalDashboardView: View {
         }
     }
 
+    /// Pannello della modalità CRYPTO · 24/7: prezzi live, segnale per coppia e
+    /// posizioni con chandelier/stop. Visibile solo in modalità crypto.
+    private var cryptoPanel: some View {
+        AppCard {
+            VStack(alignment: .leading, spacing: 8) {
+                SectionHeader(title: "Crypto · \(CryptoStrategy.pairs.count) coppie"
+                              + (engine.cryptoLive ? " · LIVE 60s" : ""))
+                ForEach(CryptoStrategy.pairs, id: \.self) { pair in
+                    let signal = engine.cryptoSignals[pair]
+                    let price = engine.cryptoPrices[pair]
+                    let position = engine.cryptoPositions.first { $0.symbol == pair }
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(pair)
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Theme.textPrimary)
+                            if let state = signal?.state {
+                                StatusChip(text: cryptoStateLabel(state), color: cryptoStateColor(state))
+                            }
+                            Spacer()
+                            Text(price.map { Formatters.money($0) + " $" } ?? "—")
+                                .font(.caption.monospacedDigit())
+                                .foregroundStyle(Theme.textPrimary)
+                        }
+                        if let position {
+                            HStack {
+                                Text("qty \(Formatters.qty(position.qty)) · entry \(Formatters.money(position.entryPrice)) · chandelier \(signal.flatMap { $0.chandelier }.map { Formatters.money($0) } ?? "—") · stop \(position.stopPrice.map { Formatters.money($0) } ?? "sul broker")")
+                                    .font(.caption2.monospacedDigit())
+                                    .foregroundStyle(Theme.textSecondary)
+                            }
+                        }
+                    }
+                    .padding(Layout.paddingS)
+                    .background(Theme.surfaceHigh, in: Theme.shape(Theme.smallRadius))
+                }
+                Text(engine.cryptoLive
+                     ? "Prezzi e segnali si aggiornano ogni 60 secondi ad app aperta."
+                     : "Con l'app chiusa gli stop GTC restano sul broker: nessun controllo necessario.")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.textTertiary)
+            }
+        }
+    }
+
+    private static func cryptoStateLabel(_ state: CryptoStrategy.Signal.State) -> String {
+        switch state {
+        case .entry: return "ENTRATA"
+        case .hold: return "IN POSIZIONE"
+        case .exit: return "USCITA"
+        case .flat: return "FUORI"
+        case .warmup: return "DATI…"
+        }
+    }
+
+    private static func cryptoStateColor(_ state: CryptoStrategy.Signal.State) -> Color {
+        switch state {
+        case .entry, .hold: return Theme.accent
+        case .exit: return Theme.red
+        case .flat, .warmup: return Theme.amber
+        }
+    }
+
     private var decisionsPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("Kimi Brain · ultime decisioni")
@@ -1637,8 +1754,7 @@ private struct SystemSettingsView: View {
 
     /// Quanti ETF del paniere il capitale (e il rischio) impostati possono
     /// comprare con almeno 1 azione intera, sui prezzi dell'ultimo controllo.
-    static func modeDescription(_ mode: TradingMode) -> String {
-        switch mode {
+    static func modeDescription(_ mode: TradingMode) -> String {        switch mode {
         case .portfolio:
             return "Studio 2006–oggi (run 43338377889): CAGR +5,6%, perdita max −17%, Sharpe 0,79 (1,96 sugli ultimi 3 anni). Split fisso 30% giornaliera / 70% notte, niente regole dinamiche. Stop sul broker: puoi chiudere l'app."
         case .daily:
@@ -1647,6 +1763,8 @@ private struct SystemSettingsView: View {
             return "Studio 2006–oggi: circa +8% l'anno con cali fino al −22%. Compra in chiusura, vende all'apertura. Servono due aperture al giorno: mattina entro le 15:28, pomeriggio entro le 21:50."
         case .intraday:
             return "SPERIMENTALE: nei backtest perde e non batte il caso. Richiede l'app sempre aperta; chiude tutto prima della chiusura."
+        case .crypto:
+            return "Studio trend 2018–oggi (run 43358878933): Donchian20 + chandelier 3 ATR sopra SMA200, +8,4%/anno, perdita max −9%, Sharpe 1,08. 5 coppie (BTC, ETH, SOL, AVAX, LINK in USD), budget 1/5 per coppia, ordini frazionati, stop sul broker attivo 24/7 anche ad app chiusa."
         }
     }
 
@@ -1675,6 +1793,48 @@ private struct SystemSettingsView: View {
             .accessibilityIdentifier("buyableETF")
     }
 
+    /// BALANCE ADVISOR in SISTEMA: card con il consiglio della fascia di saldo,
+    /// sempre visibile (anche se coincide con la modalità già scelta).
+    @ViewBuilder
+    private var balanceAdvisorCard: some View {
+        let hidden = Formatters.sync(engine.strategyConfig.hideAmounts)
+        if let advice = BalanceAdvisor.advise(equity: engine.account?.equityValue, maskAmounts: hidden) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Image(systemName: "lightbulb")
+                        .font(.caption.weight(.bold))
+                    Text(advice.headline)
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                    if draft.tradingMode == advice.recommended {
+                        Text("già attiva").font(.caption.weight(.semibold))
+                    }
+                }
+                Text(advice.detail)
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let alternative = advice.alternative {
+                    Text(alternative)
+                        .font(.caption.weight(.medium))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if draft.tradingMode != advice.recommended {
+                    Button("Passa a \(advice.recommended.shortLabel)") {
+                        draft.tradingMode = advice.recommended
+                    }
+                    .font(.caption.weight(.semibold))
+                }
+                Text("Consiglio automatico in base al saldo: la scelta resta tua, cambia al prossimo START.")
+                    .font(.caption2)
+                    .foregroundStyle(Theme.textTertiary)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
+            .accessibilityIdentifier("balanceAdvisorCard")
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             AppCard {
@@ -1697,6 +1857,9 @@ private struct SystemSettingsView: View {
                     ? "In giornaliera Kimi viene chiamato solo se un ETF è in trend (sopra SMA200) con RSI2 sotto 10. Nessun segnale = zero crediti."
                     : "Nella veloce Kimi decide alla chiusura della candela; il filtro gratuito pre-Kimi blocca le chiamate a vuoto."))
             }
+
+            // BALANCE ADVISOR in SISTEMA: consiglio in base al saldo reale.
+            balanceAdvisorCard
 
             Group {
                 // Il numero che conta, scritto in chiaro: quanto usa il bot adesso.
@@ -1932,6 +2095,15 @@ private struct SystemSettingsView: View {
                     settingRow("Uscite", "chiusura > SMA5 o \(DailyStrategy.maxHoldingDays) giorni, solo a mercato aperto")
                     settingRow("Dati", "barre giornaliere SIP (consolidate), ripiego IEX")
                     settingRow("Controlli", "subito, ogni 15 min ad app aperta e a ogni riapertura")
+                } else if config.tradingMode == .crypto {
+                    let equity = engine.account?.equityValue
+                    let budget = min(equity ?? config.sanitized.capitalCap, config.sanitized.capitalCap)
+                    settingRow("Paniere", CryptoStrategy.pairs.joined(separator: " · ") + ", peso uguale")
+                    settingRow("Budget per coppia", Formatters.amount(budget / Double(CryptoStrategy.pairs.count)) + " USD (1/5 del capitale)")
+                    settingRow("Regole", "sopra SMA200, rottura Donchian20 · uscita chandelier 3 ATR (studio run 43358878933)")
+                    settingRow("Ordini", "frazionati (8 decimali), senza bracket: market, poi stop_limit GTC sul broker")
+                    settingRow("Rischio", "blocco drawdown 10% dal picco · stop sul broker attivo anche ad app chiusa")
+                    settingRow("Kimi", "non usato: 0 crediti · refresh prezzi e segnali ogni 60 secondi ad app aperta")
                 } else {
                     settingRow("Decisioni Kimi", "chiusura candela \(config.decisionTimeframeMinutes)m · filtro \(config.kimiFilterEnabled ? "on" : "off")")
                     settingRow("Stream dati", SystemLimits.marketStreamHost)

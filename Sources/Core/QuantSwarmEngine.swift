@@ -102,6 +102,16 @@ final class QuantSwarmEngine: ObservableObject {
     /// Ordini d'ingresso giornalieri: inviati, mai eseguiti, eseguiti in parte.
     @Published private(set) var entryStats = (placed: 0, unfilled: 0, partial: 0)
 
+    // MARK: - Modalità CRYPTO · 24/7 (proposta 20, regole V4 validate dallo studio)
+    /// Segnale corrente per coppia (ultimo ciclo): per il pannello CRUSCOTTO.
+    @Published private(set) var cryptoSignals: [String: CryptoStrategy.Signal] = [:]
+    /// Prezzi live (mid quote) dell'ultimo tick: badge LIVE.
+    @Published private(set) var cryptoPrices: [String: Double] = [:]
+    /// true quando il loop live (60 s) sta girando a app aperta in modalità crypto.
+    @Published private(set) var cryptoLive = false
+    /// Posizioni del registro crypto (ingresso, chandelier, stop) per l'UI.
+    @Published private(set) var cryptoPositions: [CryptoBook.Position] = []
+
     private let keychain: KeychainManager
     /// Nil solo se nessuno store SwiftData si è aperto: l'app gira lo stesso,
     /// ma senza persistere dataset e statistiche locali.
@@ -900,6 +910,12 @@ final class QuantSwarmEngine: ObservableObject {
             drawdownLocked = false
         }
         RiskGuardStore.save(guardState)
+        // Anche il picco del blocco drawdown CRYPTO (10%) si riallinea: il
+        // conto paper rigenerato non deve fermare nemmeno la modalità crypto.
+        let bookAccount = account?.accountNumber
+        var cryptoBook = CryptoBookStore.load(account: bookAccount)
+        cryptoBook.cashPeak = equity
+        CryptoBookStore.save(cryptoBook, account: bookAccount)
         log("Baseline riallineata a \(format(equity)) USD (conto rigenerato o prelievo): il drawdown non conta più il calo fittizio.", agent: .risk)
         NotificationManager.shared.notify(
             "BASELINE RIALLINEATA",
@@ -2219,7 +2235,7 @@ extension QuantSwarmEngine {
         activeMode = mode
         let night = mode == .night
         await rescheduleReminders()
-        configuredSymbols = night ? NightStrategy.universe : DailyStrategy.basket
+        configuredSymbols = night ? NightStrategy.universe : (mode == .crypto ? CryptoStrategy.pairs : DailyStrategy.basket)
         acceptsNewOrders = true
         pauseReason = nil
         maxPositionsLogged = false
@@ -2235,7 +2251,7 @@ extension QuantSwarmEngine {
         applyIdleTimer()
         NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
         sessionStartedAt = Date()
-        statusMessage = "\(mode == .portfolio ? "Portafoglio" : (night ? "Notte" : "Giornaliera")) \(credentials.paperTrading ? "paper" : "live") attiva"
+        statusMessage = "\(mode == .portfolio ? "Portafoglio" : (night ? "Notte" : (mode == .crypto ? "Crypto 24/7" : "Giornaliera"))) \(credentials.paperTrading ? "paper" : "live") attiva"
         log("════════ SESSIONE AVVIATA · ORE \(Date().formatted(date: .omitted, time: .standard)) ════════")
         if night {
             log("Modalità NOTTE: compra in chiusura (asta MOC) S&P 500, Nasdaq-100, Russell 2000 e oro a peso uguale, "
@@ -2243,6 +2259,8 @@ extension QuantSwarmEngine {
                 + "Zero crediti Kimi. Apri l'app la mattina entro le 15:28 e il pomeriggio entro le 21:50.")
         } else if mode == .portfolio {
             log("Modalità PORTAFOGLIO: 30% del capitale alla GIORNALIERA (ETF con stop GTC sul broker) e 70% alla NOTTE (MOC/OPG), riequilibrato a ogni ciclo sull'equity corrente. Studio run 43338377889: CAGR +5,6%, perdita max -17%, Sharpe 0,79. Registri separati: ogni strategia gestisce solo le sue posizioni.")
+        } else if mode == .crypto {
+            log("Modalità CRYPTO · 24/7 (proposta 20, regole V4 validate dallo studio backtest_trend_crypto: +8,4%/anno, perdita max −9%, Sharpe 1,08; finestra orso 2024→26 +7,4%): paniere equal-weight BTC/ETH/SOL/AVAX/LINK in USD, ingresso a rottura del massimo a 20 barre sopra la SMA200, uscita chandelier 3×ATR22 o sotto SMA200. Ordini frazionati `simple` (le crypto Alpaca NON supportano bracket) con stop stop_limit GTC sul broker. Aggiornamento live ogni 60 secondi a app aperta; zero crediti Kimi; blocco drawdown al 10%.")
         } else {
         log(
             "Modalità GIORNALIERA su \(DailyStrategy.basket.count) ETF: Trend (sopra SMA200) + Pullback (RSI2 < 10), "
@@ -2271,10 +2289,15 @@ extension QuantSwarmEngine {
                 await runPortfolioCycle(kimi: kimi, credentials: credentials)
             } else if activeMode == .night {
                 await runNightCycle(credentials: credentials)
+            } else if activeMode == .crypto {
+                await runCryptoCycle(credentials: credentials)
             } else {
                 await runDailyCycle(kimi: kimi, credentials: credentials)
             }
-            let next = Date().addingTimeInterval(15 * 60)
+            // CRYPTO: ciclo live ogni 60 secondi (i mercati crypto non
+            // chiudono mai). Le altre modalità lavorano ogni 15 minuti.
+            let interval: TimeInterval = activeMode == .crypto ? 60 : 15 * 60
+            let next = Date().addingTimeInterval(interval)
             nextCheckAt = next
             if isRunning {
                 currentActivity = "In attesa · prossimo controllo alle \(next.formatted(date: .omitted, time: .shortened))"
@@ -2452,6 +2475,66 @@ extension QuantSwarmEngine {
         await runNightCycle(credentials: credentials, budgetCap: budgets.night)
         await runDailyCycle(kimi: kimi, credentials: credentials, budgetCap: budgets.daily)
         refreshStrategyPnL()
+    }
+
+    /// Ciclo live della modalità CRYPTO (ogni 60 secondi a app aperta).
+    /// Zero crediti Kimi: i segnali sono regole pure deterministiche (V4).
+    /// Con l'app in background niente nuovi ingressi; sul broker restano attivi
+    /// gli stop stop_limit GTC (riconciliazione completa al rientro).
+    fileprivate func runCryptoCycle(credentials: StoredCredentials) async {
+        pipeline = PipelineStage.initial()
+        if let pause = computePauseReason() {
+            pauseReason = pause
+            setStage(.scout, .blocked, "motore in pausa: \(pause)")
+            skipStages(after: .scout, "pausa")
+            log("MOTORE IN PAUSA: \(pause). Nessun controllo finché non rientra.", agent: .system)
+            cryptoLive = false
+            return
+        }
+        pauseReason = nil
+        await refreshPortfolio()
+        var entryBlock: String?
+        if !acceptsNewOrders { entryBlock = "app in background" }
+        else if drawdownLocked { entryBlock = "stop drawdown attivo (sblocco manuale)" }
+        let config = strategyConfig.sanitized
+        let bookAccount = account?.accountNumber
+        let input = CryptoCycleInput(
+            book: CryptoBookStore.load(account: bookAccount),
+            today: DailyStrategy.tradingDay(Date()),
+            capitalCap: config.capitalCap,
+            entryBlock: entryBlock
+        )
+        let runner = CryptoCycleRunner(broker: AlpacaCryptoBroker(service: AlpacaService(credentials: credentials.alpaca)))
+        let result = await runner.run(input) { [weak self] event in
+            await self?.applyCrypto(event)
+        }
+        CryptoBookStore.save(result.book, account: bookAccount)
+        cryptoSignals = result.signals
+        cryptoPrices = result.livePrices
+        cryptoPositions = result.book.positions
+        cryptoLive = isRunning && acceptsNewOrders && result.dataOK
+        botExposure = result.book.positions.reduce(0) { $0 + $1.qty * $1.entryPrice }
+        if result.dataOK, let equity = result.equity {
+            let key = equityAccountKey
+            let updated = EquityHistory.record(EquityHistoryStore.load(account: key),
+                                               day: input.today, equity: equity, benchmark: nil,
+                                               capital: config.capitalCap)
+            EquityHistoryStore.save(updated, account: key)
+            equityHistory = EquityHistoryStore.load(account: key)
+        }
+        await refreshPortfolio()
+    }
+
+    fileprivate func applyCrypto(_ event: CryptoCycleEvent) {
+        if let stage = event.stage {
+            setStage(stage, event.state, event.detail)
+        } else {
+            lastLoopBeat = Date()
+        }
+        if let message = event.log {
+            log(message, agent: event.agent)
+        }
+        if let notice = event.notify { NotificationManager.shared.notify(notice.title, body: notice.body) }
     }
 
     /// P&L separato per strategia: non realizzato delle posizioni aperte di

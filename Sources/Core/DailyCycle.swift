@@ -113,9 +113,10 @@ struct NewsHeadline: Sendable, Equatable, Identifiable {
 /// Brain e Reviewer della modalità giornaliera (Kimi).
 protocol DailyBrain: Sendable {
     func decide(candidates: [DailyStrategy.Candidate], market: [String: DailyStrategy.Snapshot],
-                openPositions: [String], slots: Int, feedback: String?) async throws -> [DailyVerdict]
+                openPositions: [String], slots: Int, feedback: String?,
+                shadow: ShadowDigest?) async throws -> [DailyVerdict]
     func review(candidate: DailyStrategy.Candidate, verdict: DailyVerdict,
-                market: [String: DailyStrategy.Snapshot]) async throws -> KimiReview
+                market: [String: DailyStrategy.Snapshot], shadow: ShadowDigest?) async throws -> KimiReview
 }
 
 // MARK: - Ciclo giornaliero (logica pura + chiamate tramite interfacce)
@@ -419,12 +420,16 @@ struct DailyCycleRunner: Sendable {
 
         // 4. BRAIN
         await emit(.init(stage: .brain, state: .working, detail: "Kimi valuta \(fresh.count) candidati, \(slots) posti liberi"))
+        // Digest del registro ombra (ultimi 10 esiti misurati) per l'auto-correzione
+        // dei bias di Brain e Reviewer: leggero per costruzione.
+        let shadowDigest = ShadowDigest.from(book.shadow)
         let verdicts: [DailyVerdict]
         do {
             result.kimiCalls += 1
             verdicts = try await brain.decide(candidates: fresh, market: market,
                                               openPositions: Array(held.keys).sorted(), slots: slots,
-                                              feedback: ShadowSummary.from(book.shadow).feedbackText)
+                                              feedback: ShadowSummary.from(book.shadow).feedbackText,
+                                              shadow: shadowDigest)
         } catch {
             await emit(.init(stage: .brain, state: .failed, detail: "Kimi non ha risposto: nessun ordine",
                              log: "Brain Kimi fallito (\(error.localizedDescription)): nessun ordine.", agent: .brain))
@@ -479,7 +484,8 @@ struct DailyCycleRunner: Sendable {
             let review: KimiReview
             do {
                 result.kimiCalls += 1
-                review = try await brain.review(candidate: candidate, verdict: verdict, market: market)
+                review = try await brain.review(candidate: candidate, verdict: verdict, market: market,
+                                                shadow: shadowDigest)
             } catch {
                 status[symbol] = ShadowEntry.blocked
                 await emit(.init(stage: .reviewer, state: .failed, detail: "\(symbol): revisore non raggiungibile",

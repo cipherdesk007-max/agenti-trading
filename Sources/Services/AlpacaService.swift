@@ -235,6 +235,27 @@ private struct BarsResponse: Decodable {
     let bars: [AlpacaBar]?
 }
 
+/// Risposta /v1beta3/crypto/us/bars: barre per simbolo + token di paginazione.
+private struct CryptoBarsResponse: Decodable {
+    let bars: [String: [AlpacaBar]]?
+    let nextPageToken: String?
+
+    enum CodingKeys: String, CodingKey {
+        case bars
+        case nextPageToken = "next_page_token"
+    }
+}
+
+/// Risposta /v1beta3/crypto/us/latest/quotes: bid/ask per simbolo.
+private struct CryptoLatestQuotesResponse: Decodable {
+    struct Quote: Decodable {
+        let bp: Double?
+        let ap: Double?
+    }
+
+    let quotes: [String: Quote]?
+}
+
 /// Ultimo trade dal market data REST (rilettura prezzo dopo la risposta di Kimi).
 private struct LatestTradeResponse: Decodable {
     struct Trade: Decodable {
@@ -680,6 +701,110 @@ actor AlpacaService {
             throw QuantSwarmError.invalidServerResponse("Order ID non codificabile")
         }
         _ = try await send(path: "/v2/orders/\(escaped)", method: "DELETE")
+    }
+
+    // MARK: - Crypto (v1beta3 market data + ordini `simple` frazionati)
+
+    /// Barre 1D CHIUSE delle coppie crypto richieste (solo barre completate:
+    /// l'ultima barra del giorno in corso è in formazione e viene scartata).
+    /// `limit` di Alpaca conta i dati TOTALI (non per simbolo) e la risposta
+    /// può paginarsi: si segue `next_page_token` finché serve.
+    func cryptoDailyBars(symbols: [String], barsPerSymbol: Int = 260,
+                         now: Date = Date()) async throws -> [String: [Candle]] {
+        guard !symbols.isEmpty else { return [:] }
+        let joined = symbols.joined(separator: ",")
+        let start = ISO8601DateFormatter().string(
+            from: now.addingTimeInterval(-Double(barsPerSymbol + 40) * 86_400)
+        )
+        var collected: [String: [Candle]] = [:]
+        var pageToken: String?
+        var pages = 0
+        repeat {
+            var query = [
+                URLQueryItem(name: "symbols", value: joined),
+                URLQueryItem(name: "timeframe", value: "1Day"),
+                URLQueryItem(name: "start", value: start),
+                URLQueryItem(name: "sort", value: "asc"),
+                URLQueryItem(name: "limit", value: String(min(barsPerSymbol * symbols.count, 10_000)))
+            ]
+            if let pageToken { query.append(URLQueryItem(name: "page_token", value: pageToken)) }
+            let data = try await send(
+                baseURL: credentials.marketDataBaseURL,
+                path: "/v1beta3/crypto/us/bars",
+                method: "GET",
+                query: query
+            )
+            let response = try JSONDecoder().decode(CryptoBarsResponse.self, from: data)
+            for (symbol, bars) in response.bars {
+                let candles = bars.compactMap(\.candle)
+                collected[symbol, default: []].append(contentsOf: candles)
+            }
+            pageToken = response.nextPageToken
+            pages += 1
+        } while pageToken != nil && pages < 5
+        for symbol in collected.keys {
+            collected[symbol]?.sort { $0.timestamp < $1.timestamp }
+            // Barra chiusa: l'inizio + 24h è già passato.
+            collected[symbol] = (collected[symbol] ?? []).filter { $0.timestamp.addingTimeInterval(86_400) <= now }
+        }
+        return collected
+    }
+
+    /// Ultime quotazioni (bid/ask) delle coppie crypto; prezzo medio = (bp+ap)/2.
+    func latestCryptoQuotes(symbols: [String]) async throws -> [String: Double] {
+        guard !symbols.isEmpty else { return [:] }
+        let data = try await send(
+            baseURL: credentials.marketDataBaseURL,
+            path: "/v1beta3/crypto/us/latest/quotes",
+            method: "GET",
+            query: [URLQueryItem(name: "symbols", value: symbols.joined(separator: ","))]
+        )
+        let response = try JSONDecoder().decode(CryptoLatestQuotesResponse.self, from: data)
+        var mids: [String: Double] = [:]
+        for (symbol, quote) in response.quotes {
+            if let bid = quote.bp, let ask = quote.ap, bid > 0, ask > 0 {
+                mids[symbol] = (bid + ask) / 2
+            }
+        }
+        return mids
+    }
+
+    /// Ordine crypto `simple` a mercato, frazionato (qty decimale, max 8
+    /// decimali). Le crypto Alpaca NON supportano bracket/oto/oco (422) e il
+    /// loro time_in_force è solo gtc/ioc: qui sempre gtc.
+    func submitCryptoMarket(symbol: String, quantity: Double, side: String,
+                            clientOrderId: String) async throws -> AlpacaOrder {
+        let body: [String: Any] = [
+            "symbol": symbol.uppercased(),
+            "qty": decimalString(quantity, fractionDigits: 8),
+            "side": side,
+            "type": "market",
+            "time_in_force": "gtc",
+            "order_class": "simple",
+            "client_order_id": clientOrderId
+        ]
+        let data = try await send(path: "/v2/orders", method: "POST", body: body)
+        return try JSONDecoder().decode(AlpacaOrder.self, from: data)
+    }
+
+    /// Stop protettivo crypto: vendita `stop_limit` GTC separata (sulle crypto
+    /// Alpaca esistono market, limit e stop_limit: NON il "stop" semplice).
+    /// `limitPrice` leggermente sotto lo stop per garantire l'esecuzione.
+    func submitCryptoStopLimit(symbol: String, quantity: Double, stopPrice: Double,
+                               limitPrice: Double, clientOrderId: String) async throws -> AlpacaOrder {
+        let body: [String: Any] = [
+            "symbol": symbol.uppercased(),
+            "qty": decimalString(quantity, fractionDigits: 8),
+            "side": "sell",
+            "type": "stop_limit",
+            "time_in_force": "gtc",
+            "order_class": "simple",
+            "stop_price": decimalString(stopPrice, fractionDigits: priceFractionDigits(stopPrice)),
+            "limit_price": decimalString(limitPrice, fractionDigits: priceFractionDigits(limitPrice)),
+            "client_order_id": clientOrderId
+        ]
+        let data = try await send(path: "/v2/orders", method: "POST", body: body)
+        return try JSONDecoder().decode(AlpacaOrder.self, from: data)
     }
 
     func cancelAllAndFlatten() async throws {
