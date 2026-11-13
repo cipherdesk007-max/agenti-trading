@@ -35,9 +35,14 @@ actor FakeBroker: BrokerClient {
     func set(failClose: Bool) { self.failClose = failClose }
     func set(timeoutButCreated: Bool) { self.timeoutButCreated = timeoutButCreated }
     func set(rejectedRecovered: Bool) { self.rejectedRecovered = rejectedRecovered }
+    /// true simula lo STOP del motore durante il ciclo (CancellationError).
+    var cancelDuringScout = false
+
     func set(brokerDown: Bool) { self.brokerDown = brokerDown }
+    func set(cancelDuringScout: Bool) { self.cancelDuringScout = cancelDuringScout }
 
     func isMarketOpen() async throws -> Bool {
+        if cancelDuringScout { throw CancellationError() }
         if brokerDown { throw FakeError() }
         return marketOpen
     }
@@ -168,6 +173,24 @@ final class DailyCycleTests: XCTestCase {
         let brain = FakeBrain()
         let result = await runner(broker, brain).run(input()) { _ in }
         XCTAssertTrue(result.aborted)
+        let calls = await brain.decideCalls
+        XCTAssertEqual(calls, 0)
+    }
+
+    func testStopDuringCycleIsNotLoggedAsBrokerError() async {
+        // STOP del motore durante il ciclo: CancellationError, NON un errore
+        // del broker. Prima il catch generico lo loggava come "broker non
+        // raggiungibile" (righe false nel log alla chiusura sessione).
+        let broker = FakeBroker(bars: ["SPY": pullback])
+        await broker.set(cancelDuringScout: true)
+        let brain = FakeBrain()
+        let sink = LogSink()
+        let result = await runner(broker, brain).run(input()) { event in
+            if let message = event.log { await sink.add(message) }
+        }
+        let logs = await sink.all()
+        XCTAssertTrue(result.aborted)
+        XCTAssertTrue(logs.isEmpty, "lo STOP non va loggato come errore broker: \(logs)")
         let calls = await brain.decideCalls
         XCTAssertEqual(calls, 0)
     }

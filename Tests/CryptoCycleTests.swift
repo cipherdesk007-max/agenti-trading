@@ -16,6 +16,8 @@ actor FakeCryptoBroker: CryptoBrokerClient {
     let brokerQty: [String: Double]
     /// Fattore di fill degli ordini market (1 = pieno, 0.5 = parziale).
     let fillFactor: Double
+    /// true simula lo STOP del motore durante il ciclo (CancellationError).
+    let cancelOnAccount: Bool
 
     private(set) var events: [String] = []
     private(set) var marketOrders: [MarketCall] = []
@@ -42,13 +44,14 @@ actor FakeCryptoBroker: CryptoBrokerClient {
 
     init(equity: Double, cash: Double, bars: [String: [Candle]] = [:],
          livePrices: [String: Double] = [:], brokerQty: [String: Double] = [:],
-         fillFactor: Double = 1.0) {
+         fillFactor: Double = 1.0, cancelOnAccount: Bool = false) {
         self.equity = equity
         self.cash = cash
         self.bars = bars
         self.livePrices = livePrices
         self.brokerQty = brokerQty
         self.fillFactor = fillFactor
+        self.cancelOnAccount = cancelOnAccount
     }
 
     func snapshot() -> Snapshot {
@@ -57,7 +60,8 @@ actor FakeCryptoBroker: CryptoBrokerClient {
     }
 
     func account() async throws -> BrokerAccount {
-        BrokerAccount(equity: equity, cash: cash, buyingPower: cash)
+        if cancelOnAccount { throw CancellationError() }
+        return BrokerAccount(equity: equity, cash: cash, buyingPower: cash)
     }
 
     func cryptoBars(symbol: String) async throws -> [Candle] {
@@ -109,6 +113,14 @@ actor FakeCryptoBroker: CryptoBrokerClient {
 }
 
 // MARK: - Test del ciclo
+
+/// Raccolta dei log emessi dal ciclo (Swift 6 strict concurrency: lo stato
+/// mutabile vive dietro l'attore, il resto del test legge con await).
+actor LogSink {
+    private(set) var logs: [String] = []
+    func add(_ message: String) { logs.append(message) }
+    func all() -> [String] { logs }
+}
 
 /// Ciclo live della modalità CRYPTO (CryptoCycleRunner): ingressi frazionati
 /// SENZA bracket (market semplice, poi stop_limit GTC separato), uscite con
@@ -350,5 +362,44 @@ final class CryptoCycleTests: XCTestCase {
         XCTAssertTrue(snap.marketOrders.isEmpty)
         // Il segnale è comunque visibile nel pannello.
         XCTAssertEqual(result.signals["BTC/USD"]?.state, .entry)
+    }
+
+    // MARK: - Riepilogo SCOUT del ciclo: il log dice PERCHÉ le coppie sono fuori
+
+    func testCycleLogsSummaryExplainingFlatBelowSMA200() async {
+        // 219 barre a 100 + chiusura a 90: sotto la SMA200, regime ribassista.
+        var bars = (0..<219).map { bar($0, close: 100) }
+        bars.append(bar(219, close: 90, high: 91, low: 89))
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": bars])
+        let sink = LogSink()
+        let input = CryptoCycleInput(book: CryptoBook(), today: "2026-11-13", pairs: ["BTC/USD"])
+        _ = await CryptoCycleRunner(broker: broker).run(input) { event in
+            if let message = event.log { await sink.add(message) }
+        }
+        let logs = await sink.all()
+        let summary = logs.first { $0.hasPrefix("CRYPTO ciclo:") }
+        XCTAssertNotNil(summary, "il ciclo silenzioso ora lascia una riga: \(logs)")
+        XCTAssertTrue(summary!.contains("BTC fuori sotto SMA200"), summary!)
+        XCTAssertTrue(summary!.contains("posizioni 0/1"), summary!)
+        XCTAssertTrue(summary!.contains("budget 5000 USD/coppia"), summary!)
+        XCTAssertTrue(summary!.contains("drawdown ok"), summary!)
+    }
+
+    func testStopDuringCycleIsNotLoggedAsBrokerError() async {
+        // STOP del motore mentre il ciclo gira: CancellationError, NON un
+        // errore del broker (nel log dell'utente comparivano righe false di
+        // "broker non raggiungibile" alla chiusura della sessione).
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": flatBars], cancelOnAccount: true)
+        let sink = LogSink()
+        let input = CryptoCycleInput(book: CryptoBook(), today: "2026-11-13", pairs: ["BTC/USD"])
+        let result = await CryptoCycleRunner(broker: broker).run(input) { event in
+            if let message = event.log { await sink.add(message) }
+        }
+        let logs = await sink.all()
+        XCTAssertTrue(logs.isEmpty, "lo STOP non va loggato come errore: \(logs)")
+        XCTAssertFalse(result.dataOK)
+        XCTAssertTrue(result.orders.isEmpty)
     }
 }

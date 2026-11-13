@@ -1358,8 +1358,8 @@ struct TerminalDashboardView: View {
                             Text(pair)
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(Theme.textPrimary)
-                            if let state = signal?.state {
-                                StatusChip(text: Self.cryptoStateLabel(state), color: Self.cryptoStateColor(state))
+                            if let signal {
+                                StatusChip(text: signal.chipLabel, color: Self.cryptoStateColor(signal.state))
                             }
                             Spacer()
                             Text(price.map { Formatters.money($0) + " $" } ?? "—")
@@ -1372,6 +1372,10 @@ struct TerminalDashboardView: View {
                                     .font(.caption2.monospacedDigit())
                                     .foregroundStyle(Theme.textSecondary)
                             }
+                        } else if let signal {
+                            Text(Self.cryptoLevelsLine(signal))
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(Theme.textSecondary)
                         }
                     }
                     .padding(Layout.paddingS)
@@ -1386,13 +1390,19 @@ struct TerminalDashboardView: View {
         }
     }
 
-    private static func cryptoStateLabel(_ state: CryptoStrategy.Signal.State) -> String {
-        switch state {
-        case .entry: return "ENTRATA"
-        case .hold: return "IN POSIZIONE"
-        case .exit: return "USCITA"
-        case .flat: return "FUORI"
-        case .warmup: return "DATI…"
+    /// Riga dei livelli per una coppia SENZA posizione: dice perché è fuori
+    /// (regime sotto SMA200 o rottura Donchian20 da superare) invece di
+    /// lasciare il chip "FUORI" senza spiegazione.
+    private static func cryptoLevelsLine(_ signal: CryptoStrategy.Signal) -> String {
+        switch signal.state {
+        case .warmup:
+            return "storico in caricamento (servono \(CryptoStrategy.smaPeriod) barre giornaliere)"
+        case .flat:
+            return "SMA200 \(Formatters.money(signal.sma200)) $ · rottura Donchian20 \(Formatters.money(signal.donchianHigh)) $"
+        case .entry:
+            return "rottura Donchian20 sopra SMA200 (\(Formatters.money(signal.donchianHigh)) $)"
+        case .hold, .exit:
+            return "SMA200 \(Formatters.money(signal.sma200)) $ · chandelier \(signal.chandelier.map { Formatters.money($0) } ?? "—") $"
         }
     }
 

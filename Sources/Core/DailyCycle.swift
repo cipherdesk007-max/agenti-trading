@@ -203,6 +203,10 @@ struct DailyCycleRunner: Sendable {
             account = try await broker.account()
             positions = try await broker.positions()
             orders = try await broker.openOrders()
+        } catch is CancellationError {
+            // STOP del motore durante il ciclo: non è un errore del broker.
+            result.aborted = true
+            return result
         } catch {
             await emit(.init(stage: .scout, state: .failed, detail: "broker non raggiungibile",
                              log: "Scout: broker non raggiungibile (\(error.localizedDescription)); ciclo annullato, nessun ordine.", agent: .scout))

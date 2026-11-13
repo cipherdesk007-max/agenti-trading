@@ -101,9 +101,17 @@ struct CryptoCycleRunner: Sendable {
         var result = CryptoCycleResult(book: book)
 
         // 1. Conto e blocco drawdown (ferreo, in codice: nessun LLM).
-        guard let account = try? await broker.account() else {
+        // Se il motore si sta fermando (STOP manuale) il task viene cancellato:
+        // NON è un errore del broker e non va loggato come tale.
+        let account: BrokerAccount
+        do {
+            account = try await broker.account()
+        } catch is CancellationError {
+            result.book = book
+            return result
+        } catch {
             await emit(.init(stage: .scout, state: .failed, detail: "conto non raggiungibile",
-                             log: "CRYPTO: conto Alpaca non raggiungibile, ciclo saltato.", agent: .scout))
+                             log: "CRYPTO: conto Alpaca non raggiungibile (\(error.localizedDescription)); ciclo saltato.", agent: .scout))
             result.book = book
             return result
         }
@@ -117,11 +125,27 @@ struct CryptoCycleRunner: Sendable {
         var entryBlock = input.entryBlock
         if ddBlocked { entryBlock = "stop drawdown 10% crypto" }
 
-        // 2. Barre chiuse + prezzi live.
+        // 2. Barre chiuse + prezzi live. La CancellationError (STOP del motore
+        // durante il ciclo) esce in silenzio; un errore di dati per una coppia
+        // è il fallback noto: quella coppia salta il tick, le altre continuano.
         var bars: [String: [Candle]] = [:]
         for pair in input.pairs {
-            bars[pair] = (try? await broker.cryptoBars(symbol: pair)) ?? []
-            result.livePrices[pair] = (try? await broker.latestPrice(symbol: pair)) ?? 0
+            do {
+                bars[pair] = try await broker.cryptoBars(symbol: pair)
+            } catch is CancellationError {
+                result.book = book
+                return result
+            } catch {
+                bars[pair] = []
+            }
+            do {
+                result.livePrices[pair] = try await broker.latestPrice(symbol: pair)
+            } catch is CancellationError {
+                result.book = book
+                return result
+            } catch {
+                result.livePrices[pair] = 0
+            }
         }
         let pairsWithData = input.pairs.filter { (bars[$0]?.count ?? 0) >= CryptoStrategy.smaPeriod }
         if pairsWithData.isEmpty {
@@ -255,8 +279,39 @@ struct CryptoCycleRunner: Sendable {
             }
         }
 
+        // 5. Riepilogo SCOUT del ciclo: UNA riga sola a tick, e il motore la
+        // ripete solo se cambia (deduplica in applyCrypto). Prima il log
+        // taceva quando non c'era nulla da fare e non si capiva perché tutte
+        // le coppie fossero FUORI; ora il ciclo dice sempre stato e motivo:
+        // sotto SMA200 (regime ribassista, non si opera) o in attesa di
+        // rottura, con il livello Donchian20 da superare.
+        var summaryParts: [String] = []
+        for pair in input.pairs {
+            let short = Self.shortName(pair)
+            guard let signal = result.signals[pair] else {
+                summaryParts.append("\(short) senza dati")
+                continue
+            }
+            switch signal.state {
+            case .warmup: summaryParts.append("\(short) dati insufficienti")
+            case .flat: summaryParts.append("\(short) \(signal.flatShortText)")
+            case .entry: summaryParts.append("\(short) ingresso")
+            case .hold: summaryParts.append("\(short) in posizione")
+            case .exit: summaryParts.append("\(short) uscita")
+            }
+        }
+        let drawdownText = ddBlocked ? "drawdown FERMO (−10%)" : "drawdown ok"
+        let blockText = (entryBlock != nil && !ddBlocked) ? " · ingressi bloccati" : ""
+        await emit(.init(log: "CRYPTO ciclo: \(summaryParts.joined(separator: " · ")) · posizioni \(book.positions.count)/\(input.pairs.count) · budget \(Int(result.budgetPerPair.rounded())) USD/coppia · \(drawdownText)\(blockText)",
+                         agent: .scout))
+
         result.book = book
         return result
+    }
+
+    /// Nome breve della coppia per i log: "BTC/USD" -> "BTC".
+    static func shortName(_ pair: String) -> String {
+        pair.hasSuffix("/USD") ? String(pair.dropLast(4)) : pair
     }
 
     /// Chiave barra: giorno UTC della chiusura (YYYY-MM-DD).

@@ -45,8 +45,14 @@ actor FakeNightBroker: NightBroker {
     func set(calendar: [TradingDay]?) { self.calendar = calendar }
     func set(fills: [String: Double]) { self.fills = fills }
     func set(auctions: [String: Double]) { self.auctions = auctions }
+    /// true simula lo STOP del motore durante il ciclo (CancellationError).
+    var cancelOnClock = false
+    func set(cancelOnClock: Bool) { self.cancelOnClock = cancelOnClock }
 
-    func nightClock() async throws -> (isOpen: Bool, nextClose: Date?) { (isOpen, nextClose) }
+    func nightClock() async throws -> (isOpen: Bool, nextClose: Date?) {
+        if cancelOnClock { throw CancellationError() }
+        return (isOpen, nextClose)
+    }
     func account() async throws -> BrokerAccount { acct }
     func positions() async throws -> [BrokerPosition] { held }
     func openOrders() async throws -> [BrokerOrder] { orders }
@@ -367,6 +373,22 @@ final class NightCycleTests: XCTestCase {
     }
 
     // MARK: - Ciclo
+
+    func testStopDuringCycleIsNotLoggedAsBrokerError() async {
+        // STOP del motore durante il ciclo: CancellationError, NON un errore
+        // del broker. Prima il catch generico lo loggava come "broker non
+        // raggiungibile" (righe false nel log alla chiusura sessione).
+        let broker = FakeNightBroker(isOpen: true, nextClose: et(16))
+        await broker.set(cancelOnClock: true)
+        let input = NightCycleInput(book: NightBook(), today: "2026-11-11", now: et(14))
+        let sink = LogSink()
+        let result = await NightCycleRunner(broker: broker, settleWaitSeconds: 0).run(input) { event in
+            if let message = event.log { await sink.add(message) }
+        }
+        let logs = await sink.all()
+        XCTAssertTrue(result.aborted)
+        XCTAssertTrue(logs.isEmpty, "lo STOP non va loggato come errore broker: \(logs)")
+    }
 
     func testBuyWindowQueuesCloseAuctionBuys() async {
         let broker = FakeNightBroker(isOpen: true, nextClose: et(16))

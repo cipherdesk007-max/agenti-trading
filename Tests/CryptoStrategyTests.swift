@@ -118,4 +118,48 @@ final class CryptoStrategyTests: XCTestCase {
         XCTAssertFalse(CryptoStrategy.drawdownBlocked(equity: 50, peak: nil))   // niente picco: libero
         XCTAssertFalse(CryptoStrategy.drawdownBlocked(equity: 120, peak: 100)) // nuovo picco
     }
+
+    // MARK: - Chip esplicativi (il pannello non mostra più "FUORI" secco)
+
+    func testChipLabelFlatBelowSMA200ExplainsTheRegime() {
+        var bars = (0..<219).map { bar($0, close: 100) }
+        bars.append(bar(219, close: 90, high: 91, low: 89))
+        let signal = CryptoStrategy.evaluate(symbol: "BTC/USD", closedBars: bars, heldHighestClose: nil)!
+        XCTAssertEqual(signal.state, .flat)
+        XCTAssertEqual(signal.chipLabel, "FUORI · sotto SMA200")
+        XCTAssertEqual(signal.flatShortText, "fuori sotto SMA200")
+    }
+
+    func testChipLabelFlatAboveSMA200ShowsTheBreakoutLevel() {
+        var bars = flatBars
+        bars.append(bar(220, close: 100.5, high: 100.6, low: 100.4)) // sopra SMA200, nessuna rottura
+        let signal = CryptoStrategy.evaluate(symbol: "BTC/USD", closedBars: bars, heldHighestClose: nil)!
+        XCTAssertEqual(signal.state, .flat)
+        XCTAssertTrue(signal.close > signal.sma200) // precondizione: regime ok
+        XCTAssertTrue(signal.chipLabel.hasPrefix("FUORI · attende rottura "),
+                      "chip = \(signal.chipLabel)")
+        XCTAssertEqual(signal.flatShortText, "fuori, attende rottura")
+    }
+
+    func testChipLabelOtherStates() {
+        XCTAssertEqual(CryptoStrategy.evaluate(symbol: "BTC/USD", closedBars: (0..<100).map { bar($0, close: 100) },
+                                               heldHighestClose: nil)!.chipLabel, "DATI…")
+        var entryBars = flatBars
+        entryBars.append(bar(220, close: 130, high: 131, low: 129))
+        XCTAssertEqual(CryptoStrategy.evaluate(symbol: "BTC/USD", closedBars: entryBars,
+                                               heldHighestClose: nil)!.chipLabel, "ENTRATA")
+        XCTAssertEqual(CryptoStrategy.evaluate(symbol: "BTC/USD", closedBars: flatBars,
+                                               heldHighestClose: 102)!.chipLabel, "IN POSIZIONE")
+        XCTAssertEqual(CryptoStrategy.evaluate(symbol: "BTC/USD", closedBars: flatBars,
+                                               heldHighestClose: 150)!.chipLabel, "USCITA")
+    }
+
+    func testPriceTextAdaptsToMagnitude() {
+        // BTC: migliaia senza decimali; AVAX: decimali fino a 4 sotto 10 USD.
+        XCTAssertTrue(CryptoStrategy.priceText(68_780.63).hasPrefix("68.781") ||
+                      CryptoStrategy.priceText(68_780.63).hasPrefix("68,781"))
+        XCTAssertTrue(CryptoStrategy.priceText(8.118).hasPrefix("8,118") ||
+                      CryptoStrategy.priceText(8.118).hasPrefix("8.118"))
+        XCTAssertFalse(CryptoStrategy.priceText(1_925.11).contains(","), "niente decimali sopra 1000")
+    }
 }

@@ -148,6 +148,9 @@ final class QuantSwarmEngine: ObservableObject {
     /// Ultimo esito "Strategia: …" scritto nel log: le ripetizioni identiche
     /// a ogni rientro non sporcano il registro.
     private var lastStrategyLog: String?
+    /// Ultimo riepilogo "CRYPTO ciclo: …" scritto: identico a ogni tick di 60 s
+    /// non viene ripetuto (cambia lo stato di una coppia e si riscrive).
+    private var lastCryptoSummary: String?
     /// Protezioni persistite (stop giornaliero UTC + drawdown): un riavvio
     /// dell'app non azzera i circuit breaker.
     private var guardState = RiskGuardStore.load()
@@ -564,6 +567,7 @@ final class QuantSwarmEngine: ObservableObject {
         kimiCallsToday = creditGuard.calls
         NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
+        lastCryptoSummary = nil
         applyIdleTimer()
         // App in primo piano: nessun promemoria, eventuali residui annullati.
         NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
@@ -2248,6 +2252,7 @@ extension QuantSwarmEngine {
         dailyCandidates = []
         NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
+        lastCryptoSummary = nil
         applyIdleTimer()
         NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
         sessionStartedAt = Date()
@@ -2532,6 +2537,13 @@ extension QuantSwarmEngine {
             lastLoopBeat = Date()
         }
         if let message = event.log {
+            // Il riepilogo del ciclo crypto arriva ogni 60 s identico a sé
+            // stesso quando nulla cambia: lo si scrive solo la prima volta
+            // (o quando lo stato di una coppia è cambiato davvero).
+            if message.hasPrefix("CRYPTO ciclo:") {
+                if message == lastCryptoSummary { return }
+                lastCryptoSummary = message
+            }
             log(message, agent: event.agent)
         }
         if let notice = event.notify { NotificationManager.shared.notify(notice.title, body: notice.body) }

@@ -139,6 +139,41 @@ enum CryptoStrategy {
         guard let peak, peak > 0 else { return false }
         return equity / peak - 1 < -maxDrawdown
     }
+
+    /// Prezzo crypto compatto per chip e log: le migliaia senza decimali,
+    /// sotto 10 USD fino a 4 decimali (BTC e AVAX con la stessa regola).
+    static func priceText(_ value: Double) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "it_IT")
+        formatter.numberStyle = .decimal
+        formatter.maximumFractionDigits = value >= 1000 ? 0 : (value >= 10 ? 2 : 4)
+        return formatter.string(from: NSNumber(value: value)) ?? String(format: "%.2f", value)
+    }
+}
+
+extension CryptoStrategy.Signal {
+    /// Etichetta del chip nel pannello e nei log: "FUORI" da solo non dice se
+    /// la coppia è in regime ribassista (sotto SMA200: non si opera, regola
+    /// V4) o se sta invece aspettando la rottura Donchian20 sopra la media.
+    var chipLabel: String {
+        switch state {
+        case .entry: return "ENTRATA"
+        case .hold: return "IN POSIZIONE"
+        case .exit: return "USCITA"
+        case .warmup: return "DATI…"
+        case .flat:
+            guard close > 0, sma200 > 0 else { return "FUORI" }
+            return close < sma200
+                ? "FUORI · sotto SMA200"
+                : "FUORI · attende rottura \(CryptoStrategy.priceText(donchianHigh))"
+        }
+    }
+
+    /// Perché la coppia è fuori, in una parola per il riepilogo del ciclo.
+    var flatShortText: String {
+        guard state == .flat, close > 0, sma200 > 0 else { return "fuori" }
+        return close < sma200 ? "fuori sotto SMA200" : "fuori, attende rottura"
+    }
 }
 
 /// Registro della modalità CRYPTO (posizioni, picco equity, barre già
