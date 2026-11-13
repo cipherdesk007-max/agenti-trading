@@ -382,7 +382,9 @@ final class CryptoCycleTests: XCTestCase {
         XCTAssertNotNil(summary, "il ciclo silenzioso ora lascia una riga: \(logs)")
         XCTAssertTrue(summary!.contains("BTC fuori sotto SMA200"), summary!)
         XCTAssertTrue(summary!.contains("posizioni 0/1"), summary!)
-        XCTAssertTrue(summary!.contains("budget 5000 USD/coppia"), summary!)
+        // Il budget per coppia è 1/5 del totale anche in un test con una
+        // sola coppia: il paniere di riferimento è sempre quello di 5.
+        XCTAssertTrue(summary!.contains("budget 1000 USD/coppia"), summary!)
         XCTAssertTrue(summary!.contains("drawdown ok"), summary!)
     }
 
