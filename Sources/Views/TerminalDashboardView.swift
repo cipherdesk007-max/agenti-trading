@@ -125,6 +125,7 @@ struct TerminalDashboardView: View {
                             case .operations:
                                 if let update = engine.availableUpdate { updateBanner(update) }
                                 if !engine.paperTrading { liveBanner }
+                                frozenTradingBanner
                                 balanceAdvisorBanner
                                 guardPanel
                                 heroPanel
@@ -680,6 +681,47 @@ struct TerminalDashboardView: View {
             .padding(10)
             .background(Color.red)
             .foregroundStyle(.white)
+    }
+
+    /// Il conto Alpaca ha la voce "trades suspended" attiva (errore 40310000):
+    /// banner rosso nel CRUSCOTTO con il pulsante che toglie il flag
+    /// DIRETTAMENTE dall'app (PATCH /v2/account/configurations), senza
+    /// passare dal pannello web di Alpaca.
+    @ViewBuilder
+    private var frozenTradingBanner: some View {
+        if engine.accountTradingSuspended == true {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.octagon.fill")
+                        .font(.caption.weight(.bold))
+                    Text("TRADING SOSPESO sul conto Alpaca")
+                        .font(.subheadline.weight(.semibold))
+                    Spacer()
+                }
+                Text("Il broker rifiuta TUTTI i nuovi ordini (errore 40310000): è la voce \"trades suspended\" del conto. Premi qui sotto per toglierla dall'app, poi ripremi START.")
+                    .font(.caption)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button {
+                    Task { await engine.resumeAlpacaTrading() }
+                } label: {
+                    HStack(spacing: 6) {
+                        if engine.resumingTrading {
+                            ProgressView().tint(.white)
+                        }
+                        Text(engine.resumingTrading ? "RIATTIVO…" : "RIATTIVA TRADING")
+                            .font(.subheadline.weight(.bold))
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(Color.white, in: Theme.shape(Theme.smallRadius))
+                    .foregroundStyle(Color.red)
+                }
+                .disabled(engine.resumingTrading)
+                .accessibilityIdentifier("resumeTrading")
+            }
+            .padding(12)
+            .background(Theme.red, in: Theme.shape(Theme.smallRadius))
+            .foregroundStyle(.white)
+        }
     }
 
     /// BALANCE ADVISOR: consiglio automatico della modalità in base al saldo
@@ -2122,6 +2164,21 @@ private struct SystemSettingsView: View {
                     settingRow("Foreground", "motore solo ad app aperta: in background nessun ordine")
                 }
                 settingRow("Pause automatiche", "rete assente o batteria < 20%")
+                settingRow("Trading Alpaca", engine.accountTradingSuspended == nil
+                    ? "verifica al primo controllo"
+                    : (engine.accountTradingSuspended! ? "SOSPESO: il broker rifiuta tutti i nuovi ordini" : "attivo: il broker accetta gli ordini"))
+                if engine.accountTradingSuspended == true {
+                    Button(engine.resumingTrading ? "Riattivo…" : "Riattiva trading sul conto Alpaca") {
+                        Task { await engine.resumeAlpacaTrading() }
+                    }
+                    .buttonStyle(TerminalButtonStyle(color: .red))
+                    .disabled(engine.resumingTrading)
+                    Text("La voce \"trades suspended\" del conto Alpaca (errore 40310000) si può togliere direttamente da qui: è la stessa impostazione del pannello app.alpaca.markets, senza uscire dall'app.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .explanation()
+                }
                 Button("Ricalibra equity") {
                     engine.recalibrateEquityBaseline()
                 }

@@ -98,6 +98,13 @@ final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var marketBarsDate: Date?
     /// Aggiornamento disponibile nella sorgente pubblica (nil = nessuno).
     @Published private(set) var availableUpdate: UpdateChecker.Release?
+    /// True = il conto Alpaca ha la voce "trades suspended" attiva: il broker
+    /// rifiuta TUTTI i nuovi ordini (40310000). nil = non ancora verificato.
+    /// Letto da GET /v2/account/configurations, aggiornato anche quando un
+    /// ordine viene rifiutato col flag attivo.
+    @Published private(set) var accountTradingSuspended: Bool?
+    /// True mentre la PATCH di riattivazione del trading viaggia verso Alpaca.
+    @Published private(set) var resumingTrading = false
     /// Esito dell'ultimo controllo aggiornamenti, per SISTEMA.
     @Published private(set) var updateStatus = "non controllato"
     /// Simboli della modalità veloce della sessione in corso.
@@ -158,6 +165,8 @@ final class QuantSwarmEngine: ObservableObject {
     private var lastCryptoSummary: String?
     /// Ultimo avviso "trading sospeso" scritto (una volta al giorno al massimo).
     private var lastFrozenLog: String?
+    /// Ultima lettura del flag "trades suspended" del conto (throttle 5 min).
+    private var lastSuspensionCheck: Date?
     /// Protezioni persistite (stop giornaliero UTC + drawdown): un riavvio
     /// dell'app non azzera i circuit breaker.
     private var guardState = RiskGuardStore.load()
@@ -305,6 +314,7 @@ final class QuantSwarmEngine: ObservableObject {
             let stored = try JSONDecoder().decode(StoredCredentials.self, from: data)
             apply(stored: stored)
             log("Credenziali sbloccate; ambiente \(stored.paperTrading ? "paper" : "live").")
+            await refreshTradingSuspension(force: true)
             await resumeSavedSessionIfNeeded()
         } catch QuantSwarmError.credentialsMissing {
             isConfigured = false
@@ -514,6 +524,68 @@ final class QuantSwarmEngine: ObservableObject {
         }
     }
 
+    // MARK: - Conto Alpaca sospeso (voce "trades suspended")
+
+    /// Legge il flag "trades suspended" del conto Alpaca
+    /// (GET /v2/account/configurations). Throttled a 5 minuti salvo `force`:
+    /// il ciclo crypto gira ogni 60 s e non deve spenderla a ogni tick.
+    /// Il fallimento non è un errore: il flag restituisce l'ultimo noto.
+    func refreshTradingSuspension(force: Bool = false) async {
+        guard let credentials else { return }
+        let now = Date()
+        if !force, let last = lastSuspensionCheck, now.timeIntervalSince(last) < 300 { return }
+        lastSuspensionCheck = now
+        do {
+            let config = try await AlpacaService(credentials: credentials.alpaca).accountConfigurations()
+            if let suspended = config.isSuspended {
+                if suspended, accountTradingSuspended != true {
+                    log("Conto Alpaca: TRADING SOSPESO (voce \"trades suspended\" attiva sul conto): il broker rifiuta TUTTI i nuovi ordini. Toglila con SISTEMA → RIATTIVA TRADING o dal pannello Alpaca.", agent: .risk)
+                }
+                accountTradingSuspended = suspended
+            }
+        } catch {
+            logUnlessCancelled("Verifica trading sospeso", error)
+        }
+    }
+
+    /// Toglie la voce "trades suspended" dal conto Alpaca DIRETTAMENTE
+    /// dall'app (PATCH /v2/account/configurations, stesso flag del pannello
+    /// web). Se il motore gira, il ciclo riparte subito per riprovare gli
+    /// ordini appena rifiutati.
+    func resumeAlpacaTrading() async {
+        guard let credentials else {
+            statusMessage = "Credenziali mancanti"
+            return
+        }
+        guard !resumingTrading else { return }
+        resumingTrading = true
+        defer { resumingTrading = false }
+        do {
+            let config = try await AlpacaService(credentials: credentials.alpaca).setSuspendTrade(false)
+            lastSuspensionCheck = Date()
+            if config.isSuspended == true {
+                accountTradingSuspended = true
+                log("RIATTIVA TRADING: Alpaca ha accettato la richiesta ma la voce \"trades suspended\" risulta ancora attiva; togliela dal pannello su app.alpaca.markets.", agent: .risk)
+                statusMessage = "Trading ancora sospeso"
+            } else {
+                accountTradingSuspended = false
+                // Se il flag torna, il log deve poterlo ridire.
+                lastFrozenLog = nil
+                log("TRADING RIATTIVATO sul conto Alpaca (voce \"trades suspended\" rimossa da QuantSwarm). Ripremi START (o CONTROLLA ORA se il motore gira).", agent: .risk)
+                NotificationManager.shared.notify(
+                    "TRADING RIATTIVATO",
+                    body: "Il conto Alpaca accetta di nuovo i nuovi ordini."
+                )
+                statusMessage = "Trading riattivato sul conto Alpaca"
+            }
+            await refreshPortfolio()
+            if isRunning, activeMode?.runsOnSchedule == true { dailyCheckNow = true }
+        } catch {
+            log("RIATTIVA TRADING non riuscito: \(error.localizedDescription). Togli la voce \"trades suspended\" dal pannello Alpaca su app.alpaca.markets.", agent: .risk)
+            statusMessage = "Riattivazione non riuscita"
+        }
+    }
+
     // MARK: - Sessione
 
     func start(symbolsText: String, news: String) async {
@@ -585,6 +657,9 @@ final class QuantSwarmEngine: ObservableObject {
         NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
         lastCryptoSummary = nil
+        // Il messaggio "trading sospeso" si deduplica a sessione: una nuova
+        // sessione con il flag ancora attivo deve poterlo ridire.
+        lastFrozenLog = nil
         applyIdleTimer()
         // App in primo piano: nessun promemoria, eventuali residui annullati.
         NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
@@ -902,8 +977,24 @@ final class QuantSwarmEngine: ObservableObject {
             log("Riconciliazione completata: nuovi ordini riabilitati.", agent: .system)
         }
         acceptsNewOrders = true
-        // Giornaliera: riaprire l'app fa partire subito un controllo.
-        if activeMode?.runsOnSchedule == true, isRunning { dailyCheckNow = true }
+        // Giornaliera: riaprire l'app fa partire subito un controllo, MAI
+        // però nel primo minuto di sessione: all'avvio la scena passa per
+        // inactive (sblocco Face ID) → active e il "rientro" sparerebbe un
+        // secondo ciclo immediato sopra il primo (report 13/11 ore 19:44:
+        // due cicli PORTAFOGLIO a 25 s di distanza, salvati solo dall'idempotenza).
+        if activeMode?.runsOnSchedule == true, isRunning,
+           Self.shouldRecheckOnForeground(sessionAge: sessionStartedAt.map { Date().timeIntervalSince($0) }) {
+            dailyCheckNow = true
+        }
+    }
+
+    /// Il rientro in foreground chiede un controllo immediato SOLO se la
+    /// sessione gira da più di 60 s: all'avvio con Face ID la scena fa
+    /// inactive → active e quel "rientro" non deve far ripartire il ciclo
+    /// appena concluso (doppio ciclo, log e richieste raddoppiate).
+    static func shouldRecheckOnForeground(sessionAge: TimeInterval?) -> Bool {
+        guard let sessionAge else { return false }
+        return sessionAge > 60
     }
 
     /// Sblocco manuale dello stop drawdown: il picco viene riallineato
@@ -2077,6 +2168,7 @@ final class QuantSwarmEngine: ObservableObject {
 
     func refreshPortfolio() async {
         guard let credentials else { return }
+        await refreshTradingSuspension()
         let service = AlpacaService(credentials: credentials.alpaca)
         do {
             let snapshot = try await service.account()
@@ -2278,6 +2370,7 @@ extension QuantSwarmEngine {
         NotificationManager.shared.requestAuthorizationIfNeeded()
         isRunning = true
         lastCryptoSummary = nil
+        lastFrozenLog = nil
         applyIdleTimer()
         NotificationManager.shared.cancelPending(identifier: backgroundReminderIdentifier)
         sessionStartedAt = Date()
@@ -2609,14 +2702,16 @@ extension QuantSwarmEngine {
                 lastStrategyLog = key
             } else if message.contains("TRADING SOSPESO") {
                 // Il conto Alpaca rifiuta TUTTI gli ordini: il messaggio lungo
-                // con le istruzioni si scrive UNA volta al giorno (ogni ordine
-                // rifiutato porterebbe la stessa informazione).
+                // con le istruzioni si scrive UNA volta a sessione (ogni ordine
+                // rifiutato porterebbe la stessa informazione) e il banner
+                // RIATTIVA TRADING compare subito nel cruscotto.
+                accountTradingSuspended = true
                 let key = "\(Self.dayKey(Date())) trading-sospeso"
                 if key != lastFrozenLog {
                     log(message, agent: event.agent)
                     NotificationManager.shared.notify(
                         "TRADING SOSPESO",
-                        body: "Il conto Alpaca rifiuta tutti i nuovi ordini: riattiva il trading nelle impostazioni del conto su app.alpaca.markets, poi ripremi START."
+                        body: "Il conto Alpaca rifiuta tutti i nuovi ordini: premi RIATTIVA TRADING in SISTEMA (o togli la voce Trades Suspended su app.alpaca.markets), poi ripremi START."
                     )
                 }
                 lastFrozenLog = key

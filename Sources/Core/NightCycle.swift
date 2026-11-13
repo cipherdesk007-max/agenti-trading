@@ -607,9 +607,11 @@ struct NightCycleRunner: Sendable {
             if let ref = try? await broker.orderRef(byClientOrderId: id), ref.countsAsPlaced { return ref.id }
             if QuantSwarmError.isAccountFrozen(error) {
                 // Messaggio azionabile invece del JSON grezzo: il conto rifiuta
-                // TUTTI gli ordini finché l'utente non toglie il flag sul
-                // pannello Alpaca. Il motore deduplica le ripetizioni.
-                await emit(.init(log: "\(symbol): ordine \(tif.uppercased()) rifiutato: il conto Alpaca ha il TRADING SOSPESO (voce \"trades suspended\" nelle impostazioni del conto su app.alpaca.markets). Riattivala e ripremi START: finché è attiva il broker rifiuta TUTTI i nuovi ordini.", agent: .risk))
+                // TUTTI gli ordini finché non si toglie il flag. Dall'app si può
+                // fare direttamente con SISTEMA → RIATTIVA TRADING (PATCH
+                // /v2/account/configurations), senza passare dal pannello Alpaca.
+                // Il motore deduplica le ripetizioni.
+                await emit(.init(log: "\(symbol): ordine \(tif.uppercased()) rifiutato: il conto Alpaca ha il TRADING SOSPESO (voce \"trades suspended\" del conto). Toglila con SISTEMA → RIATTIVA TRADING direttamente dall'app (o dalle impostazioni del conto su app.alpaca.markets), poi ripremi START: finché è attiva il broker rifiuta TUTTI i nuovi ordini.", agent: .risk))
             } else {
                 await emit(.init(log: "\(symbol): ordine \(tif.uppercased()) rifiutato (\(error.localizedDescription)).", agent: .risk))
             }

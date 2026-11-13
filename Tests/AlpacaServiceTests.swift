@@ -236,6 +236,50 @@ final class AlpacaServiceTests: XCTestCase {
             XCTAssertTrue(message.contains("decode"))
         }
     }
+
+    // MARK: - Configurazioni conto (voce "trades suspended", errore 40310000)
+
+    func testAccountConfigurationsDecodesSuspendTrade() async throws {
+        respond(status: 200, body: """
+            {"dtbp_check": "both", "fractional_trading": true, "no_shorting": false,
+             "suspend_trade": true, "trade_confirm_email": "all"}
+            """)
+        let config = try await service.accountConfigurations()
+        XCTAssertEqual(lastRequest?.httpMethod, "GET")
+        XCTAssertTrue(lastRequest?.url?.absoluteString.hasSuffix("/v2/account/configurations") ?? false,
+                      "il flag si legge da GET /v2/account/configurations")
+        XCTAssertEqual(config.isSuspended, true, "suspend_trade true = il conto rifiuta i nuovi ordini")
+    }
+
+    func testAccountConfigurationsAcceptsLegacyFieldName() async throws {
+        respond(status: 200, body: """
+            {"trade_suspended_by_user": true, "no_shorting": false}
+            """)
+        let config = try await service.accountConfigurations()
+        XCTAssertEqual(config.isSuspended, true,
+                       "il nome storico del flag (API v2 precedenti) va accettato lo stesso")
+    }
+
+    func testAccountConfigurationsWithoutFlagIsUnknown() async throws {
+        respond(status: 200, body: """
+            {"no_shorting": false}
+            """)
+        let config = try await service.accountConfigurations()
+        XCTAssertNil(config.isSuspended, "campo assente = non verificato, non falso")
+    }
+
+    func testSetSuspendTradePatchesTheFlag() async throws {
+        respond(status: 200, body: """
+            {"fractional_trading": true, "no_shorting": false, "suspend_trade": false}
+            """)
+        let config = try await service.setSuspendTrade(false)
+        XCTAssertEqual(lastRequest?.httpMethod, "PATCH")
+        XCTAssertEqual(config.isSuspended, false)
+        let body = try XCTUnwrap(MockURLProtocol.lastBody)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["suspend_trade"] as? Bool, false,
+                      "la PATCH deve impostare suspend_trade=false: è la voce \"trades suspended\" del pannello Alpaca")
+    }
 }
 
 private extension XCTestCase {

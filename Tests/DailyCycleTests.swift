@@ -17,6 +17,9 @@ actor FakeBroker: BrokerClient {
     var timeoutButCreated = false
     /// Bug B4: l'ordine creato prima del timeout viene poi rifiutato dal broker.
     var rejectedRecovered = false
+    /// Conto Alpaca con "trades suspended": gli ingressi vengono rifiutati
+    /// con il 40310000 (stesso errore della prova del 13/11).
+    var rejectEntryWithFrozen = false
     var newsItems: [NewsHeadline] = []
     func news(symbols: [String], hours: Int) async throws -> [NewsHeadline] { newsItems }
     func set(news: [NewsHeadline]) { newsItems = news }
@@ -35,6 +38,7 @@ actor FakeBroker: BrokerClient {
     func set(failClose: Bool) { self.failClose = failClose }
     func set(timeoutButCreated: Bool) { self.timeoutButCreated = timeoutButCreated }
     func set(rejectedRecovered: Bool) { self.rejectedRecovered = rejectedRecovered }
+    func set(rejectEntryWithFrozen: Bool) { self.rejectEntryWithFrozen = rejectEntryWithFrozen }
     /// true simula lo STOP del motore durante il ciclo (CancellationError).
     var cancelDuringScout = false
 
@@ -72,6 +76,11 @@ actor FakeBroker: BrokerClient {
         entryCalls.append((symbol, quantity, limitPrice, stopPrice))
         lastTakeProfit = takeProfitPrice
         let id = "entry-\(entryCalls.count)"
+        if rejectEntryWithFrozen {
+            throw QuantSwarmError.httpStatus(
+                403, "{\"code\":40310000,\"message\":\"new orders are rejected by user request\"}"
+            )
+        }
         if timeoutButCreated {
             created[clientOrderId] = id
             throw URLError(.timedOut)
@@ -214,8 +223,7 @@ final class DailyCycleTests: XCTestCase {
         XCTAssertEqual(entries, 0)
     }
 
-    func testReviewerRejectionMeansNoOrders() async {
-        let broker = FakeBroker(bars: ["SPY": pullback])
+    func testReviewerRejectionMeansNoOrders() async {        let broker = FakeBroker(bars: ["SPY": pullback])
         let brain = FakeBrain()
         await brain.set(reviewApproves: false)
         let result = await runner(broker, brain).run(input()) { _ in }
@@ -241,6 +249,27 @@ final class DailyCycleTests: XCTestCase {
         XCTAssertGreaterThan(tp ?? 0, order.limitPrice, "Il take-profit deve stare sopra l'ingresso")
         XCTAssertEqual(result.book.placedEntries, 1)
         XCTAssertEqual(result.book.shadow.last?.outcome, ShadowEntry.bought)
+    }
+
+    func testFrozenAccountLogsActionableAdviceInDailyExecutor() async {
+        // Conto Alpaca con la voce "trades suspended" (40310000, prova del
+        // 13/11): l'ingresso viene rifiutato e il log deve dire cos'è il
+        // flag e come toglierlo DIRETTAMENTE dall'app, non il JSON grezzo.
+        let broker = FakeBroker(bars: ["SPY": pullback])
+        await broker.set(rejectEntryWithFrozen: true)
+        let brain = FakeBrain()
+        let sink = LogSink()
+        let result = await runner(broker, brain).run(input()) { event in
+            if let message = event.log { await sink.add(message) }
+        }
+        let logs = await sink.all()
+        XCTAssertTrue(logs.contains { $0.contains("TRADING SOSPESO") },
+                      "il rifiuto deve spiegare il flag del conto: \(logs)")
+        XCTAssertTrue(logs.allSatisfy { !$0.contains("40310000") },
+                      "niente JSON grezzo nel log: \(logs)")
+        XCTAssertTrue(result.orders.isEmpty, "con il conto sospeso nessun ordine va registrato")
+        let entries = await broker.entryCalls.count
+        XCTAssertEqual(entries, 1, "l'ingresso è stato tentato una volta sola")
     }
 
     func testShadowRecordsReviewerRejection() async {

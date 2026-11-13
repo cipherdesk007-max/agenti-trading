@@ -303,8 +303,13 @@ struct DailyCycleRunner: Sendable {
                 await emit(.init(log: "\(symbol): mancava lo stop per \(Int(missingQty)) az.; stop GTC a \(fmt(stop)) rimesso sul broker.", agent: .risk,
                                  notify: ("STOP RIPRISTINATO", "\(symbol) a \(fmt(stop))")))
             } catch {
-                await emit(.init(log: "\(symbol): ATTENZIONE stop non ripristinato (\(error.localizedDescription)).", agent: .risk,
-                                 notify: ("POSIZIONE SENZA STOP", "\(symbol): controlla il broker")))
+                if QuantSwarmError.isAccountFrozen(error) {
+                    await emit(.init(log: "\(symbol): stop non ripristinato: il conto Alpaca ha il TRADING SOSPESO. Toglila con SISTEMA → RIATTIVA TRADING, poi ripremi START.", agent: .risk,
+                                     notify: ("POSIZIONE SENZA STOP", "\(symbol): conto Alpaca sospeso, riattiva il trading")))
+                } else {
+                    await emit(.init(log: "\(symbol): ATTENZIONE stop non ripristinato (\(error.localizedDescription)).", agent: .risk,
+                                     notify: ("POSIZIONE SENZA STOP", "\(symbol): controlla il broker")))
+                }
             }
         }
 
@@ -551,8 +556,13 @@ struct DailyCycleRunner: Sendable {
                     orderId = ref.id
                 }
                 if orderId == nil {
-                    await emit(.init(stage: .executor, state: .failed, detail: "\(symbol): invio fallito",
-                                     log: "\(symbol): invio ordine fallito: \(error.localizedDescription)", agent: .risk))
+                    if QuantSwarmError.isAccountFrozen(error) {
+                        await emit(.init(stage: .executor, state: .failed, detail: "\(symbol): conto sospeso",
+                                         log: "\(symbol): ordine rifiutato: il conto Alpaca ha il TRADING SOSPESO (voce \"trades suspended\" del conto). Toglila con SISTEMA → RIATTIVA TRADING direttamente dall'app, poi ripremi START: finché è attiva il broker rifiuta TUTTI i nuovi ordini.", agent: .risk))
+                    } else {
+                        await emit(.init(stage: .executor, state: .failed, detail: "\(symbol): invio fallito",
+                                         log: "\(symbol): invio ordine fallito: \(error.localizedDescription)", agent: .risk))
+                    }
                     continue
                 }
             }

@@ -207,13 +207,21 @@ struct CryptoCycleRunner: Sendable {
                 if let stopId = position.stopOrderId {
                     _ = try? await broker.cancelOrder(id: stopId) // prima lo stop: mai la doppia vendita
                 }
-                if let orderId = try? await broker.submitMarket(symbol: pair, quantity: position.qty,
-                                                                side: "sell",
-                                                                clientOrderId: "qsc-sell-\(pair)-\(day)"),
-                   let status = try? await broker.orderStatus(orderId: orderId) {
+                var soldId: String?
+                var sellFrozen = false
+                do {
+                    soldId = try await broker.submitMarket(symbol: pair, quantity: position.qty,
+                                                           side: "sell",
+                                                           clientOrderId: "qsc-sell-\(pair)-\(day)")
+                } catch {
+                    sellFrozen = QuantSwarmError.isAccountFrozen(error)
+                }
+                if let orderId = soldId, let status = try? await broker.orderStatus(orderId: orderId) {
                     await emit(.init(log: "CRYPTO \(pair): vendita inviata (ordine \(orderId), stato \(status)).", agent: .system))
                 } else {
-                    await emit(.init(log: "CRYPTO \(pair): vendita NON riuscita; la posizione resta in registro e si riprova al prossimo tick.", agent: .risk))
+                    await emit(.init(log: sellFrozen
+                        ? "CRYPTO \(pair): vendita rifiutata: il conto Alpaca ha il TRADING SOSPESO (voce \"trades suspended\" del conto). Toglila con SISTEMA → RIATTIVA TRADING, poi ripremi START; la posizione resta in registro."
+                        : "CRYPTO \(pair): vendita NON riuscita; la posizione resta in registro e si riprova al prossimo tick.", agent: .risk))
                     continue
                 }
                 let estimated = position.entryPrice > 0 ? (signal.close / position.entryPrice - 1) * position.qty * position.entryPrice : nil
@@ -227,10 +235,19 @@ struct CryptoCycleRunner: Sendable {
                     continue
                 }
                 let clientOrderId = "qsc-buy-\(pair)-\(day)"
-                guard let orderId = try? await broker.submitMarket(symbol: pair, quantity: qty,
-                                                                   side: "buy", clientOrderId: clientOrderId) else {
+                var submittedId: String?
+                var entryFrozen = false
+                do {
+                    submittedId = try await broker.submitMarket(symbol: pair, quantity: qty,
+                                                                 side: "buy", clientOrderId: clientOrderId)
+                } catch {
+                    entryFrozen = QuantSwarmError.isAccountFrozen(error)
+                }
+                guard let orderId = submittedId else {
                     await emit(.init(stage: .executor, state: .failed, detail: "\(pair): ordine rifiutato",
-                                     log: "CRYPTO \(pair): ordine d'ingresso rifiutato dal broker; nessuna posizione aperta.", agent: .risk))
+                                     log: entryFrozen
+                                        ? "CRYPTO \(pair): ordine rifiutato: il conto Alpaca ha il TRADING SOSPESO (voce \"trades suspended\" del conto). Toglila con SISTEMA → RIATTIVA TRADING, poi ripremi START: nessuna posizione aperta."
+                                        : "CRYPTO \(pair): ordine d'ingresso rifiutato dal broker; nessuna posizione aperta.", agent: .risk))
                     continue
                 }
                 // Quantità realmente riempita (fill parziale: si tiene quella):

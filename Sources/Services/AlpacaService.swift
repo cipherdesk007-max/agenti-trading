@@ -158,6 +158,36 @@ struct AlpacaClock: Decodable, Sendable {
     var nextCloseDate: Date? { Self.parse(nextClose) }
 }
 
+/// Configurazioni del conto Alpaca (GET/PATCH /v2/account/configurations).
+/// `suspend_trade` è la voce "trades suspended" del pannello Alpaca: quando
+/// è true il broker rifiuta TUTTI i nuovi ordini con 40310000
+/// "new orders are rejected by user request"
+/// (docs.alpaca.markets/us/reference/patchaccountconfig-1). Si accetta anche
+/// il nome storico `trade_suspended_by_user` delle API v2 precedenti.
+struct AlpacaAccountConfig: Decodable, Sendable, Equatable {
+    let suspendTrade: Bool?
+    let noShorting: Bool?
+    let fractionalTrading: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case suspendTrade = "suspend_trade"
+        case legacySuspendTrade = "trade_suspended_by_user"
+        case noShorting = "no_shorting"
+        case fractionalTrading = "fractional_trading"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        suspendTrade = try container.decodeIfPresent(Bool.self, forKey: .suspendTrade)
+            ?? container.decodeIfPresent(Bool.self, forKey: .legacySuspendTrade)
+        noShorting = try container.decodeIfPresent(Bool.self, forKey: .noShorting)
+        fractionalTrading = try container.decodeIfPresent(Bool.self, forKey: .fractionalTrading)
+    }
+
+    /// Il conto rifiuta i nuovi ordini (nil = campo assente nella risposta).
+    var isSuspended: Bool? { suspendTrade }
+}
+
 /// Risposta di GET /v2/stocks/{symbol}/auctions: per giorno, aste di apertura
 /// ("o") e di chiusura ("c") con prezzo, timestamp, size, exchange.
 private struct AlpacaAuctionsResponse: Decodable {
@@ -302,6 +332,23 @@ actor AlpacaService {
                 "Account decode fallita (\(data.count) byte): \(preview)"
             )
         }
+    }
+
+    func accountConfigurations() async throws -> AlpacaAccountConfig {
+        let data = try await send(path: "/v2/account/configurations", method: "GET")
+        return try JSONDecoder().decode(AlpacaAccountConfig.self, from: data)
+    }
+
+    /// Toglie (o mette) la sospensione del trading sul conto: la stessa voce
+    /// "trades suspended" del pannello Alpaca, via API. L'app la usa SOLO per
+    /// riattivare (false), su esplicita pressione dell'utente.
+    func setSuspendTrade(_ suspended: Bool) async throws -> AlpacaAccountConfig {
+        let data = try await send(
+            path: "/v2/account/configurations",
+            method: "PATCH",
+            body: ["suspend_trade": suspended]
+        )
+        return try JSONDecoder().decode(AlpacaAccountConfig.self, from: data)
     }
 
     func openOrders() async throws -> [AlpacaOrder] {

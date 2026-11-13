@@ -7,6 +7,18 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+Niente per ora.
+
+## [1.6.3] - 13/11/2026
+
+### Aggiunto (RIATTIVA TRADING in-app + secondo ciclo al lancio parato · 13/11/2026, da secondo report su telefono)
+- **La voce "trades suspended" del conto Alpaca si toglie DIRETTAMENTE dall'app**: il flag che fa rifiutare tutti gli ordini con 40310000 si legge con `GET /v2/account/configurations` e si modifica con `PATCH` sullo stesso endpoint (docs.alpaca.markets/us/reference/patchaccountconfig-1). Ora il CRUSCOTTO mostra un banner rosso "TRADING SOSPESO sul conto Alpaca" con il pulsante **RIATTIVA TRADING** che manda la PATCH senza uscire dall'app (stessa impostazione del pannello web); anche SISTEMA → Stato ha la riga e il pulsante. Il flag si verifica allo sblocco delle credenziali, a ogni ciclo (throttle 5 min) e appena un ordine viene rifiutato col 40310000, quindi il banner compare da solo. Dopo la riattivazione il controllo riparte subito se il motore gira.
+- **Secondo ciclo immediato al lancio PARATO**: nel report delle 19:44 la sessione PORTAFOGLIO ha girato DUE cicli a 25 s di distanza (righe PORTAFOGLIO raddoppiate). Causa: all'avvio la scena passa per inactive (sblocco Face ID) → active e quel "rientro in foreground" chiedeva un controllo immediato mentre il primo ciclo era appena partito. Ora il rientro scatena il controllo solo se la sessione gira da più di 60 s (i cicli sono comunque idempotenti per giorno e client_order_id, quindi nessun ordine duplicato).
+- **Il messaggio "TRADING SOSPESO" vale su TUTTE le modalità**: prima solo la NOTTE spiegava il 40310000; ora anche l'esecutore della GIORNALIERA (ingresso e ripristino stop) e la CRYPTO (ingresso e vendita) dicono cosa è il flag e come toglierlo dall'app, invece del JSON grezzo o di un generico "rifiutato dal broker". Il log è deduplicato a sessione (una volta, non una per ordine rifiutato) e la notifica indica il pulsante.
+- Test: **+6** (lettura del flag `suspend_trade` e nome storico, PATCH `suspend_trade=false`, campo assente = non verificato, rientro in foreground ignorato nel primo minuto di sessione, messaggio azionabile dell'esecutore giornaliero senza JSON grezzo; i 261 della 1.6.2 diventano 267).
+
+## [1.6.2] - 13/11/2026
+
 ### Corretto (doppio avvio parato + conto Alpaca sospeso spiegato · 13/11/2026, da prova su telefono)
 - **Doppio avvio della sessione PARATO**: la ripresa automatica allo sblocco e il tap su AVVIA potevano partire ENTRAMBI, perché `isRunning` saliva solo dopo le await di calendario dentro `startDaily`. Risultato nel report delle 16:03: banner "SESSIONE AVVIATA" duplicato e OGNI ordine d'asta inviato due volte (due cicli concorrenti; su un conto attivo sarebbero stati ordini doppi). Ora `start()` ha il flag sincrono `startingSession`: il secondo avvio è ignorato con una riga di log ("START ignorato: la sessione è già in avvio/attiva").
 - **Errore 40310000 spiegato**: tutti gli ordini MOC/OPG rifiutati con `{"code":40310000,"message":"new orders are rejected by user request"}` significa che il conto Alpaca ha il flag **"trades suspended"** (lo si toglie nelle impostazioni del conto su app.alpaca.markets): non è un problema dell'app. Ora il log lo dice con le istruzioni, una volta al giorno (non il JSON grezzo ripetuto per ogni simbolo; le ripetizioni sono deduplicate) e arriva anche una notifica "TRADING SOSPESO".

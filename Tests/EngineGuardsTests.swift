@@ -47,6 +47,20 @@ final class EngineGuardsTests: XCTestCase {
         XCTAssertFalse(QuantSwarmError.isAccountFrozen(URLError(.timedOut)))
     }
 
+    // MARK: - Rientro in foreground al lancio: mai un secondo ciclo (Face ID)
+
+    @MainActor
+    func testForegroundRecheckSkippedDuringFirstMinuteOfSession() {
+        XCTAssertFalse(QuantSwarmEngine.shouldRecheckOnForeground(sessionAge: 25),
+                       "all'avvio la scena fa inactive → active (sblocco Face ID): quel rientro non deve far ripartire il ciclo appena concluso (doppio ciclo, report 13/11 ore 19:44)")
+        XCTAssertFalse(QuantSwarmEngine.shouldRecheckOnForeground(sessionAge: 0),
+                       "sessione appena partita: il primo ciclo è già in corsa")
+        XCTAssertFalse(QuantSwarmEngine.shouldRecheckOnForeground(sessionAge: nil),
+                       "senza sessione in corso niente controllo")
+        XCTAssertTrue(QuantSwarmEngine.shouldRecheckOnForeground(sessionAge: 61),
+                     "riaprire l'app a sessione avviata deve far ripartire subito il controllo")
+    }
+
     // MARK: - Bug B5: circuit breaker, formule pure
 
     func testDailyStopTriggersOnLoss() {
