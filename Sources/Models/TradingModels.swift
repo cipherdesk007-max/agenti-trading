@@ -754,7 +754,7 @@ final class TradeRecord {
         netPnL = nil
         stopErrorVariance = nil
         outcomeRecorded = false
-        promptVersion = decision.promptVersion
+        promptVersion = receipt.decision.promptVersion
     }
 }
 

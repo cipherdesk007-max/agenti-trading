@@ -563,13 +563,16 @@ actor KimiService {
         let systemPrompt = Self.analyzePrompt
         let now = Date()
         let symbolsPayload: [[String: Any]] = snapshots.map { snapshot in
-            [
+            // Valori pre-calcolati come Any: niente coercizione implicita (zero warning).
+            let atrPct: Any = snapshot.atr14.map { $0 / snapshot.lastPrice * 100 } ?? NSNull()
+            let contextPayload: Any = contexts[snapshot.symbol].map(Self.contextPayload) ?? NSNull()
+            return [
                 "symbol": snapshot.symbol,
                 "last_price": snapshot.lastPrice,
                 "atr_14": snapshot.atr14.map { $0 as Any } ?? NSNull(),
-                "atr_pct_of_price": snapshot.atr14.map { ($0 / snapshot.lastPrice * 100) as Any } ?? NSNull(),
+                "atr_pct_of_price": atrPct,
                 "data_age_seconds": Int(now.timeIntervalSince(snapshot.receivedAt)),
-                "candles_two_timeframes": contexts[snapshot.symbol].map(Self.contextPayload) ?? NSNull()
+                "candles_two_timeframes": contextPayload
             ]
         }
         let positionsPayload: [[String: Any]] = positions.map { position in
