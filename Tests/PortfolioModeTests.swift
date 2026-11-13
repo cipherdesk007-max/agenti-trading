@@ -65,8 +65,8 @@ final class PortfolioModeTests: XCTestCase {
         XCTAssertEqual(config.tradingMode, .portfolio)
     }
 
-    func testSelectableModesArePortfolioAndIntraday() {
-        XCTAssertEqual(TradingMode.selectableModes, [.portfolio, .intraday])
+    func testSelectableModesArePortfolioCryptoAndIntraday() {
+        XCTAssertEqual(TradingMode.selectableModes, [.portfolio, .crypto, .intraday])
     }
 
     // MARK: - P&L separato per strategia, mai doppio conteggio
