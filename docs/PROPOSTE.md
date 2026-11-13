@@ -385,3 +385,21 @@ statico negli studi, non come API in app. Nessuna di queste proposte è nel codi
   - **Conclusione**: la letteratura esterna NON sostiene una RSI2<12 su crypto come "sicura";
   i drawdown crypto sono enormi e lo Sharpe va deflato. Per decidere serve comunque il backtest
   locale (`tools/backtest_crypto.py`, `quale=crypto`) su cui misurare i parametri proposti.
+
+### 19 · CoinMarketCap API come fonte esterna crypto — SOLO PROPOSTA, non implementata (13/11/2026)
+
+- **Fonte ufficiale**: CoinMarketCap Pro API, doc https://coinmarketcap.com/api/documentation/ ,
+  piani e rate limit https://coinmarketcap.com/api/pricing/ (piano Basic gratuito; esiste anche
+  una Keyless Public API su `https://pro-api.coinmarketcap.com/public-api`).
+- **Cosa darebbe**: quotazioni live, listings, metriche globali, storico OHLCV, news — utile per
+  una watchlist crypto o un radar di mercato. **Non dà segnali di trading** e non sostituisce
+  Alpaca per gli ordini (gli ordini restano solo su Alpaca).
+- **Limiti dichiarati**: rate limit per piano; la stessa doc sconsiglia di chiamare la Pro API
+  da client perché la chiave sarebbe estraibile dall'IPA — in un'app iOS la chiave CMC resta
+  esposta: da usare solo per dati non sensibili, mai per autorizzare ordini, mai nel repo/log.
+- **Regole di progetto**: è una quarta API, quindi viola "solo 3 API" finché il proprietario non
+  aggiorna la regola in `docs/STATO.md`. In ogni caso **mai obbligatoria**: se l'API non
+  risponde l'app si comporta come oggi.
+- **Come provarla**: i dati storici crypto sono già coperti gratis da yfinance (vedi proposta
+  18), quindi prima un backtest locale; poi, se serve, 1 mese in ombra che confronta le
+  quotazioni CMC con quelle di Alpaca sul paniere crypto.
