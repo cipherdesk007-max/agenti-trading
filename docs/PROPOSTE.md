@@ -297,3 +297,34 @@ statico negli studi, non come API in app. Nessuna di queste proposte è nel codi
 - **7 · riconciliazione corporate actions**: RIMANDATA (gli split sugli ETF del paniere sono rari).
 - **3 · frazione adattiva NOTTE**: SCARTATA — il backtest R1 mostra rendimento e perdita in proporzione: resta 97%.
 - **11–16 · idee esterne (calendario macro, sentiment Reviewer, ML tabellare, regime HMM, fractional shares, filtro correlazione)**: tutte SOLO PROPOSTE, nessuna implementata. 11/13/14/16 sono studi da scrivere in `tools/` (`quale=studi`) prima di qualsiasi modifica all'app; 12 usa solo le notizie Alpaca già presenti; 15 (fractional `notional`) è l'unica con impatto diretto sull'esecuzione ma ha il vincolo documentato degli ordini solo Day (niente stop GTC frazionario) ed è esclusa dalla NOTTE (MOC/OPG non frazionari) — da valutare con backtest/paper prima di toccare il codice.
+
+---
+
+## Idee del proprietario · 13/11/2026
+
+### 17 · Modalità PORTAFOGLIO: una sola modalità non-veloce (giornaliera + notte sullo stesso conto)
+
+- **Idea del proprietario**: invece di tre modalità da cambiare a mano, una modalità unica
+  che fa convivere le due strategie validate sullo stesso conto paper (rigenerabile quando
+  si vuole); la VELOCE resta a parte e sperimentale.
+- **Studio fatto** (`tools/backtest_portfolio.py`, workflow `quale=portafoglio`, run
+  43338377889, dati 2006–2026): due budget sullo stesso conto, riequilibrati a ogni ciclo
+  (capitalCap frazionario). Correlazione rendimenti giornaliera/notte +0,04.
+  - NOTTE da sola: +7,8%/−21%/Sharpe 0,81 (2006–oggi), +18,1%/−12% (ultimi 3 anni);
+  - GIORNALIERA da sola: +0,1%/−23%/0,05 (conferma il +0,1% annuo già noto);
+  - split 30/70: +5,6%/−17%/0,79 e Sharpe 1,96 sugli ultimi 3 anni (contro 1,68 della
+    notte da sola): perde ~2 punti di CAGR, taglia 4 punti di perdita max e alza lo
+    Sharpe recente; regge il controllo a metà campione (+3,6% 2006–2015, +7,4% 2016–oggi);
+  - split 50/50: +4,1%/−15%/0,69, Sharpe 2,09 sui 3 anni: ancora meno drawdown;
+  - regole DINAMICHE "insegui chi guadagna" (winner-tilt 80/20, risk-parity 1/vol):
+    SCARTATE DAI NUMERI: la winner-tilt fa +1,6%/Sharpe 0,25 sulla prima metà e non batte
+    mai lo split fisso corrispondente. La notte è un effetto persistente, inseguirla
+    rialloca sempre in ritardo.
+- **Sensibilità**: con costi notte 0,01%/lato lo split 30/70 scende a +3,1% (2006–oggi):
+  il vantaggio della combinazione resta nel drawdown, non nel rendimento.
+- **Cosa servirebbe nell'app** (solo se il proprietario conferma): budget frazionario per
+  strategia (già quasi tutto c'è: book separati, B1, capitalCap), pannello con P&L separato
+  per strategia, ricalibrazione della baseline equity se si rigenera il conto paper
+  (il controllo di drawdown altrimenti vede un dirupo). La VELOCE resta fuori.
+- **Decisione**: spetta al proprietario scegliere lo split (30/70 consigliato: tiene il
+  72% del CAGR della notte con 4 punti di drawdown in meno); poi serve il piano di test.
