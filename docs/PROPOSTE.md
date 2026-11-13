@@ -425,3 +425,26 @@ non 730 giorni, vedi CHANGELOG).
 - **Come provarla**: i dati storici crypto sono già coperti gratis da yfinance (vedi proposta
   18), quindi prima un backtest locale; poi, se serve, 1 mese in ombra che confronta le
   quotazioni CMC con quelle di Alpaca sul paniere crypto.
+
+### 20 · CRYPTO 24/7 con regole NUOVE: trend-following a regime — IN VALUTAZIONE (13/11/2026)
+
+- **Perché una seconda proposta crypto**: la 18 (mean-reversion EMA100+RSI2) è stata bocciata
+  dai numeri (run 43357136321). Il proprietario ha scelto la strada delle regole nuove +
+  backtest prima di scrivere codice in app. La famiglia qui è l'opposta: trend-following a
+  regime, long-only, senza take-profit fisso (l'uscita è il regime o un chandelier trailing),
+  perché negli orsi long-only deve restare piatta invece di comprare i ribassi.
+- **Studio**: `tools/backtest_trend_crypto.py` (passo `quale=cryptotrend`), griglia dichiarata
+  V1 SMA200 / V2 SMA200 isteresi / V3 EMA50>EMA200+chandelier / V4 Donchian20+chandelier,
+  daily dal 2018 con criteri PRE-REGISTRATI (CAGR ≥ +3%, maxDD ≤ −20%, finestra orso
+  2024-11→oggi ≥ −2%, entrambe le metà > 0), sensibilità costi 0,2% e 0,1% per lato.
+- **Cosa servirebbe in app SOLO se i numeri reggono**: client dati crypto Alpaca
+  (`/v1beta3/crypto/us/bars` e `/latest/quotes`), ordini `simple` frazionati SENZA bracket
+  (sulle crypto Alpaca risponde 422) con stop venditore separato GTC dopo il fill, live loop
+  60s quando l'app è in primo piano con badge LIVE, blocco drawdown 10%, max 3 posizioni,
+  budget crypto separato. Limite iOS dichiarato: niente esecuzione 24/7 in background, la
+  modalità lavora quando l'app è aperta.
+- **Balance Advisor**: la soglia che consiglia CRYPTO ai saldi bassi entra solo insieme alla
+  modalità. Senza CRYPTO il consiglio resta sulle due modalità esistenti (PORTAFOGLIO micro
+  SPYM/QQQM/VTWO/GLDM o VELOCE), copertura già presente con "ETF comprabili" in SISTEMA.
+- **Decisione**: solo sui numeri del daily + parere del proprietario. Nessun codice app scritto
+  prima del verdetto dello studio.

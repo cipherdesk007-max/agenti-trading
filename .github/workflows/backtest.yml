@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza | portafoglio | crypto"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza | portafoglio | crypto | cryptotrend"
         default: "tutti"
 
 # pipefail: se uno script va in errore il passo FALLISCE anche se il tee ha scritto
@@ -89,6 +89,14 @@ jobs:
         if: env.Q == 'tutti' || env.Q == 'studi' || env.Q == 'crypto'
         working-directory: tools
         run: python backtest_crypto.py | tee -a ../backtest.md
+      # STUDIO crypto trend a regime (solo analisi): regole NUOVE dopo il bando della
+      # proposta 18. Long-only senza TP fisso, criteri pre-registrati nello script.
+      - name: Studio crypto trend a regime (solo analisi)
+        if: env.Q == 'tutti' || env.Q == 'studi' || env.Q == 'cryptotrend'
+        working-directory: tools
+        run: |
+          python backtest_trend_crypto.py | tee -a ../backtest.md
+          BT_COST=0.001 python backtest_trend_crypto.py | tee -a ../backtest.md
       # FASE 5: walk-forward out-of-sample, Monte Carlo, Sortino/profit
       # factor/expectancy/R-multiplo. Non cambia l'app: misura le regole attuali.
       - name: Robustezza (walk-forward + Monte Carlo + metriche complete)

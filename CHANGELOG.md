@@ -7,6 +7,9 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+### Studio crypto trend a regime pronto (analisi, non entra in app · 13/11/2026)
+- **`tools/backtest_trend_crypto.py` + passo `quale=cryptotrend` in `backtest.yml`.** Regole NUOVE dopo il bando della proposta 18 (mean-reversion bocciata): trend-following a regime long-only senza take-profit fisso — V1 SMA200, V2 SMA200 con isteresi 0,97, V3 EMA50>EMA200 + chandelier 3ATR, V4 Donchian20 + chandelier 3ATR. Daily dal 2018 (dove si decide) + 4H su finestra 730gg come controllo secondario. Criteri **pre-registrati** e stampati dallo script: CAGR ≥ +3%, maxDD ≤ −20%, finestra orso 2024-11→oggi ≥ −2%, entrambe le metà del campione positive. Sensibilità costi 0,2% e 0,1% per lato. La modalità CRYPTO 24/7 entra in app **solo se** una variante passa tutti i criteri e il proprietario lo decide.
+
 ### Aggiunto (modalità PORTAFOGLIO · 13/11/2026)
 - **Nuova modalità PORTAFOGLIO (default)**: GIORNALIERA e NOTTE convivono sullo stesso conto con budget separati, **split fisso 30% / 70%** ribilanciato a ogni ciclo sull'equity corrente (`PortfolioSplit.budgets`); il tetto capitale manuale si applica al **totale prima dello split** (E_eff = min(equity, cap), poi 0,30·E_eff e 0,70·E_eff: la somma non supera mai il cap). Studio `tools/backtest_portfolio.py` (run 43338377889): CAGR +5,6%, perdita max −17%, Sharpe 0,79 (1,96 sugli ultimi 3 anni), correlazione +0,04; regole dinamiche "insegui chi guadagna" scartate dai numeri. **Nessuna regola di ingresso/uscita cambia.**
 - Le config legacy GIORNALIERA/NOTTE migrano a PORTAFOGLIO (`TradingMode.migrated`); le posizioni già aperte restano nei rispettivi registri e corrono fino alla loro uscita normale: il nuovo budget dimensiona **solo i nuovi ingressi** (mai forzate né ridimensionate).
