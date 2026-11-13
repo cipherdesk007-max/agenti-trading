@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza | portafoglio | crypto | cryptotrend"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza | portafoglio | crypto | cryptotrend | replay"
         default: "tutti"
 
 # pipefail: se uno script va in errore il passo FALLISCE anche se il tee ha scritto
@@ -102,4 +102,12 @@ jobs:
       - name: Robustezza (walk-forward + Monte Carlo + metriche complete)
         if: env.Q == 'tutti' || env.Q == 'robustezza' || env.Q == 'mensile'
         run: python tools/backtest_robustness.py | tee -a backtest.md
+      # FASE 2 audit agenti: replay dei giorni con candidati contro Kimi (docs/AGENTI.md).
+      # Senza MOONSHOT_API_KEY stampa una nota ed esce 0 (run verde).
+      - name: Replay agenti AI (FASE 2, richiede MOONSHOT_API_KEY)
+        if: env.Q == 'replay'
+        env:
+          MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
+          REPLAY_MAX_DAYS: ${{ github.event.inputs.max_days || '30' }}
+        run: python tools/replay_agents.py | tee -a backtest.md
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"
