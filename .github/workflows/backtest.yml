@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza | portafoglio"
         default: "tutti"
 
 # pipefail: se uno script va in errore il passo FALLISCE anche se il tee ha scritto
@@ -78,6 +78,12 @@ jobs:
           python backtest_overnight_riskparity.py | tee -a ../backtest.md
           python backtest_event_filter.py | tee -a ../backtest.md
           python backtest_vix_filter.py | tee -a ../backtest.md
+      # STUDIO conto unico: GIORNALIERA + NOTTE come budget sullo stesso conto
+      # (idea del proprietario: una sola modalità non-veloce). Non cambia l'app.
+      - name: Portafoglio combinato GIORNALIERA + NOTTE (studio conto unico)
+        if: env.Q == 'tutti' || env.Q == 'studi' || env.Q == 'portafoglio'
+        working-directory: tools
+        run: python backtest_portfolio.py | tee -a ../backtest.md
       # FASE 5: walk-forward out-of-sample, Monte Carlo, Sortino/profit
       # factor/expectancy/R-multiplo. Non cambia l'app: misura le regole attuali.
       - name: Robustezza (walk-forward + Monte Carlo + metriche complete)
