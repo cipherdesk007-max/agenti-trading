@@ -298,7 +298,7 @@ final class CryptoCycleTests: XCTestCase {
     // MARK: - Blocco drawdown e fallback dati
 
     func testDrawdownBlockPreventsNewEntries() async {
-        let broker = FakeCryptoBroker(equity: 90, cash: 90, // −10% dal picco
+        let broker = FakeCryptoBroker(equity: 85, cash: 85, // −15% dal picco: blocco ferreo
                                       bars: ["BTC/USD": entryBars])
         var book = CryptoBook()
         book.cashPeak = 100

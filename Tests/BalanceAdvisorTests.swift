@@ -45,7 +45,9 @@ final class BalanceAdvisorTests: XCTestCase {
         XCTAssertEqual(advice?.recommended, .portfolio)
         XCTAssertTrue(advice!.headline.contains("completo"))
         XCTAssertNil(advice!.alternative) // fascia piena: nessuna alternativa
-        XCTAssertFalse(advice!.detail.contains("micro"))
+        // Parla degli ETF originali, non dei gemelli micro come scelta principale.
+        XCTAssertTrue(advice!.detail.contains("ETF originali"))
+        XCTAssertTrue(advice!.detail.contains("niente gemelli micro necessari"))
     }
 
     func testMaskedAmountsHideTheBalance() {
