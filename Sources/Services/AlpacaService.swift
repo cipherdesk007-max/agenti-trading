@@ -673,7 +673,7 @@ actor AlpacaService {
 
     /// Chiude a mercato una singola posizione (controllo manuale dal broker panel).
     func closePosition(symbol: String) async throws {
-        guard let escaped = symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) else {
+        guard symbol.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) != nil else {
             throw QuantSwarmError.invalidServerResponse("Simbolo non codificabile")
         }
         _ = try await closePositionReturningOrder(symbol: symbol)

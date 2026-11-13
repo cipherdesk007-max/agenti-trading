@@ -310,7 +310,7 @@ struct CryptoCycleRunner: Sendable {
                 result.orders.append(CryptoPlacedOrder(symbol: pair, orderId: orderId,
                                                        quantity: positionQty,
                                                        entryPrice: signal.close, stopPrice: stop))
-                if let stopId {
+                if stopId != nil {
                     await emit(.init(stage: .executor, state: .done,
                                      detail: "\(pair): comprato \(position.qty) @ ~\(signal.close), stop GTC \(stop)",
                                      log: "CRYPTO \(pair): ingresso \(position.qty) a ~\(String(format: "%.2f", signal.close)) USD (rottura Donchian20 sopra SMA200); stop stop_limit GTC a \(String(format: "%.2f", stop)) sul broker.", agent: .system,
