@@ -15,6 +15,14 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 - SISTEMA: divisione 30/70 e budget attuali per strategia; nuovo pulsante **"Ricalibra equity"** che riallinea picco del drawdown e baseline all'equity corrente (conto paper rigenerato o prelievo: niente stop drawdown per un calo fittizio).
 - Test: +14 in `Tests/PortfolioModeTests.swift` (split 30/70, cap applicato al totale, migrazione legacy, P&L separato, ricalibrazione drawdown, notte entro il suo budget, posizione esistente mai forzata, budget piccolo blocca solo i nuovi ingressi). Totale: **215 test unitari** + 5 di interfaccia (run #186 verde).
 
+### Corretto (debug memoria agenti · 13/11/2026)
+- **Potatura della memoria SwiftData**: `CouncilRecord` e `DecisionSample` crescevano senza
+  limite (mai eliminati). Ora `MemoryPruner.prune` elimina i record oltre 90 giorni, chiamato
+  a ogni rollover giornaliero; `TradeRecord` resta perché è lo storico operazioni esportabile.
+  Test: `MemoryPrunerTests` (container SwiftData in-memory). Nuova guida rapida
+  [docs/TESTI.md](docs/TESTI.md) (CI automatica, `uitest`/`screenshot`, backtest `quale=…`,
+  controlli su telefono in VERIFICHE.md).
+
 ### Bloccato e documentato (richiesta "CRYPTO 24/7 + Balance Advisor + prompt Kimi" del 13/11/2026)
 - Non implementata: vedi proposta 18 in [docs/PROPOSTE.md](docs/PROPOSTE.md). Motivi: nessuno
   studio crypto in `tools/` (regola di progetto: ogni strategia entra solo con backtest

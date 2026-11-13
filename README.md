@@ -32,7 +32,8 @@ Scout (dati, conto, posizioni) → Strategia (segnali a regole, zero crediti) �
 
 ## Verifica indipendente
 
-- **Test automatici**: a ogni push GitHub Actions esegue **215 test unitari** (regole di rischio, filtro, strategia giornaliera, ciclo notte, HTTP Alpaca con mock, parametrici su conti 500–1.000.000 $) su simulatore; se un test fallisce l'IPA non viene pubblicata. I 5 test di interfaccia girano solo a mano.
+- **Guida rapida ai test** (CI automatica, test manuali, controlli su telefono): [docs/TESTI.md](docs/TESTI.md).
+- **Test automatici**: a ogni push GitHub Actions esegue **218 test unitari** (regole di rischio, filtro, strategia giornaliera, ciclo notte, HTTP Alpaca con mock, parametrici su conti 500–1.000.000 $) su simulatore; se un test fallisce l'IPA non viene pubblicata. I 5 test di interfaccia girano solo a mano.
 - **Backtest**: Actions → "Backtest filtro" → Run workflow con `quale` = `tutti`, `app`, `piccolo`, `overnight`, `segnali`, `momentum`, `giornaliero`, `intraday15`, `veloce5m`, `studi` (studi solo-da-studiare: trailing stop, risk-parity NOTTE, filtro evento 48h, filtro VIX) oppure `oggi` (segnali di oggi con dati Yahoo, indipendenti dall'app). Il 1° di ogni mese parte da solo il controllo `mensile` (app, piccolo, overnight). Codice in `tools/`, risultati nel riepilogo del run.
 - **Broker**: confronta il registro dell'app con l'estratto conto Alpaca.
 
