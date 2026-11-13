@@ -7,6 +7,14 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [Non rilasciato]
 
+### Aggiunto (modalità PORTAFOGLIO · 13/11/2026)
+- **Nuova modalità PORTAFOGLIO (default)**: GIORNALIERA e NOTTE convivono sullo stesso conto con budget separati, **split fisso 30% / 70%** ribilanciato a ogni ciclo sull'equity corrente (`PortfolioSplit.budgets`); il tetto capitale manuale si applica al **totale prima dello split** (E_eff = min(equity, cap), poi 0,30·E_eff e 0,70·E_eff: la somma non supera mai il cap). Studio `tools/backtest_portfolio.py` (run 43338377889): CAGR +5,6%, perdita max −17%, Sharpe 0,79 (1,96 sugli ultimi 3 anni), correlazione +0,04; regole dinamiche "insegui chi guadagna" scartate dai numeri. **Nessuna regola di ingresso/uscita cambia.**
+- Le config legacy GIORNALIERA/NOTTE migrano a PORTAFOGLIO (`TradingMode.migrated`); le posizioni già aperte restano nei rispettivi registri e corrono fino alla loro uscita normale: il nuovo budget dimensiona **solo i nuovi ingressi** (mai forzate né ridimensionate).
+- Il selettore ha ora **due modalità**: PORTAFOGLIO e VELOCE (invariata, sperimentale).
+- Pannello Portafoglio con **P&L separato per strategia** (non realizzato dal broker + realizzato cumulativo; un simbolo in entrambi i registri è contato una sola volta) e P&L totale del conto.
+- SISTEMA: divisione 30/70 e budget attuali per strategia; nuovo pulsante **"Ricalibra equity"** che riallinea picco del drawdown e baseline all'equity corrente (conto paper rigenerato o prelievo: niente stop drawdown per un calo fittizio).
+- Test: +14 in `Tests/PortfolioModeTests.swift` (split 30/70, cap applicato al totale, migrazione legacy, P&L separato, ricalibrazione drawdown, notte entro il suo budget, posizione esistente mai forzata, budget piccolo blocca solo i nuovi ingressi). Totale: **215 test unitari** + 5 di interfaccia (run #186 verde).
+
 ### Aggiunto (studio conto unico GIORNALIERA+NOTTE, 13/11/2026)
 - **`tools/backtest_portfolio.py` + passo `quale=portafoglio` nel workflow backtest.** Studio (non cambia l'app) per l'idea del proprietario di una modalità PORTAFOGLIO unica al posto di giornaliera e notte separate: due budget sullo stesso conto riequilibrati a ogni ciclo (capitalCap frazionario), 8 split fissi + 2 regole dinamiche decise solo sul semestre precedente (winner-tilt e risk-parity 1/vol), controllo a metà campione 2006–2015 vs 2016–oggi, sensibilità sui costi notte e sul niente riequilibro. Risultati in `docs/STATO.md` e proposta 17 in `docs/PROPOSTE.md`: la combinazione riduce la perdita massima molto più che in proporzione (correlazione +0,04), le regole "insegui chi guadagna" sono scartate dai numeri; split consigliato 30/70 in attesa di decisione del proprietario.
 

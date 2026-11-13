@@ -10,9 +10,8 @@ App iOS 17+ (Swift 6, SwiftUI, SwiftData) di trading con agenti AI: Kimi via API
 
 | Modalità | Cosa fa | Stato |
 |---|---|---|
-| **GIORNALIERA · ETF** (default) | 15 ETF (SPY, QQQ, IWM, DIA, 9 settori, GLD, TLT). Ingresso se chiusura > SMA200 e RSI(2) < 10. Stop a 2,5 ATR **sul broker, GTC**: resta attivo ad app chiusa. Uscita a chiusura > SMA5 o dopo 10 giorni. Un controllo subito, poi ogni 15 minuti ad app aperta, e a ogni riapertura. | Validata: batte ingressi casuali nel backtest 2006–oggi |
+| **PORTAFOGLIO · 30/70** (default) | Giornaliera e notte sullo stesso conto con budget separati, ribilanciati a ogni ciclo sull'equity: **30% giornaliera** (15 ETF, SMA200 + RSI2 < 10, stop 2,5 ATR **sul broker GTC**, attivo ad app chiusa) e **70% notte** (MOC in chiusura / OPG all'apertura su S&P 500, Nasdaq-100, Russell 2000, oro con gemelli economici SPYM/QQQM/VTWO/GLDM). Registri separati, P&L separato per strategia. Due aperture al giorno per la notte: mattina entro le 15:28, pomeriggio entro le 21:50 (ora italiana). | Studio 2006–oggi (run 43338377889): +5,6% annuo, perdita max −17%, Sharpe 0,79 (1,96 ultimi 3 anni), correlazione +0,04 |
 | **VELOCE · SPERIMENTALE** | Candele 15m, filtro long, bracket in giornata, chiusura totale 10 minuti prima della fine della seduta. Serve l'app sempre aperta. | Nei backtest perde e non batte il caso |
-| **NOTTE · ETF** | Compra in asta di chiusura (MOC) S&P 500, Nasdaq-100, Russell 2000 e oro a peso uguale, vende in asta di apertura (OPG) il giorno dopo. ETF originale o gemello economico (SPYM, QQQM, VTWO, GLDM) secondo il saldo. Zero crediti Kimi. Due aperture al giorno: mattina entro le 15:28, pomeriggio 15:30–21:50 (ora italiana). Registro separato: non tocca le posizioni della giornaliera. | Studio 2006–oggi: circa +8% annuo, Sharpe 0,81, perdita massima −22%. In prova su conto paper separato |
 
 ## Schermate
 
@@ -33,7 +32,7 @@ Scout (dati, conto, posizioni) → Strategia (segnali a regole, zero crediti) �
 
 ## Verifica indipendente
 
-- **Test automatici**: a ogni push GitHub Actions esegue **153 test unitari** (regole di rischio, filtro, strategia giornaliera, ciclo notte, HTTP Alpaca con mock, parametrici su conti 500–1.000.000 $) su simulatore; se un test fallisce l'IPA non viene pubblicata. I 5 test di interfaccia girano solo a mano.
+- **Test automatici**: a ogni push GitHub Actions esegue **215 test unitari** (regole di rischio, filtro, strategia giornaliera, ciclo notte, HTTP Alpaca con mock, parametrici su conti 500–1.000.000 $) su simulatore; se un test fallisce l'IPA non viene pubblicata. I 5 test di interfaccia girano solo a mano.
 - **Backtest**: Actions → "Backtest filtro" → Run workflow con `quale` = `tutti`, `app`, `piccolo`, `overnight`, `segnali`, `momentum`, `giornaliero`, `intraday15`, `veloce5m`, `studi` (studi solo-da-studiare: trailing stop, risk-parity NOTTE, filtro evento 48h, filtro VIX) oppure `oggi` (segnali di oggi con dati Yahoo, indipendenti dall'app). Il 1° di ogni mese parte da solo il controllo `mensile` (app, piccolo, overnight). Codice in `tools/`, risultati nel riepilogo del run.
 - **Broker**: confronta il registro dell'app con l'estratto conto Alpaca.
 
@@ -54,8 +53,7 @@ xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -d
 ## Avvio
 
 1. Inserisci la chiave Kimi (`https://api.moonshot.ai/v1`) e le chiavi Alpaca, prima in **paper**. Il passaggio al live richiede di scrivere `LIVE`, e ogni START in live chiede conferma.
-2. Modalità GIORNALIERA: premi START. L'app controlla i 15 ETF, chiama Kimi solo se c'è un segnale, mette ordine limite + stop GTC. Poi puoi chiuderla: riaprendola parte subito un controllo (o usa CONTROLLA ORA). Basta aprirla una volta al giorno a mercato aperto: il segnale si calcola sulle barre chiuse e non cambia durante la seduta.
-   Modalità NOTTE: meglio su un secondo conto paper (SISTEMA → Conti Alpaca). Aprila la mattina entro le 15:28 (vendita all'apertura) e il pomeriggio entro le 21:50 (acquisto in chiusura); i promemoria arrivano alle 14:45 e alle 21:15.
+2. Modalità PORTAFOGLIO: premi START. L'app controlla i 15 ETF della parte giornaliera (Kimi solo se c'è un segnale, ordine limite + stop GTC sul broker) e gestisce la parte notte alle aste (MOC in chiusura, OPG all'apertura). Poi puoi chiuderla: riaprendola parte subito un controllo (o usa CONTROLLA ORA). Per la notte bastano due aperture al giorno: mattina entro le 15:28 (ora italiana) e pomeriggio entro le 21:50; i promemoria arrivano alle 14:45 e alle 21:15. Se rigeneri il conto paper, usa "Ricalibra equity" in SISTEMA.
 3. `STOP` ferma il motore senza toccare le posizioni. `HARD KILL SWITCH` annulla tutti gli ordini e chiude tutte le posizioni del conto.
 
 ## Protezioni (in codice)

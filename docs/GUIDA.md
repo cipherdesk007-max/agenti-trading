@@ -49,29 +49,34 @@ ETF americani (S&P 500, Nasdaq-100, Russell 2000, oro) usando un conto Alpaca.
 | BROKER | Ordini aperti (Annulla) e posizioni (Chiudi) con controllo manuale, ordini recenti, link rapidi | `screenshots/BROKER.png` |
 | SISTEMA | Conti Alpaca (aggiungi/usa/elimina), sezioni Strategia, Kimi, App, Stato; versioni e aggiornamenti | `screenshots/SISTEMA.png` |
 
-## 4. Le 3 modalità
+## 4. Le 2 modalità
 
 Tutti i numeri sono degli studi in `tools/` (backtest 2006–oggi con yfinance) e
 sono descritti in `docs/STATO.md`. **I risultati passati non garantiscono quelli
 futuri.**
 
-### Giornaliera (consigliata per iniziare, su conto paper)
-- Compra un ETF quando è in trend rialzista (sopra la media a 200 giorni) e ha
-  appena fatto un ribasso forte (RSI2 < 10). Vende quando il prezzo torna sopra la
-  media a 5 giorni, dopo 10 giorni, allo stop o al target.
-- **Studio 2006–oggi**: circa **+2,3% annuo**, **perdita massima −9%**, Sharpe
-  0,43; batte ingressi casuali con le stesse uscite. Su conto da 1.000 $ circa
-  **un segnale a settimana** e il 44% dei segnali viene saltato (1 azione costa
-  troppo rispetto al rischio consentito).
-- Stop e target restano **sul broker (GTC)**: basta aprire l'app qualche minuto al
-  giorno a mercato aperto. Kimi viene chiamato solo se c'è un segnale.
-
-### Notte (su conto paper separato)
-- Compra in chiusura (asta MOC) S&P 500, Nasdaq-100, Russell 2000 e oro a peso
-  uguale e vende all'apertura del giorno dopo (asta OPG). Zero crediti Kimi.
-- **Studio 2006–oggi**: circa **+8,0% annuo**, **perdita massima −22%**, Sharpe
-  0,81 (ultimi 2 anni +13,9%). Serve aprire l'app **due volte al giorno**: mattina
-  entro le 15:28 (ora italiana) e pomeriggio entro le 21:50.
+### Portafoglio (consigliata per iniziare, su conto paper)
+- Fa convivere **giornaliera e notte sullo stesso conto**, con due budget separati:
+  **30% alla giornaliera** e **70% alla notte**. Il capitale si **ribilancia a ogni
+  ciclo** sull'equity corrente; se imposti un tetto in SISTEMA, il tetto vale sul
+  totale prima dello split.
+- **Giornaliera (la sua parte)**: compra un ETF quando è in trend rialzista (sopra
+  SMA200) e ha appena fatto un ribasso forte (RSI2 < 10); stop a 2,5 ATR **sul
+  broker (GTC)**, attivo anche ad app chiusa; esce a chiusura sopra SMA5, dopo 10
+  giorni, allo stop o al target. Kimi viene chiamato solo se c'è un segnale.
+- **Notte (la sua parte)**: compra in chiusura (asta MOC) S&P 500, Nasdaq-100,
+  Russell 2000 e oro a peso uguale e vende all'apertura del giorno dopo (asta OPG).
+  Zero crediti Kimi.
+- Ogni strategia ha il **suo registro** e tocca solo le sue posizioni; il pannello
+  Portafoglio (in DETTAGLI) mostra il **P&L separato per strategia** e il totale del
+  conto.
+- **Studio 2006–oggi** (`tools/backtest_portfolio.py`, run 43338377889): split 30/70
+  → circa **+5,6% annuo**, **perdita massima −17%**, Sharpe 0,79 (Sharpe 1,96 sugli
+  ultimi 3 anni); correlazione tra le due strategie +0,04. Le regole dinamiche
+  "insegui chi guadagna" sono state scartate dai numeri.
+- Serve aprire l'app **due volte al giorno** per la parte notte: mattina entro le
+  15:28 e pomeriggio entro le 21:50 (ora italiana). Gli stop della giornaliera
+  restano sul broker anche ad app chiusa.
 
 ### Veloce (sperimentale — sconsigliata con soldi veri)
 - Decide ogni pochi minuti con Kimi su candele da 1–15 minuti; chiude tutto prima

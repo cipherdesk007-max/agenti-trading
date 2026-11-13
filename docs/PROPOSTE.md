@@ -328,3 +328,6 @@ statico negli studi, non come API in app. Nessuna di queste proposte è nel codi
   (il controllo di drawdown altrimenti vede un dirupo). La VELOCE resta fuori.
 - **Decisione**: spetta al proprietario scegliere lo split (30/70 consigliato: tiene il
   72% del CAGR della notte con 4 punti di drawdown in meno); poi serve il piano di test.
+- **STATO: FATTA il 13/11/2026** — modalità PORTAFOGLIO implementata con split 30/70 (cap sul
+  totale prima dello split), P&L separato per strategia e "Ricalibra equity" in SISTEMA.
+  Commit `1dfd61c`, `b29be39`, `aec072f`; CI run #185 e #186 verdi (215 test, 0 fallimenti).
