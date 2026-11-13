@@ -456,6 +456,12 @@ struct DailyCycleRunner: Sendable {
         // Esito di ogni candidato per il registro ombra (default: scartato).
         var status = Dictionary(fresh.map { ($0.symbol, ShadowEntry.brainSkip) }, uniquingKeysWith: { a, _ in a })
         for extra in ranked.dropFirst(slots) { status[extra.symbol.uppercased()] = ShadowEntry.noSlot }
+        // Punto a: ogni voce del registro ombra porta la versione del prompt
+        // che ha prodotto il verdetto (buy o skip) di quel candidato.
+        let verdictVersions = Dictionary(
+            verdicts.map { ($0.symbol.uppercased(), $0.promptVersion) },
+            uniquingKeysWith: { a, _ in a }
+        )
         func recordShadow(_ book: inout DailyBook) async {
             for candidate in fresh {
                 let s = candidate.snapshot
@@ -469,7 +475,8 @@ struct DailyCycleRunner: Sendable {
                     symbol: candidate.symbol, day: today, entry: s.close,
                     stop: s.close - DailyStrategy.stopATR * s.atr14,
                     outcome: status[candidate.symbol] ?? ShadowEntry.brainSkip,
-                    eventFlag: eventful
+                    eventFlag: eventful,
+                    promptVersion: verdictVersions[candidate.symbol.uppercased()] ?? nil
                 ))
             }
         }

@@ -235,6 +235,10 @@ struct ShadowEntry: Codable, Sendable, Equatable {
     /// contenevano un evento ad alto impatto? nil sulle voci registrate prima
     /// della prova (si escludono dai gruppi del filtro, mai dagli altri conti).
     var eventFlag: Bool?
+    /// Versione del prompt Kimi che ha prodotto il verdetto per questo
+    /// candidato (punto a dell'audit: pagelle separabili per versione).
+    /// nil sulle voci registrate prima del 1.6.7.
+    var promptVersion: String?
 
     var resolved: Bool { exitPrice != nil }
     var ret: Double? { exitPrice.map { $0 / entry - 1 } }

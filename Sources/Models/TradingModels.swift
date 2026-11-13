@@ -414,6 +414,9 @@ struct KimiDecision: Codable, Sendable {
     let winProbability: Double
     let payoffRatio: Double
     let rationale: String
+    /// Versione del prompt Kimi che ha prodotto la decisione (punto a:
+    /// non viaggia nel JSON, la imposta KimiService dopo la decodifica).
+    var promptVersion: String?
 
     enum CodingKeys: String, CodingKey {
         case symbol
@@ -450,6 +453,8 @@ struct DailyVerdict: Codable, Sendable, Equatable {
     let action: String
     let confidence: Double
     let rationale: String
+    /// Versione del prompt Kimi che ha prodotto il verdetto (punto a).
+    var promptVersion: String?
 
     var wantsBuy: Bool { action == "buy" }
 }
@@ -463,6 +468,8 @@ struct DailyVerdictList: Codable, Sendable {
 struct KimiReview: Codable, Sendable {
     let verdict: String
     let reason: String
+    /// Versione del prompt Kimi che ha prodotto la sentenza (punto a).
+    var promptVersion: String?
 
     var approved: Bool { verdict == "approve" }
 }
@@ -475,6 +482,8 @@ struct KimiAnalysis: Codable, Sendable {
     let bias: String
     let confidence: Double
     let comment: String
+    /// Versione del prompt Kimi che ha prodotto l'analisi (punto a).
+    var promptVersion: String?
 }
 
 struct AnalysisEntry: Identifiable, Sendable {
@@ -724,6 +733,8 @@ final class TradeRecord {
     var netPnL: Double?
     var stopErrorVariance: Double?
     var outcomeRecorded: Bool
+    /// Versione del prompt Kimi che ha prodotto la decisione (punto a).
+    var promptVersion: String?
 
     init(receipt: ExecutionReceipt, atr: Double) {
         id = UUID()
@@ -743,6 +754,7 @@ final class TradeRecord {
         netPnL = nil
         stopErrorVariance = nil
         outcomeRecorded = false
+        promptVersion = decision.promptVersion
     }
 }
 
@@ -771,6 +783,8 @@ final class DecisionSample {
     /// (opportunità persa o perdita evitata).
     var postHoldMovePct: Double?
     var evaluated: Bool
+    /// Versione del prompt Kimi che ha prodotto la decisione (punto a).
+    var promptVersion: String?
 
     init(decision: KimiDecision, price: Double, atr: Double) {
         id = UUID()
@@ -791,6 +805,7 @@ final class DecisionSample {
         netPnL = nil
         postHoldMovePct = nil
         evaluated = false
+        promptVersion = decision.promptVersion
     }
 }
 
@@ -821,6 +836,8 @@ final class CouncilRecord {
     var orderID: String?
     /// Se il Contrarian (Reviewer) ha approvato la proposta.
     var reviewerApproved: Bool
+    /// Versione del prompt Kimi che ha prodotto la decisione (punto a).
+    var promptVersion: String?
 
     init(reports: [AgentReport], divergence: CouncilDivergence.Assessment?, decision: KimiDecision, price: Double) {
         id = UUID()
@@ -841,6 +858,7 @@ final class CouncilRecord {
         executed = false
         orderID = nil
         reviewerApproved = false
+        promptVersion = decision.promptVersion
     }
 
     /// Report decodificati (se il JSON non è decodificabile, lista vuota).

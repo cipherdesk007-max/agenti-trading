@@ -1119,6 +1119,22 @@ final class QuantSwarmEngine: ObservableObject {
         CreditGuardStore.save(creditGuard)
     }
 
+    /// Punto f dell'audit (docs/AGENTI.md): token e durata di OGNI chiamata
+    /// Kimi finiscono nel log di sessione, dove le raccoglie il report.
+    /// Da chiamare subito dopo ogni interazione Kimi riuscita.
+    private func flushKimiCallLog(_ service: KimiService? = nil) async {
+        guard let kimi = service ?? kimiService else { return }
+        for entry in await kimi.drainCallLog() {
+            log(
+                "CHIAMATA KIMI \(entry.prompt): "
+                    + String(format: "%.1f", Double(entry.durationMs) / 1_000)
+                    + " s, token \(entry.promptTokens ?? 0) in entrata, "
+                    + "\(entry.completionTokens ?? 0) in uscita (modello \(entry.model)).",
+                agent: .system
+            )
+        }
+    }
+
     /// Spesa reale del giorno: baseline del saldo a inizio giornata meno il
     /// saldo attuale. Niente stime sui token: è il numero dell'account Kimi.
     private func trackCredits(balance: KimiBalance) {
@@ -1194,6 +1210,7 @@ final class QuantSwarmEngine: ObservableObject {
                 "ANALISI: \(analysis.regime.replacingOccurrences(of: "_", with: " ")) · vol \(analysis.volatility) · bias \(analysis.bias) — \(analysis.comment)",
                 agent: .brain
             )
+            await flushKimiCallLog(kimi)
         } catch is CancellationError {
             // STOP durante la chiamata: esito atteso, niente da loggare.
         } catch {
@@ -1724,6 +1741,7 @@ final class QuantSwarmEngine: ObservableObject {
                         divergence: councilDivergence
                     )
                     registerKimiCall()
+                    await flushKimiCallLog(kimi)
                     setStage(.brain, .done, "\(symbol): \(decision.action.rawValue.uppercased()) \(Int(decision.confidence * 100))%")
                     if decision.action == .hold { skipStages(after: .brain, "Brain: hold") }
                     decisions.append(DecisionEntry(timestamp: Date(), decision: decision))
@@ -1821,6 +1839,7 @@ final class QuantSwarmEngine: ObservableObject {
                                 divergence: councilDivergence
                             )
                             registerKimiCall()
+                            await flushKimiCallLog(kimi)
                         } catch is CancellationError {
                             return
                         } catch {
@@ -2556,6 +2575,7 @@ extension QuantSwarmEngine {
         let result = await runner.run(input) { [weak self] event in
             await self?.apply(event)
         }
+        await flushKimiCallLog(kimi)
         guard !result.aborted else { return }
         DailyBookStore.save(result.book, account: bookAccount)
         botExposure = result.botExposure
