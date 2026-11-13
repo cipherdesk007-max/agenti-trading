@@ -38,7 +38,13 @@ START = 1_000.0
 def load_ohlc(ticker, start, interval):
     df = lib.flat_by_field(yf.download(ticker, start=start, interval=interval,
                                        auto_adjust=False, progress=False))
-    return df[["Open", "High", "Low", "Close"]].astype(float).dropna()
+    out = df[["Open", "High", "Low", "Close"]].astype(float).dropna()
+    # yfinance a ticker singolo restituisce colonne MultiIndex (field, ticker):
+    # senza appiattire, df["Close"] resta un DataFrame e .iat[i] con un solo
+    # indice esplode ("DataFrame._get_value() missing 'col'", run 43355963065).
+    if isinstance(out.columns, pd.MultiIndex):
+        out.columns = out.columns.get_level_values(0)
+    return out
 
 
 def resample_4h(df):
@@ -68,9 +74,13 @@ def simulate_crypto(df, rsi_thr, stop_atr, tp_atr):
     for i in range(100, n):  # aspetta EMA100/ATR
         px = c.iat[i]
         if pos is not None:
-            if l.iat[i] <= pos["stop"]:      # stop prima del TP (conservativo)
-                cash += pos["qty"] * pos["stop"] * (1 - COST)
-                trades.append({"ret": (pos["stop"] / pos["entry"] - 1) - 2 * COST})
+            if l.iat[i] <= pos["stop"]:
+                # fill al min(stop, apertura): se la barra apre sotto lo stop
+                # (gap, normale sulle crypto) si esce all'apertura, come
+                # daily_study_lib.simulate. Prima riempiva sempre a stop.
+                fill = min(pos["stop"], o.iat[i])
+                cash += pos["qty"] * fill * (1 - COST)
+                trades.append({"ret": (fill / pos["entry"] - 1) - 2 * COST})
                 pos = None
             elif h.iat[i] >= pos["tp"]:
                 cash += pos["qty"] * pos["tp"] * (1 - COST)
@@ -137,13 +147,17 @@ def main():
     for t in COINS:
         eq, tr = simulate_crypto(dfs_d[t], rsi_thr=12, stop_atr=3.5, tp_atr=2.5)
         eq_strat[t], all_trades[t] = eq, tr
-    # strategia equal-weight (media dei rendimenti giornalieri delle equity normalizzate)
+    # strategia equal-weight (media dei rendimenti giornalieri delle equity normalizzate).
+    # ATTENZIONE dichiarata: l'allineamento (dropna) porta il paniere EW alla nascita
+    # della moneta piu' giovane (SOL, 2020): la data va nel nome della riga, le
+    # righe per singola moneta usano la loro storia completa.
     rets = pd.DataFrame({t: eq_strat[t].pct_change() for t in COINS}).dropna()
     port_strat = START * (1 + rets.mean(axis=1)).cumprod()
     all_tr = [t for ts in all_trades.values() for t in ts]
-    print(row("CRYPTO RSI2<12 EMA100 stop3.5AT TP2.5 (EW)", port_strat, all_tr, 365))
-    bh = START * (1 + pd.DataFrame({t: dfs_d[t]["Close"].pct_change() for t in COINS}).dropna().mean(axis=1)).cumprod()
-    print(row("Benchmark buy&hold EW", bh, [{"ret": 0.0}], 365))
+    print(row(f"CRYPTO RSI2<12 EMA100 stop3.5AT TP2.5 (EW, dal {rets.index[0].date()})", port_strat, all_tr, 365))
+    bhr = pd.DataFrame({t: dfs_d[t]["Close"].pct_change() for t in COINS}).dropna()
+    bh = START * (1 + bhr.mean(axis=1)).cumprod()
+    print(row(f"Benchmark buy&hold EW (dal {bhr.index[0].date()})", bh, [{"ret": 0.0}], 365))
     for t in COINS:
         print(row(f"  {t} da solo", eq_strat[t], all_trades[t], 365))
 

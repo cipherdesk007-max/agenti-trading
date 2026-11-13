@@ -29,6 +29,9 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
   campione e Deflated Sharpe. Da lanciare con dispatch manuale; la modalità crypto entra in app
   solo se i numeri reggono e solo dopo decisione del proprietario.
 
+### Corretto (strumenti e CI, 13/11/2026)
+- **`tools/backtest_crypto.py`: crash della prima esecuzione (run 43355963065).** yfinance a ticker singolo restituisce colonne MultiIndex: `df["Close"]` restava un DataFrame e `.iat[i]` con un solo indice esplodeva ("DataFrame._get_value() missing 'col'"). Ora `load_ohlc` appiattisce le colonne in Serie vere. Inoltre due fix di onestà: il fill dello stop usa `min(stop, apertura)` in caso di gap (come `daily_study_lib.simulate`; prima riempiva sempre a stop, ottimista sulle crypto che gappano spesso) e le righe equal-weight dichiarano la finestra comune nel nome (l'allineamento parte dalla nascita della moneta più giovane, prima era implicito).
+
 ### Bloccato e documentato (richiesta "CRYPTO 24/7 + Balance Advisor + prompt Kimi" del 13/11/2026)
 - Non implementata: vedi proposta 18 in [docs/PROPOSTE.md](docs/PROPOSTE.md). Motivi: nessuno
   studio crypto in `tools/` (regola di progetto: ogni strategia entra solo con backtest
