@@ -452,20 +452,26 @@ final class CryptoCycleTests: XCTestCase {
                       "il log deve dire che lo stop manca: \(logs1)")
 
         // Ciclo 2 (stessa barra: nessun nuovo segnale, solo riconciliazione):
-        // la posizione è sul broker, lo stop manca → RIPRISTINATO.
+        // la posizione è sul broker, lo stop manca → RIPRISTINATO. Il broker
+        // del ciclo 2 ACCETTA gli stop: il ripristino deve riuscire qui.
+        let broker2 = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": entryBars],
+                                      brokerQty: ["BTC/USD": qty])
         let sink2 = LogSink()
         input = CryptoCycleInput(book: result1.book, today: "2026-11-13", pairs: ["BTC/USD"])
-        let result2 = await CryptoCycleRunner(broker: broker).run(input) { event in
+        let result2 = await CryptoCycleRunner(broker: broker2).run(input) { event in
             if let message = event.log { await sink2.add(message) }
         }
         let logs2 = await sink2.all()
         XCTAssertTrue(logs2.contains { $0.contains("RIPRISTINATO") }, "il ciclo deve riparare lo stop: \(logs2)")
 
-        let snap = await broker.snapshot()
+        let snap = await broker2.snapshot()
         XCTAssertEqual(snap.stopOrders.count, 1, "un solo stop: quello di ripristino")
-        let repair = snap.stopOrders.first!
+        guard let repair = snap.stopOrders.first, let registeredStop = position1?.stopPrice else {
+            return XCTFail("riparazione dello stop mancante: \(snap)")
+        }
         XCTAssertTrue(repair.clientOrderId.hasPrefix("qsc-stopfix-BTC/USD-2026-11-13-"), repair.clientOrderId)
-        XCTAssertEqual(repair.stopPrice, position1!.stopPrice!, accuracy: 1e-9)
+        XCTAssertEqual(repair.stopPrice, registeredStop, accuracy: 1e-9)
         XCTAssertEqual(repair.qty, qty, accuracy: 1e-12)
         let position2 = result2.book.position("BTC/USD")
         XCTAssertNotNil(position2?.stopOrderId, "registro aggiornato con l'id dello stop riparato")
