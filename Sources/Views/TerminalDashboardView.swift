@@ -715,7 +715,9 @@ struct TerminalDashboardView: View {
                 }
             }
             if engine.isRunning, engine.activeMode?.runsOnSchedule == true {
-                Text(engine.activeMode == .night
+                Text(engine.activeMode == .portfolio
+                     ? "PORTAFOGLIO: stop e ordini d'asta restano sul broker anche ad app chiusa. Aprila la mattina entro le 15:28 (vendita OPG della notte) e il pomeriggio entro le 21:50 (acquisto MOC)."
+                     : engine.activeMode == .night
                      ? "Gli ordini d'asta restano sul broker anche ad app chiusa. Aprila la mattina entro le 15:28 (vendita all'apertura) e il pomeriggio entro le 21:50 (acquisto in chiusura)."
                      : "Puoi lasciare l'app aperta o chiuderla: gli stop restano attivi sul broker. Riaprendola parte subito un controllo.")
                     .font(.caption)
@@ -912,7 +914,7 @@ struct TerminalDashboardView: View {
                     }
                 }
             }
-            if displayedMode == .daily, !engine.dailyCandidates.isEmpty {
+            if displayedMode != .intraday, !engine.dailyCandidates.isEmpty {
                 Text("Segnali di oggi: " + engine.dailyCandidates.map { "\($0.symbol) RSI2 \(String(format: "%.1f", $0.snapshot.rsi2))" }.joined(separator: " · "))
                     .font(.caption2.weight(.bold))
                     .monospacedDigit()
@@ -1011,10 +1013,16 @@ struct TerminalDashboardView: View {
                 portfolioRow("Buying power", Formatters.amount(account.buyingPowerValue), color: Theme.textPrimary)
                 if let dayPnL = account.dayPnL {
                     portfolioRow(
-                        "P&L oggi",
+                        "P&L oggi (totale conto)",
                         Formatters.signedAmount(dayPnL),
                         color: dayPnL >= 0 ? Theme.accent : Theme.red
                     )
+                }
+                if let pnl = engine.strategyPnL {
+                    portfolioRow("P&L giornaliera · 30%", Formatters.signedAmount(pnl.daily.pnl),
+                                 color: pnl.daily.pnl >= 0 ? Theme.accent : Theme.red)
+                    portfolioRow("P&L notte · 70%", Formatters.signedAmount(pnl.night.pnl),
+                                 color: pnl.night.pnl >= 0 ? Theme.accent : Theme.red)
                 }
             } else {
                 Text("Nessun dato: tocca Aggiorna per leggere il conto.")
@@ -1676,7 +1684,7 @@ private struct SystemSettingsView: View {
             }
 
             Picker("Modalità", selection: $draft.tradingMode) {
-                ForEach(TradingMode.allCases, id: \.self) { mode in
+                ForEach(TradingMode.selectableModes, id: \.self) { mode in
                     Text(mode.shortLabel).tag(mode)
                 }
             }
@@ -1911,6 +1919,13 @@ private struct SystemSettingsView: View {
                     settingRow("Ordini", "acquisto in asta di chiusura (MOC), vendita in asta di apertura (OPG)")
                     settingRow("Kimi", "non usato: 0 crediti")
                     settingRow("Aperture", "mattina entro le 15:28 · pomeriggio 15:30–21:50 (ora italiana)")
+                } else if config.tradingMode == .portfolio {
+                    let budgets = PortfolioSplit.budgets(equity: engine.account?.equityValue, capitalCap: config.sanitized.capitalCap)
+                    settingRow("Divisione", "30% giornaliera · 70% notte, ribilanciata a ogni ciclo sull'equity corrente (split fisso, studio run 43338377889)")
+                    settingRow("Budget giornaliera ora", "\(Formatters.amount(budgets.daily)) USD")
+                    settingRow("Budget notte ora", "\(Formatters.amount(budgets.night)) USD")
+                    settingRow("Ordini", "giornaliera: limite + stop GTC sul broker · notte: MOC in chiusura / OPG all'apertura")
+                    settingRow("Kimi", "solo la giornaliera, e solo se c'è un segnale")
                 } else if config.tradingMode == .daily {
                     settingRow("Segnali", "15 ETF · sopra SMA200 e RSI2 < 10 · Kimi solo se c'è un segnale")
                     settingRow("Ordini", "limite + stop \(String(format: "%.1f", DailyStrategy.stopATR)) ATR + target \(String(format: "%.0f", DailyStrategy.takeProfitATR)) ATR, GTC sul broker")
@@ -1925,6 +1940,15 @@ private struct SystemSettingsView: View {
                     settingRow("Foreground", "motore solo ad app aperta: in background nessun ordine")
                 }
                 settingRow("Pause automatiche", "rete assente o batteria < 20%")
+                Button("Ricalibra equity") {
+                    engine.recalibrateEquityBaseline()
+                }
+                .secondaryButton()
+                Text("Se il conto paper è stato rigenerato o c'è un prelievo, riallinea il picco del drawdown all'equity corrente: il calo fittizio non deve fermare il bot.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
             Text(engine.strategyConfig.tradingMode.runsOnSchedule
                  ? "Nessuna app iOS resta attiva 24/7: per questo la giornaliera mette stop e target sul broker, attivi anche ad app chiusa. Basta aprirla una volta al giorno a mercato aperto."
                  : "Nessuna app iOS resta attiva 24/7: la veloce lavora solo ad app aperta con lo schermo acceso; in background nessun nuovo ordine, le posizioni restano protette dalle gambe stop/target sul broker.")
