@@ -189,6 +189,78 @@ def portfolio(dfs, variant, frac):
     return port
 
 
+# --- P2 (13/11/2026): cooldown dopo l'uscita e ingressi maker sul V4 ---
+# Le regole IMPLEMENTATE nell'app sono V4 (Donchian20 sopra SMA200, chandelier
+# 3*ATR22). Queste due varianti P2 erano in backlog da validare con i numeri
+# prima di toccare l'app (regola dei cambi: mai senza backtest).
+
+def simulate_v4(df, frac, cooldown=0, maker=False, maker_cost=0.001):
+    """V4 con le due varianti P2. `cooldown=0, maker=False` riproduce ESATTAMENTE
+    la V4 di simulate_trend (riga di sanita' nella tabella: se non coincide,
+    c'e' un bug qui e lo studio non vale niente).
+
+    - cooldown > 0: dopo UNA USCITA (chandelier o regime: nei dati daily non si
+      distingue onestamente quale sia "colpa" dello stop) niente rientro per
+      `cooldown` barre, compresa la barra dell'uscita quando cooldown >= 1.
+    - maker=True: ingresso con ordine LIMIT al livello di rottura (il massimo a
+      20 barre PRECEDENTI della barra del segnale) invece che a mercato alla
+      chiusura del segnale. Modello di fill ONESTO: riempito SOLO se la barra
+      SUCCESSIVA scambia a quel livello (Low <= livello), al prezzo del livello,
+      con costo maker (0,10%: fee maker Alpaca crypto primo scaglione) invece
+      del taker COST; se non lo tocca l'ordine SCADE e non c'e' fill (mai un
+      fill "guardando avanti" con il vantaggio del senno di poi)."""
+    c = df["Close"]
+    h, l = df["High"], df["Low"]
+    sma200 = c.rolling(200).mean()
+    atr = atr_series(h, l, c, 22)
+    don_hi = h.rolling(20).max().shift(1)
+    n = len(df)
+    cash = START
+    qty = 0.0
+    entry_px = 0.0
+    highest = 0.0
+    equity = np.full(n, START)
+    cooldown_until = -1      # rientri bloccati fino a questa barra (esclusa)
+    pending_level = None     # ordine limit piazzato alla barra precedente
+    for i in range(200, n):
+        px = c.iat[i]
+        if qty > 0:
+            highest = max(highest, px)
+            chandelier = highest - 3.0 * atr.iat[i]
+            if px < sma200.iat[i] or px < chandelier:
+                cash += qty * px * (1 - COST)
+                qty, entry_px, highest = 0.0, 0.0, 0.0
+                cooldown_until = i + cooldown - 1   # 0 = rientro subito, come V4
+        elif pending_level is not None:
+            if l.iat[i] <= pending_level:           # il livello e' stato scambiato
+                budget = equity[i - 1] * frac
+                spend = min(cash, budget)
+                if spend > 0:
+                    qty = spend * (1 - maker_cost) / pending_level
+                    cash -= spend
+                    entry_px, highest = pending_level, pending_level
+            pending_level = None
+        if qty == 0 and pending_level is None and i > cooldown_until:
+            if px > sma200.iat[i] and px > don_hi.iat[i]:
+                if maker:
+                    pending_level = don_hi.iat[i]  # limit valido UNA barra
+                else:
+                    budget = equity[i - 1] * frac
+                    spend = min(cash, budget)
+                    if spend > 0:
+                        qty = spend * (1 - COST) / px
+                        cash -= spend
+                        entry_px, highest = px, px
+        equity[i] = cash + qty * px
+    return pd.Series(equity, index=df.index)
+
+
+def portfolio_v4(dfs, frac, cooldown, maker):
+    eqs = {t: simulate_v4(df, frac / len(COINS), cooldown, maker) for t, df in dfs.items()}
+    rets = pd.DataFrame({t: e.pct_change() for t, e in eqs.items()}).dropna()
+    return START * (1 + rets.mean(axis=1)).cumprod()
+
+
 def main():
     print("## Studio CRYPTO trend-following a regime (solo analisi, non cambia l'app)")
     print(f"\nRegole NUOVE dopo il bando della proposta 18 (mean-reversion bocciata): "
@@ -229,6 +301,35 @@ def main():
     for t in COINS:
         eq, _ = simulate_trend(dfs_d[t], "sma200", 1.0)
         print(f"| {t} | {fmt(metrics(eq, 365))} | {verdict(eq, 365)} |")
+
+    # --- P2: cooldown dopo l'uscita e ingressi maker sul V4 (regole dell'app) ---
+    # Criteri di adozione PRE-REGISTRATI prima del run: una variante P2 entra
+    # nell'app SOLO se (1) CAGR full-window > baseline V4, (2) maxDD non peggio
+    # di 3 punti percentuali rispetto alla baseline, (3) finestra orso non
+    # peggio di 1 punto, (4) entrambe le meta' > 0. Altrimenti si respinge con
+    # i numeri stampati qui (regola del repo: cambi solo con backtest).
+    print("\n### P2 (studio, non cambia l'app): cooldown dopo l'uscita e ingressi maker sul V4 (le regole implementate)")
+    print(f"Criteri pre-registrati: si adotta SOLO se CAGR > baseline E maxDD >= baseline - 3pp "
+          f"E finestra orso non peggio di 1pp E meta' > 0. Maker: limit al livello Donchian20 valido "
+          f"1 barra, fill solo se scambiato (Low <= livello), fee maker 0,10% contro taker {COST:.2%}.")
+    base = portfolio_v4(dfs_d, 1.0, 0, False)
+    rows = [("V4 baseline (mercato alla chiusura, nessuna pausa)", 0, False),
+            ("V4 + pausa 3 barre dopo l'uscita", 3, False),
+            ("V4 + pausa 5 barre dopo l'uscita", 5, False),
+            ("V4 + pausa 10 barre dopo l'uscita", 10, False),
+            ("V4 ingresso maker (limit al livello Donchian20)", 0, True),
+            ("V4 maker + pausa 5 barre", 5, True)]
+    print("| variante P2 | CAGR / maxDD / Sharpe (tutto) | prima metà | seconda metà | orso 2024-11→oggi |")
+    print("|---|---|---|---|---|")
+    for label, cd, mk in rows:
+        port = portfolio_v4(dfs_d, 1.0, cd, mk)
+        half = len(port) // 2
+        m = metrics(port, 365)
+        m1, m2 = metrics(port.iloc[:half], 365), metrics(port.iloc[half:], 365)
+        recent = port[port.index >= pd.Timestamp(RECENT_START, tz=port.index.tz)]
+        mr = metrics(recent, 365) if len(recent) > 30 else None
+        print(f"| {label} | {fmt(m)} | {fmt(m1)} | {fmt(m2)} | {fmt(mr)} |")
+    print("Sanita': la riga baseline deve coincidere con la V4 della prima tabella, altrimenti questo studio non vale.")
 
     # --- 4H: controllo secondario sulla finestra 1h (~730 giorni, tutto orso) ---
     dfs_h = {t: load_ohlc(t, None, "1h", period="730d") for t in COINS}

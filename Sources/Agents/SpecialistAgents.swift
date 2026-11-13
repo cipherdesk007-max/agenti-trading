@@ -327,7 +327,13 @@ enum NewsSpecialist {
         func hits(_ words: [String]) -> [String] {
             var found: Set<String> = []
             for word in words {
-                if lower.contains(where: { $0.contains(word) }) { found.insert(word) }
+                // Confine di parola a inizio (come EventFilter48h): "war" non
+                // falso-positiva su "software" o "toward", "rate" non su
+                // "moderate", "cut" non su "haircut" o "shortcut". I titoli
+                // sono gia' in minuscolo ma il match resta case-insensitive.
+                if lower.contains(where: {
+                    $0.range(of: "\\b\(word)", options: [.regularExpression, .caseInsensitive]) != nil
+                }) { found.insert(word) }
             }
             return found.sorted()
         }

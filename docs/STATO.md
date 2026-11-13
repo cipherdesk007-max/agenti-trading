@@ -1,6 +1,6 @@
 # Stato del progetto · QuantSwarm Alpha Zero
 
-Aggiornato al 13/11/2026, versione **1.6.5** (l'HARD KILL ora azzera anche i registri locali: dopo il kill delle 21:49 il registro notte diceva ancora "acquisti in coda" per ordini cancellati, e la sera avrebbe saltato la ricompra; sotto, la 1.6.4 ha portato il self-healing dello stop CRYPTO, la 1.6.3 il pulsante RIATTIVA TRADING in-app, la 1.6.2 il doppio avvio parato, la 1.6.1 la chiarezza CRYPTO, la 1.6.0 la modalità CRYPTO · 24/7 + Balance Advisor; il numero di build della CI si legge in SISTEMA).
+Aggiornato al 13/11/2026, versione **1.6.6** (lo specialista NOTIZIE del consiglio ora legge i titoli a confine di parola: prima "war" matchava "software"/"toward" e "rate" matchava "moderate", mandando a Kimi pareri gonfiati su titoli neutri; stesso identico metodo del filtro evento 48h; sotto, la 1.6.5 ha allineato i registri all'HARD KILL, la 1.6.4 portato il self-healing dello stop CRYPTO, la 1.6.3 il pulsante RIATTIVA TRADING in-app, la 1.6.2 il doppio avvio parato, la 1.6.1 la chiarezza CRYPTO, la 1.6.0 la modalità CRYPTO · 24/7 + Balance Advisor; il numero di build della CI si legge in SISTEMA).
 Questo file è per chi studia o rivede il progetto (persone o AI): cosa fa l'app, come è collegata, cosa è già stato deciso con i dati e cosa resta aperto.
 
 ## Vincoli che non cambiano

@@ -5,9 +5,14 @@ Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Sem
 La versione installata si legge in **SISTEMA → VERSIONE** (con il numero di build della CI).
 Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
-## [Non rilasciato]
+## [1.6.6] - 13/11/2026
 
-Niente per ora.
+### Corretto (specialista NOTIZIE del consiglio: falsi positivi keyword · 13/11/2026, revisione completa del progetto)
+
+- **NewsSpecialist leggeva i titoli per sottostringa**: "war" matchava "software" e "toward", "rate" matchava "moderate", "cut" matchava "haircut"/"shortcut". Un titolo neutro poteva finire marcato come "evento ad alto impatto" o negativo nel report che Kimi Brain e Reviewer ricevono in TUTTE le modalità (parere del consiglio nella Veloce e digest della Giornaliera). Ora il matching è a confine di parola (regex `\\b`, case-insensitive), lo stesso metodo già usato dal filtro evento 48h: le parole chiave vere restano prese ("rate cut", "Fed", "warning"), i falsi positivi spariscono.
+- **Perché è un fix e non un cambio di strategia**: le regole di ingresso/uscita non cambiano; migliora la qualità dei dati di contesto che gli agenti locali passano a Kimi (meno rumore nel parere dello specialista notizie).
+- Test: **+2** (falsi positivi software/moderate respinti e resta neutro; parole chiave vere a confine di parola ancora prese; i 273 della 1.6.5 diventano 275).
+- Insieme (solo strumenti, nessun cambio in-app senza numeri): `tools/backtest_trend_crypto.py` esteso con lo **studio P2 pre-registrato** su cooldown dopo l'uscita e ingressi maker per la CRYPTO V4 (criteri di adozione dichiarati prima del run; esito documentato in docs/STATO.md e docs/PROPOSTE.md).
 
 ## [1.6.5] - 13/11/2026
 

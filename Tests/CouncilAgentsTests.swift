@@ -144,6 +144,27 @@ final class CouncilAgentsTests: XCTestCase {
         XCTAssertEqual(report.signal, .short)
     }
 
+    // Falsi positivi del matching a sottostringa (fix del 13/11/2026): prima
+    // "war" matchava "software"/"toward" e "rate" matchava "moderate", e i
+    // titoli neutri venivano marchiati come evento/negativi.
+    func testNewsKeywordBoundariesRejectSubstringFalsePositives() throws {
+        let report = NewsSpecialist.report(symbol: "SPY", headlines: [
+            "Software makers report moderate revenue growth"
+        ])
+        XCTAssertEqual(report.signal, .neutral,
+                       "software/toward/moderate non devono far scattare war/rate: resta neutro (una sola positiva reale)")
+        XCTAssertFalse(report.evidence.contains { $0.contains("war,") || $0.contains("rate,") },
+                       "war e rate non devono comparire tra gli eventi ad alto impatto")
+    }
+
+    func testNewsKeywordBoundariesStillMatchRealKeywords() throws {
+        let report = NewsSpecialist.report(symbol: "SPY", headlines: [
+            "Fed signals rate cut as inflation cools"
+        ])
+        XCTAssertTrue(report.risks.contains { $0.contains("fed") && $0.contains("rate") && $0.contains("cut") },
+                      "le parole chiave vere (fed, rate, cut) restano prese a confine di parola")
+    }
+
     func testNewsAbstainWithoutHeadlines() throws {
         let report = NewsSpecialist.report(symbol: "SPY", headlines: [])
         XCTAssertEqual(report.signal, .abstain)
