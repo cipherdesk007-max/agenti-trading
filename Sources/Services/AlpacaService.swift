@@ -735,7 +735,7 @@ actor AlpacaService {
                 query: query
             )
             let response = try JSONDecoder().decode(CryptoBarsResponse.self, from: data)
-            for (symbol, bars) in response.bars {
+            for (symbol, bars) in response.bars ?? [:] {
                 let candles = bars.compactMap(\.candle)
                 collected[symbol, default: []].append(contentsOf: candles)
             }
@@ -761,7 +761,7 @@ actor AlpacaService {
         )
         let response = try JSONDecoder().decode(CryptoLatestQuotesResponse.self, from: data)
         var mids: [String: Double] = [:]
-        for (symbol, quote) in response.quotes {
+        for (symbol, quote) in response.quotes ?? [:] {
             if let bid = quote.bp, let ask = quote.ap, bid > 0, ask > 0 {
                 mids[symbol] = (bid + ask) / 2
             }

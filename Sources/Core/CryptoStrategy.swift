@@ -94,8 +94,12 @@ enum CryptoStrategy {
             return Signal(symbol: symbol, state: .warmup, close: closedBars.last?.close ?? 0,
                           sma200: 0, donchianHigh: 0, atr22: 0, chandelier: nil)
         }
-        guard let last = closedBars.last, closedBars.count >= smaPeriod else {
-            return Signal(symbol: symbol, state: .warmup, close: last.close,
+        guard closedBars.count >= smaPeriod else {
+            return Signal(symbol: symbol, state: .warmup, close: closedBars.last?.close ?? 0,
+                          sma200: sma, donchianHigh: don, atr22: atr, chandelier: nil)
+        }
+        guard let last = closedBars.last else {
+            return Signal(symbol: symbol, state: .warmup, close: 0,
                           sma200: sma, donchianHigh: don, atr22: atr, chandelier: nil)
         }
         let chandelier = heldHighestClose.map { $0 - chandelierATR * atr }

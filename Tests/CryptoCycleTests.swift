@@ -44,10 +44,8 @@ actor FakeCryptoBroker: CryptoBrokerClient {
         livePrices[symbol] ?? 100
     }
 
-    func position(symbol: String) async throws -> BrokerPosition? {
-        let qty = brokerQty[symbol] ?? 0
-        guard qty > 0 else { return nil }
-        return BrokerPosition(symbol: symbol, quantity: qty, averageEntryPrice: 100, unrealizedPL: 0)
+    func positionQty(symbol: String) async throws -> Double {
+        brokerQty[symbol] ?? 0
     }
 
     func submitMarket(symbol: String, quantity: Double, side: String,

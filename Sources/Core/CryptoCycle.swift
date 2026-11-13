@@ -7,8 +7,9 @@ protocol CryptoBrokerClient: Sendable {
     func cryptoBars(symbol: String) async throws -> [Candle]
     /// Prezzo live (mid quote) per il badge LIVE e i controlli.
     func latestPrice(symbol: String) async throws -> Double
-    /// Posizione attuale della coppia sul broker (qty 0 = chiusa dallo stop).
-    func position(symbol: String) async throws -> BrokerPosition?
+    /// Quantità della coppia a carico del broker (0 = chiusa dallo stop).
+    /// Non optional: 0 significa "non c'è più", un errore è un errore.
+    func positionQty(symbol: String) async throws -> Double
     /// Ordine crypto `simple` frazionato (qty decimale). Ritorna l'id.
     func submitMarket(symbol: String, quantity: Double, side: String,
                       clientOrderId: String) async throws -> String
@@ -141,8 +142,9 @@ struct CryptoCycleRunner: Sendable {
 
         // 3. Riconciliazione con le posizioni reali sul broker.
         for position in book.positions {
-            guard let brokerPosition = try? await broker.position(symbol: position.symbol) else { continue }
-            let brokerQty = brokerPosition?.quantity ?? 0
+            guard let brokerQty = try? await broker.positionQty(symbol: position.symbol) else {
+                continue // errore di rete: si riprova al prossimo tick
+            }
             if brokerQty <= 0.00000001 {
                 await emit(.init(log: "\(position.symbol): la posizione non è più sul broker (stop eseguito o chiusura manuale); tolta dal registro.", agent: .risk,
                                  notify: (title: "CRYPTO: \(position.symbol) chiusa",
@@ -185,7 +187,7 @@ struct CryptoCycleRunner: Sendable {
                                                                 side: "sell",
                                                                 clientOrderId: "qsc-sell-\(pair)-\(day)"),
                    let status = try? await broker.orderStatus(orderId: orderId) {
-                    await emit(.init(log: "CRYPTO \(pair): vendita inviata (ordine \(orderId), stato \(status)).", agent: .executor))
+                    await emit(.init(log: "CRYPTO \(pair): vendita inviata (ordine \(orderId), stato \(status)).", agent: .system))
                 } else {
                     await emit(.init(log: "CRYPTO \(pair): vendita NON riuscita; la posizione resta in registro e si riprova al prossimo tick.", agent: .risk))
                     continue
@@ -212,7 +214,7 @@ struct CryptoCycleRunner: Sendable {
                 var positionQty = qty
                 if let filled = try? await broker.filledQuantity(orderId: orderId), filled > 0, filled < qty {
                     positionQty = filled
-                    await emit(.init(log: "CRYPTO \(pair): fill parziale (\(filled) su \(qty)).", agent: .executor))
+                    await emit(.init(log: "CRYPTO \(pair): fill parziale (\(filled) su \(qty)).", agent: .system))
                 }
                 // Appena filled: stop stop_limit GTC di protezione sul broker.
                 let stop = signal.close - CryptoStrategy.chandelierATR * signal.atr22
@@ -230,7 +232,7 @@ struct CryptoCycleRunner: Sendable {
                                                        entryPrice: signal.close, stopPrice: stop))
                 await emit(.init(stage: .executor, state: .done,
                                  detail: "\(pair): comprato \(position.qty) @ ~\(signal.close), stop GTC \(stop)",
-                                 log: "CRYPTO \(pair): ingresso \(position.qty) a ~\(String(format: "%.2f", signal.close)) USD (rottura Donchian20 sopra SMA200); stop stop_limit GTC a \(String(format: "%.2f", stop)) sul broker.", agent: .executor,
+                                 log: "CRYPTO \(pair): ingresso \(position.qty) a ~\(String(format: "%.2f", signal.close)) USD (rottura Donchian20 sopra SMA200); stop stop_limit GTC a \(String(format: "%.2f", stop)) sul broker.", agent: .system,
                                  notify: (title: "CRYPTO: ingresso \(pair)",
                                          body: "Rottura Donchian20 sopra SMA200: comprati \(position.qty) con stop GTC a \(String(format: "%.2f", stop)) USD.")))
             case .hold:
@@ -290,10 +292,10 @@ struct AlpacaCryptoBroker: CryptoBrokerClient {
         return mid
     }
 
-    func position(symbol: String) async throws -> BrokerPosition? {
-        let all = try await service.positions()
+    func positionQty(symbol: String) async throws -> Double {
         // Le posizioni crypto usano lo stesso simbolo della coppia ("BTC/USD").
-        return all.first { $0.symbol == symbol }
+        let all = try await service.positions()
+        return all.first { $0.symbol == symbol }?.quantityValue ?? 0
     }
 
     func submitMarket(symbol: String, quantity: Double, side: String,
