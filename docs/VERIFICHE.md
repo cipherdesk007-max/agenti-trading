@@ -86,6 +86,13 @@ nel Keychain protetto da Face ID.
 - **Atteso**: a fine tentativo la posizione è chiusa OPPURE ha esattamente uno stop `qsv-emg-…`; mai due stop d'emergenza sullo stesso simbolo, mai ordini residui del simbolo. La doc Alpaca dice che `DELETE /v2/positions/{symbol}` NON annulla gli ordini aperti e che con ordini sell aperti le azioni restano riservate (rifiuto "insufficient qty"): https://docs.alpaca.markets/us/reference/deleteopenposition-1 — da confermare qui sul conto paper.
 - **Se è diverso**: più stop `qsv-emg-` sullo stesso simbolo → bug nell'anti-duplicato; ordine residuo del simbolo a posizione chiusa → l'annullo non è stato verificato rileggendo gli ordini; chiusura rifiutata "insufficient qty" → gli ordini sell non erano stati annullati (o restavano riservate: la sequenza cancel→close ha una corsa documentata, https://alpaca.markets/learn/how-to-fix-common-trading-api-errors-at-alpaca); posizione senza stop e senza chiusura → guarda la notifica "POSIZIONE SENZA STOP" e chiudi a mano dal broker panel.
 
+## 12 · Agenti 1.6.7: costo per chiamata nel report e robustezza sulle risposte (13/11 build ≥ 213, non ancora pubblicata)
+
+- **Nell'app**: avvia una modalità che chiama Kimi (GIORNALIERA con candidati, VELOCE, o solo ANALIZZA ORA in MERCATI), poi STOP e apri il report di sessione.
+- **Atteso**: nel report compare una riga "CHIAMATA KIMI <prompt>: X s, token N in entrata, M in uscita (modello …)" per OGNI chiamata fatta; il conteggio chiamate del giorno in SISTEMA è coerente. Le decisioni registrate (dettagli/pagelle) portano la versione del prompt 1.7.0.
+- **Se è diverso**: manca la riga CHIAMATA KIMI con una chiamata comunque avvenuta (contatore a posto) → il drain del log non è arrivato al report: da segnalare. Token a zero con risposta ricevuta → l'API non ha restituito usage: guardare il modello in uso.
+- **Nota costo**: la tariffa stimata non è nell'app (solo token reali); il saldo speso reale resta quello di SISTEMA (baseline saldo Kimi).
+
 ## Come riportare un problema
 
 Screenshot dell'app (CRUSCOTTO con catena agenti ed eventi) + lo storico ordini di Alpaca

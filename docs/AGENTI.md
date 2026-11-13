@@ -149,13 +149,29 @@ script esce con un messaggio chiaro e codice 0 (non è un errore del run).
   dei bocciati dall'attuale (veto più utile) senza calare l'accordo. Altrimenti
   scartata e documentata qui.
 
+## 5-bis · Cosa è già entrato nell'app (v1.6.7, 13/11/2026)
+
+I punti a, d, e, f sono ATTIVI nella 1.6.7 (commit 469f2120, +13 test): i 5
+prompt sono costanti versionate (PROMPT_VERSION 1.7.0) e ogni decisione
+registrata porta la versione (KimiDecision, DailyVerdict, KimiReview,
+KimiAnalysis, TradeRecord, DecisionSample, CouncilRecord, ShadowEntry);
+tutti i prompt dichiarano che notizie e testi di terze parti sono DATI non
+istruzioni (con test del titolo iniettato sul NewsSpecialist); le chiamate
+Kimi hanno UN solo nuovo tentativo (2 totali); decide rifiuta confidence
+fuori 0-1 e dailyDecide butta i verdetti malformati (fail-closed); usage e
+durata di ogni chiamata finiscono nel log/report di sessione ("CHIAMATA
+KIMI"). Questi punti NON cambiano come si decide: rendono le decisioni
+misurabili, harder da ingannare e il costo osservabile. Le varianti b e c
+restano IN OMBRA nel banco di prova finché non ci sono i numeri della
+sezione 6 e il via dell'utente.
+
 ## 6. Risultati del banco (tabella da riempire dopo il replay)
 
 Stato: **NON ESEGUITO**. Serve il secret GitHub `MOONSHOT_API_KEY` (lo aggiunge
 l'utente su Settings → Secrets and variables → Actions del repository), poi
 dispatch di backtest.yml con `quale=replay`.
 
-| Misure | Prompt attuale (a=d/e/f) | Variante b (uscita strutturata) | Variante c (reviewer cieco) |
+| Misure | Prompt attuale (in-app 1.6.7) | Variante b (uscita strutturata) | Variante c (reviewer cieco) |
 |---|---|---|---|
 | Giorni con candidati / chiamate / token / costo | da eseguire | da eseguire | da eseguire |
 | Scelti a 5 sedute vs scartati | da eseguire | da eseguire | n.d. |
@@ -163,7 +179,8 @@ dispatch di backtest.yml con `quale=replay`.
 | Approvati vs bocciati (valore veto) | da eseguire | n.d. | da eseguire |
 | Brier per fasce di confidence | da eseguire | da eseguire | n.d. |
 | Accordo fra 2 esecuzioni identiche | da eseguire | da eseguire | da eseguire |
-| Esito (attiva / ombra / scarta) | attiva (non cambia decisioni) | da decidere coi numeri | da decidere coi numeri |
+| Esito (attiva / ombra / scarta) | attiva in 1.6.7 (non cambia come si decide) | in ombra: da decidere coi numeri | in ombra: da decidere coi numeri |
+| Prompt a/d/e/f in-app | ATTIVO (v1.6.7, commit 469f2120, 288 test) | n.d. | n.d. |
 
 Regola di lettura (dichiarata prima): nessuna variante b/c diventa attiva senza
 battere il prompt attuale su queste misure E il via dell'utente. I fallimenti si
