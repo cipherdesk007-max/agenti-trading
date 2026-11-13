@@ -435,11 +435,11 @@ final class CryptoCycleTests: XCTestCase {
                                       bars: ["BTC/USD": entryBars],
                                       brokerQty: ["BTC/USD": qty],
                                       failStopLimit: true)
-        var book = CryptoBook()
-        var sink = LogSink()
+        let book = CryptoBook()
+        let sink1 = LogSink()
         var input = CryptoCycleInput(book: book, today: "2026-11-13", pairs: ["BTC/USD"])
         let result1 = await CryptoCycleRunner(broker: broker).run(input) { event in
-            if let message = event.log { await sink.add(message) }
+            if let message = event.log { await sink1.add(message) }
         }
 
         // Ingresso avvenuto, stop NO: il registro lo dice e il log non mente.
@@ -447,18 +447,18 @@ final class CryptoCycleTests: XCTestCase {
         XCTAssertNotNil(position1)
         XCTAssertNil(position1?.stopOrderId)
         XCTAssertNotNil(position1?.stopPrice)
-        let logs1 = await sink.all()
+        let logs1 = await sink1.all()
         XCTAssertTrue(logs1.contains { $0.contains("NON è stato accettato dal broker") },
                       "il log deve dire che lo stop manca: \(logs1)")
 
         // Ciclo 2 (stessa barra: nessun nuovo segnale, solo riconciliazione):
         // la posizione è sul broker, lo stop manca → RIPRISTINATO.
-        sink = LogSink()
+        let sink2 = LogSink()
         input = CryptoCycleInput(book: result1.book, today: "2026-11-13", pairs: ["BTC/USD"])
         let result2 = await CryptoCycleRunner(broker: broker).run(input) { event in
-            if let message = event.log { await sink.add(message) }
+            if let message = event.log { await sink2.add(message) }
         }
-        let logs2 = await sink.all()
+        let logs2 = await sink2.all()
         XCTAssertTrue(logs2.contains { $0.contains("RIPRISTINATO") }, "il ciclo deve riparare lo stop: \(logs2)")
 
         let snap = await broker.snapshot()
