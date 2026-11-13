@@ -359,7 +359,19 @@ statico negli studi, non come API in app. Nessuna di queste proposte è nel codi
 - **Blocco 3 — iOS non esegue nulla 24/7 in background**: l'app gira solo quando è aperta
   (docs/GUIDA.md). Un refresh live ogni 60 s è possibile solo in primo piano (come già fa la
   VELOCE); "7 giorni su 7" richiederebbe stop sul broker sempre attivi, che è il blocco 2.
-- **Balance Advisor**: la raccomandazione verso CRYPTO è bloccata con la modalità. Per le
+- **Esito dello studio (13/11/2026, run 43357136321, `quale=crypto`)**: BOCIATA DAI NUMERI.
+1D dal 2018 (EW dal 2020-07): +0,0%/−4%/Sharpe 0,04, PF 1,02 dopo i costi (197 trade);
+solo BTC-USD fa +1,0%/−3%, le altre monete da +0,3% a −0,6%. 4H sulla finestra reale
+2024-11 → 2026-11: tutte le 6 varianti della griglia in perdita (CAGR −1,3%…−3,1%,
+PF 0,75–0,85), coerenti in entrambe le metà. 1H: −22,8%/−41%/PF 0,57 (1292 trade),
+perdita massima ben oltre il tetto ~10% dell'app. Benchmark buy&hold EW della stessa
+finestra: −31,8%/−72% (orso crypto): la strategia perde meno del mercato ma perde.
+La modalità CRYPTO non entra nell'app con queste regole; si riparte solo con regole
+diverse e nuovo backtest. Nota tecnica: due bug corretti nello script prima del run
+buono (colonne MultiIndex di yfinance; finestra 1h che con start=None era UN mese,
+non 730 giorni, vedi CHANGELOG).
+
+**Balance Advisor**: la raccomandazione verso CRYPTO è bloccata con la modalità. Per le
   modalità esistenti la copertura c'è già: "ETF comprabili" (`buyableETF`) in SISTEMA e i
   gemelli micro della NOTTE (SPYM/QQQM/VTWO/GLDM). Nessun codice nuovo necessario.
 - **Prompt Kimi**: riscriverli cambia il comportamento delle decisioni → stessa regola dei
