@@ -367,3 +367,21 @@ statico negli studi, non come API in app. Nessuna di queste proposte è nel codi
   `KimiService`; idempotenza ordini via `client_order_id` + recupero `orderRef(byClientOrderId:)`
   in entrambi i cicli; HARD KILL = `emergencyFlatten` globale (annulla tutti gli ordini e
   chiude tutte le posizioni del conto: coprirebbe anche eventuali posizioni crypto).
+- **Fonti esterne trovate online (13/11/2026) — SOLO come proposta, con link; non sono un
+  backtest del progetto e non autorizzano nulla da sole**:
+  - dev.to / edgoro, "11 indicatori classici a default su crypto, 154 backtest 2020–2026":
+    le 3 strategie mean-reversion a default (RSI 30/70, Bollinger, Stochastic 20/80) battono
+    buy&hold in **0/42** run e perdono soldi in 26; buy&hold BTC +628,9% ma drawdown −96,3% —
+    https://dev.to/walid_koussa_0941941b1fdb/we-backtested-11-classic-indicators-at-their-default-settings-on-crypto-32-of-154-runs-beat-buy-55d
+  - Nefedov (SSRN 7350238), "How Much Sharpe is Illusory?": lo Sharpe naïve su crypto factor
+    è gonfiato ~3,6×; nessun fattore sopravvive alla deflazione con costi realistici —
+    https://papers.ssrn.com/sol3/papers.cfm?abstract_id=7350238
+  - Wen, Bouri, Xu, Zhao (SSRN 4080253), momentum/reversal intraday su BTC 2013–2020: reversal
+    intraday è un effetto reale ma fragile ai salti e agli annunci macro —
+    https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4080253
+  - MDPI J. Risk Financial Management 19(9):692, momentum/reversal daytime vs overnight BTC/ETH
+    2016–2025 (i mercati crypto sono 24/7, ma i pattern cambiano per sessione) —
+    https://doi.org/10.3390/jrfm19090692
+  - **Conclusione**: la letteratura esterna NON sostiene una RSI2<12 su crypto come "sicura";
+  i drawdown crypto sono enormi e lo Sharpe va deflato. Per decidere serve comunque il backtest
+  locale (`tools/backtest_crypto.py`, `quale=crypto`) su cui misurare i parametri proposti.
