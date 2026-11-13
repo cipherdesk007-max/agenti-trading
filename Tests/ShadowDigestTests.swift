@@ -1,5 +1,5 @@
 import XCTest
-@testable import QuantSwarm
+@testable import QuantSwarmAlphaZero
 
 /// ShadowDigest (task "Kimi + registro ombra"): gli ultimi 10 esiti risolti
 /// del registro ombra con il rendimento reale, per l'auto-correzione dei bias

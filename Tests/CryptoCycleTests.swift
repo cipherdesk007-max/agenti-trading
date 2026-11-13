@@ -1,5 +1,5 @@
 import XCTest
-@testable import QuantSwarm
+@testable import QuantSwarmAlphaZero
 
 /// Broker crypto finto: registra ordini, cancellazioni e sequenza delle
 /// chiamate, così i test verificano l'ordine ESATTO delle operazioni

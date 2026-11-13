@@ -1,5 +1,5 @@
 import XCTest
-@testable import QuantSwarm
+@testable import QuantSwarmAlphaZero
 
 /// BALANCE ADVISOR: consiglio della modalità in base al saldo, tre fasce
 /// stabilite dal proprietario (<1.500 · 1.500–5.000 · >5.000 USD).

@@ -1,5 +1,5 @@
 import XCTest
-@testable import QuantSwarm
+@testable import QuantSwarmAlphaZero
 
 /// Regole V4 della modalità CRYPTO · 24/7 (proposta 20, studio run 43358878933):
 /// Donchian20 sopra SMA200, uscita chandelier 3 ATR, budget 1/5 per coppia,
