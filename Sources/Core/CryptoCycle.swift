@@ -83,7 +83,9 @@ struct CryptoCycleResult: Sendable, Equatable {
 /// 2. barre 1D chiuse di ogni coppia + prezzo live (badge LIVE);
 /// 3. riconciliazione: le posizioni del registro ancora vive sul broker?
 ///    Se lo stop stop_limit GTC è scattato ad app chiusa, la posizione va
-///    tolta dal registro (il broker ha già venduto);
+///    tolta dal registro (il broker ha già venduto); se invece la posizione
+///    è viva ma lo stop MANCA (invio fallito, cancellato, quantità cambiata)
+///    viene ri-coperto qui: SELF-HEALING, stesso livello chandelier;
 /// 4. solo se c'è una barra NUOVA (nuovo giorno): segnale V4 ->
 ///    uscita (prima si annulla lo stop, poi vendita a mercato),
 ///    ingresso (ordine `simple` frazionato, poi stop_limit di protezione),
@@ -165,6 +167,12 @@ struct CryptoCycleRunner: Sendable {
         result.dataOK = pairsWithData.count == input.pairs.count
 
         // 3. Riconciliazione con le posizioni reali sul broker.
+        //    SELF-HEALING dello stop: sul crypto Alpaca non esistono ordini
+        //    bracket (422), quindi se lo stop protettivo manca (invio fallito
+        //    all'ingresso, stop cancellato a mano sul broker, quantità
+        //    cambiata) la posizione resterebbe SCOPERTA finché il chandelier
+        //    non sale. Ogni tick ogni posizione viva senza stop confermato
+        //    viene ri-coperta allo stesso livello chandelier del registro.
         for position in book.positions {
             guard let brokerQty = try? await broker.positionQty(symbol: position.symbol) else {
                 continue // errore di rete: si riprova al prossimo tick
@@ -175,14 +183,45 @@ struct CryptoCycleRunner: Sendable {
                                           body: "La posizione non risulta più sul broker (stop stop_limit o chiusura manuale).")))
                 if let stopId = position.stopOrderId { try? await broker.cancelOrder(id: stopId) }
                 book.remove(symbol: position.symbol)
-            } else if abs(brokerQty - position.qty) > 0.00000001 {
-                await emit(.init(log: "\(position.symbol): quantità sul broker (\(brokerQty)) diversa dal registro (\(position.qty)); registro riallineato.", agent: .risk))
-                var updated = position
-                updated.qty = brokerQty
-                if let stopId = position.stopOrderId { try? await broker.cancelOrder(id: stopId) }
-                updated.stopOrderId = nil
-                book.upsert(updated)
+                continue
             }
+            var updated = position
+            var stopMissing = false
+            if abs(brokerQty - position.qty) > 0.00000001 {
+                await emit(.init(log: "\(position.symbol): quantità sul broker (\(brokerQty)) diversa dal registro (\(position.qty)); registro riallineato.", agent: .risk))
+                // Lo stop vecchio copriva la quantità sbagliata: via quello,
+                // poi la ricopertura qui sotto ne mette uno della misura giusta.
+                if let stopId = position.stopOrderId { try? await broker.cancelOrder(id: stopId) }
+                updated.qty = brokerQty
+                updated.stopOrderId = nil
+                stopMissing = true
+            } else if let stopId = position.stopOrderId {
+                // Stop registrato: è ancora VIVO sul broker?
+                if let status = try? await broker.orderStatus(orderId: stopId) {
+                    stopMissing = Self.isStopTerminal(status)
+                } // errore di rete sullo stato: NIENTE doppi stop alla cieca,
+                  // si considera vivo e si riprova al prossimo tick.
+            } else {
+                stopMissing = true // stop mai arrivato (invio fallito all'ingresso)
+            }
+            if stopMissing, let stopPrice = updated.stopPrice, stopPrice > 0 {
+                let repairId = "qsc-stopfix-\(position.symbol)-\(input.today)-\(Int(Date().timeIntervalSince1970))"
+                if let stopId = try? await broker.submitStopLimit(symbol: position.symbol,
+                                                                   quantity: updated.qty,
+                                                                   stopPrice: stopPrice,
+                                                                   limitPrice: stopPrice * (1 - stopLimitBuffer),
+                                                                   clientOrderId: repairId) {
+                    updated.stopOrderId = stopId
+                    await emit(.init(log: "CRYPTO \(position.symbol): stop protettivo RIPRISTINATO sul broker (stop_limit GTC a \(String(format: "%.2f", stopPrice)) USD, quantità \(updated.qty)): era assente o non copriva la posizione.", agent: .risk,
+                                     notify: (title: "CRYPTO: stop ripristinato \(position.symbol)",
+                                              body: "La posizione era senza stop: rimesso stop_limit GTC a \(String(format: "%.2f", stopPrice)) USD.")))
+                } else {
+                    await emit(.init(log: "CRYPTO \(position.symbol): stop assente e ripristino NON riuscito; posizione scoperta, nuovo tentativo al prossimo tick (60 s).", agent: .risk,
+                                     notify: (title: "CRYPTO: \(position.symbol) senza stop",
+                                              body: "Ripristino dello stop protettivo non riuscito: nuovo tentativo al prossimo ciclo (60 s).")))
+                }
+            }
+            book.upsert(updated)
         }
 
         // 4. Segnali: SOLO su barra nuova (lo stesso giorno non firma due volte).
@@ -263,7 +302,7 @@ struct CryptoCycleRunner: Sendable {
                                                                  stopPrice: stop,
                                                                  limitPrice: stop * (1 - stopLimitBuffer),
                                                                  clientOrderId: "qsc-stop-\(pair)-\(day)"))
-                var position = CryptoBook.Position(symbol: pair, entryDay: day,
+                let position = CryptoBook.Position(symbol: pair, entryDay: day,
                                                     entryPrice: signal.close, qty: positionQty,
                                                     highestClose: signal.close,
                                                     stopOrderId: stopId, stopPrice: stop)
@@ -271,11 +310,21 @@ struct CryptoCycleRunner: Sendable {
                 result.orders.append(CryptoPlacedOrder(symbol: pair, orderId: orderId,
                                                        quantity: positionQty,
                                                        entryPrice: signal.close, stopPrice: stop))
-                await emit(.init(stage: .executor, state: .done,
-                                 detail: "\(pair): comprato \(position.qty) @ ~\(signal.close), stop GTC \(stop)",
-                                 log: "CRYPTO \(pair): ingresso \(position.qty) a ~\(String(format: "%.2f", signal.close)) USD (rottura Donchian20 sopra SMA200); stop stop_limit GTC a \(String(format: "%.2f", stop)) sul broker.", agent: .system,
-                                 notify: (title: "CRYPTO: ingresso \(pair)",
-                                         body: "Rottura Donchian20 sopra SMA200: comprati \(position.qty) con stop GTC a \(String(format: "%.2f", stop)) USD.")))
+                if let stopId {
+                    await emit(.init(stage: .executor, state: .done,
+                                     detail: "\(pair): comprato \(position.qty) @ ~\(signal.close), stop GTC \(stop)",
+                                     log: "CRYPTO \(pair): ingresso \(position.qty) a ~\(String(format: "%.2f", signal.close)) USD (rottura Donchian20 sopra SMA200); stop stop_limit GTC a \(String(format: "%.2f", stop)) sul broker.", agent: .system,
+                                     notify: (title: "CRYPTO: ingresso \(pair)",
+                                             body: "Rottura Donchian20 sopra SMA200: comprati \(position.qty) con stop GTC a \(String(format: "%.2f", stop)) USD.")))
+                } else {
+                    // Onestà nel log: senza questo ramo il ciclo diceva "stop
+                    // sul broker" anche quando l'invio era fallito.
+                    await emit(.init(stage: .executor, state: .done,
+                                     detail: "\(pair): comprato \(position.qty) @ ~\(signal.close), STOP MANCANTE (riparo al prossimo ciclo)",
+                                     log: "CRYPTO \(pair): ingresso \(position.qty) a ~\(String(format: "%.2f", signal.close)) USD (rottura Donchian20 sopra SMA200). ATTENZIONE: lo stop GTC NON è stato accettato dal broker; la posizione è scoperta e il prossimo ciclo la ri-copre (max 60 s).", agent: .risk,
+                                     notify: (title: "CRYPTO: ingresso \(pair) senza stop",
+                                             body: "Comprati \(position.qty); lo stop GTC non è stato accettato: ripristino automatico al prossimo ciclo (60 s).")))
+                }
             case .hold:
                 guard var position = book.position(pair) else { continue }
                 let newHighest = max(position.highestClose, signal.close)
@@ -338,6 +387,14 @@ struct CryptoCycleRunner: Sendable {
         formatter.timeZone = TimeZone(identifier: "UTC")
         formatter.dateFormat = "yyyy-MM-dd"
         return formatter.string(from: candle.timestamp)
+    }
+
+    /// Stati terminali di un ordine Alpaca: per lo stop protettivo significano
+    /// "non copre più la posizione" (eseguito, cancellato, scaduto, rifiutato).
+    /// "filled" con la posizione ancora viva = fill parziale dello stop: resta
+    /// una quantità da ri-coprire.
+    static func isStopTerminal(_ status: String) -> Bool {
+        ["filled", "canceled", "cancelled", "expired", "rejected"].contains(status.lowercased())
     }
 }
 

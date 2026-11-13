@@ -18,6 +18,12 @@ actor FakeCryptoBroker: CryptoBrokerClient {
     let fillFactor: Double
     /// true simula lo STOP del motore durante il ciclo (CancellationError).
     let cancelOnAccount: Bool
+    /// Stato per id ordine (default "new": ordine vivo).
+    let statuses: [String: String]
+    /// Id per cui orderStatus lancia un errore di rete.
+    let statusErrorIds: Set<String>
+    /// true: ogni submitStopLimit viene rifiutato (stop mai piazzato).
+    let failStopLimit: Bool
 
     private(set) var events: [String] = []
     private(set) var marketOrders: [MarketCall] = []
@@ -44,7 +50,9 @@ actor FakeCryptoBroker: CryptoBrokerClient {
 
     init(equity: Double, cash: Double, bars: [String: [Candle]] = [:],
          livePrices: [String: Double] = [:], brokerQty: [String: Double] = [:],
-         fillFactor: Double = 1.0, cancelOnAccount: Bool = false) {
+         fillFactor: Double = 1.0, cancelOnAccount: Bool = false,
+         statuses: [String: String] = [:], statusErrorIds: Set<String> = [],
+         failStopLimit: Bool = false) {
         self.equity = equity
         self.cash = cash
         self.bars = bars
@@ -52,6 +60,9 @@ actor FakeCryptoBroker: CryptoBrokerClient {
         self.brokerQty = brokerQty
         self.fillFactor = fillFactor
         self.cancelOnAccount = cancelOnAccount
+        self.statuses = statuses
+        self.statusErrorIds = statusErrorIds
+        self.failStopLimit = failStopLimit
     }
 
     func snapshot() -> Snapshot {
@@ -92,6 +103,9 @@ actor FakeCryptoBroker: CryptoBrokerClient {
 
     func submitStopLimit(symbol: String, quantity: Double, stopPrice: Double,
                          limitPrice: Double, clientOrderId: String) async throws -> String {
+        if failStopLimit {
+            throw QuantSwarmError.invalidServerResponse("stop_limit rifiutato (simulato)")
+        }
         nextId += 1
         let id = "stp-\(nextId)"
         events.append("stopLimit:\(id)")
@@ -105,7 +119,12 @@ actor FakeCryptoBroker: CryptoBrokerClient {
         canceled.append(id)
     }
 
-    func orderStatus(orderId: String) async throws -> String { "filled" }
+    func orderStatus(orderId: String) async throws -> String {
+        if statusErrorIds.contains(orderId) {
+            throw QuantSwarmError.invalidServerResponse("stato non raggiungibile (simulato)")
+        }
+        return statuses[orderId] ?? "new"
+    }
 
     func filledQuantity(orderId: String) async throws -> Double {
         (marketQtyById[orderId] ?? 0) * fillFactor
@@ -403,5 +422,136 @@ final class CryptoCycleTests: XCTestCase {
         XCTAssertTrue(logs.isEmpty, "lo STOP non va loggato come errore: \(logs)")
         XCTAssertFalse(result.dataOK)
         XCTAssertTrue(result.orders.isEmpty)
+    }
+
+    // MARK: - SELF-HEALING dello stop: la posizione viva non resta mai scoperta
+
+    /// Ingresso riuscito ma stop GTC rifiutato: il log dice la VERITÀ
+    /// (prima diceva "stop sul broker" anche quando non c'era) e il ciclo
+    /// successivo ri-copre la posizione.
+    func testEntryWithoutStopLogsTruthfullyAndNextCycleRepairs() async {
+        let qty = CryptoStrategy.fractionalQty(budget: 1_000, price: 130)!
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": entryBars],
+                                      brokerQty: ["BTC/USD": qty],
+                                      failStopLimit: true)
+        var book = CryptoBook()
+        var sink = LogSink()
+        var input = CryptoCycleInput(book: book, today: "2026-11-13", pairs: ["BTC/USD"])
+        let result1 = await CryptoCycleRunner(broker: broker).run(input) { event in
+            if let message = event.log { await sink.add(message) }
+        }
+
+        // Ingresso avvenuto, stop NO: il registro lo dice e il log non mente.
+        let position1 = result1.book.position("BTC/USD")
+        XCTAssertNotNil(position1)
+        XCTAssertNil(position1?.stopOrderId)
+        XCTAssertNotNil(position1?.stopPrice)
+        let logs1 = await sink.all()
+        XCTAssertTrue(logs1.contains { $0.contains("NON è stato accettato dal broker") },
+                      "il log deve dire che lo stop manca: \(logs1)")
+
+        // Ciclo 2 (stessa barra: nessun nuovo segnale, solo riconciliazione):
+        // la posizione è sul broker, lo stop manca → RIPRISTINATO.
+        sink = LogSink()
+        input = CryptoCycleInput(book: result1.book, today: "2026-11-13", pairs: ["BTC/USD"])
+        let result2 = await CryptoCycleRunner(broker: broker).run(input) { event in
+            if let message = event.log { await sink.add(message) }
+        }
+        let logs2 = await sink.all()
+        XCTAssertTrue(logs2.contains { $0.contains("RIPRISTINATO") }, "il ciclo deve riparare lo stop: \(logs2)")
+
+        let snap = await broker.snapshot()
+        XCTAssertEqual(snap.stopOrders.count, 1, "un solo stop: quello di ripristino")
+        let repair = snap.stopOrders.first!
+        XCTAssertTrue(repair.clientOrderId.hasPrefix("qsc-stopfix-BTC/USD-2026-11-13-"), repair.clientOrderId)
+        XCTAssertEqual(repair.stopPrice, position1!.stopPrice!, accuracy: 1e-9)
+        XCTAssertEqual(repair.qty, qty, accuracy: 1e-12)
+        let position2 = result2.book.position("BTC/USD")
+        XCTAssertNotNil(position2?.stopOrderId, "registro aggiornato con l'id dello stop riparato")
+    }
+
+    /// Posizione viva senza stop nel registro (es. crash tra ingresso e stop):
+    /// il ciclo la ri-copre al livello chandelier registrato.
+    func testMissingStopIsRepairedAtRegisteredLevel() async {
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": flatBars],
+                                      brokerQty: ["BTC/USD": 0.1])
+        var book = CryptoBook()
+        book.upsert(.init(symbol: "BTC/USD", entryDay: "2026-11-01", entryPrice: 100,
+                          qty: 0.1, highestClose: 100,
+                          stopOrderId: nil, stopPrice: 100))
+        let result = await run(broker, book: book)
+        let snap = await broker.snapshot()
+
+        XCTAssertEqual(snap.stopOrders.count, 1)
+        let repair = snap.stopOrders.first!
+        XCTAssertEqual(repair.stopPrice, 100, accuracy: 1e-9)
+        XCTAssertEqual(repair.qty, 0.1, accuracy: 1e-12)
+        XCTAssertEqual(repair.limitPrice, 100 * (1 - 0.002), accuracy: 1e-9)
+        let position = result.book.position("BTC/USD")
+        XCTAssertEqual(position?.stopOrderId, repair.id)
+        XCTAssertEqual(position?.stopPrice ?? 0, 100, accuracy: 1e-9)
+    }
+
+    /// Stop cancellato a mano sul broker (stato "canceled"): il ciclo lo
+    /// rimpiazza senza cancellare un ordine già terminato.
+    func testStopCanceledOnBrokerIsReplaced() async {
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": flatBars],
+                                      brokerQty: ["BTC/USD": 0.1],
+                                      statuses: ["stp-7": "canceled"])
+        var book = CryptoBook()
+        book.upsert(.init(symbol: "BTC/USD", entryDay: "2026-11-01", entryPrice: 100,
+                          qty: 0.1, highestClose: 100,
+                          stopOrderId: "stp-7", stopPrice: 100))
+        let result = await run(broker, book: book)
+        let snap = await broker.snapshot()
+
+        XCTAssertTrue(snap.canceled.isEmpty, "un ordine già terminato non si cancella")
+        XCTAssertEqual(snap.stopOrders.count, 1)
+        XCTAssertEqual(snap.stopOrders.first?.stopPrice ?? 0, 100, accuracy: 1e-9)
+        XCTAssertEqual(result.book.position("BTC/USD")?.stopOrderId, snap.stopOrders.first?.id)
+    }
+
+    /// Quantità cambiata sul broker (fill parziale dello stop): il registro si
+    /// riallinea E la nuova quantità viene ri-coperta da uno stop giusto.
+    func testQtyRealignmentCoversNewQuantity() async {
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": flatBars],
+                                      brokerQty: ["BTC/USD": 0.2])
+        var book = CryptoBook()
+        book.upsert(.init(symbol: "BTC/USD", entryDay: "2026-11-01", entryPrice: 100,
+                          qty: 0.1, highestClose: 100,
+                          stopOrderId: "stp-7", stopPrice: 100))
+        let result = await run(broker, book: book)
+        let snap = await broker.snapshot()
+
+        XCTAssertEqual(snap.canceled, ["stp-7"], "lo stop vecchio copriva la quantità sbagliata")
+        XCTAssertEqual(snap.stopOrders.count, 1)
+        XCTAssertEqual(snap.stopOrders.first?.qty ?? 0, 0.2, accuracy: 1e-12)
+        XCTAssertEqual(snap.stopOrders.first?.stopPrice ?? 0, 100, accuracy: 1e-9)
+        let position = result.book.position("BTC/USD")
+        XCTAssertEqual(position?.qty ?? 0, 0.2, accuracy: 1e-12)
+        XCTAssertEqual(position?.stopOrderId, snap.stopOrders.first?.id)
+    }
+
+    /// Errore di rete sullo stato dello stop: NON si duplica alla cieca, si
+    /// considera vivo e si riprova al prossimo tick.
+    func testStatusNetworkErrorDoesNotDuplicateStop() async {
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": flatBars],
+                                      brokerQty: ["BTC/USD": 0.1],
+                                      statusErrorIds: ["stp-7"])
+        var book = CryptoBook()
+        book.upsert(.init(symbol: "BTC/USD", entryDay: "2026-11-01", entryPrice: 100,
+                          qty: 0.1, highestClose: 100,
+                          stopOrderId: "stp-7", stopPrice: 100))
+        let result = await run(broker, book: book)
+        let snap = await broker.snapshot()
+
+        XCTAssertTrue(snap.stopOrders.isEmpty, "mai doppi stop quando lo stato non si sa")
+        XCTAssertTrue(snap.canceled.isEmpty)
+        XCTAssertEqual(result.book.position("BTC/USD")?.stopOrderId, "stp-7")
     }
 }

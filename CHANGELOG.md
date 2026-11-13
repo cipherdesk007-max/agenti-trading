@@ -9,6 +9,14 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 Niente per ora.
 
+## [1.6.4] - 13/11/2026
+
+### Corretto (self-healing dello stop CRYPTO · 13/11/2026, revisione completa prima dei test paper)
+
+- **Una posizione CRYPTO non resta mai scoperta**: sul crypto Alpaca non esistono ordini bracket (422), quindi se lo stop protettivo GTC mancava la posizione restava senza protezione finché il chandelier non saliva. Capitava in tre modi: invio dello stop fallito subito dopo l'ingresso (rate-limit, rete), stop cancellato a mano sul broker, quantità cambiata per un fill parziale dello stop (quel ramo annullava lo stop vecchio e non lo rimetteva). Ora la riconciliazione di OGNI tick (60 s) ri-copre la posizione: posizione viva con stop assente o in stato terminale (filled/canceled/expired/rejected) → stop_limit GTC ri-inviato al livello chandelier del registro, sulla quantità attuale, con log "stop protettivo RIPRISTINATO" e notifica. Errore di rete sulla lettura dello stato: NESSUN doppio stop alla cieca, si considera vivo e si riprova al tick dopo.
+- **Il log non mente più all'ingresso**: se lo stop GTC veniva rifiutato subito dopo l'acquisto, il log e la notifica dicevano comunque "stop sul broker". Ora dicono che lo stop manca e che il prossimo ciclo lo ripristina (posizione scoperta per massimo 60 secondi, con avviso e notifica dedicata).
+- Test: **+5** (ingresso senza stop dichiarato per quello che è e riparato al ciclo dopo, stop mancante ripristinato al livello registrato, stop cancellato sul broker rimpiazzato senza doppie cancellazioni, quantità riallineata ri-coperta con lo stop giusto, errore di stato senza duplicati; i 267 della 1.6.3 diventano 272).
+
 ## [1.6.3] - 13/11/2026
 
 ### Aggiunto (RIATTIVA TRADING in-app + secondo ciclo al lancio parato · 13/11/2026, da secondo report su telefono)
