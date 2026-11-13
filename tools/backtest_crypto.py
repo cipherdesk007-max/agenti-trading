@@ -35,9 +35,17 @@ MAX_POS = 3
 START = 1_000.0
 
 
-def load_ohlc(ticker, start, interval):
-    df = lib.flat_by_field(yf.download(ticker, start=start, interval=interval,
-                                       auto_adjust=False, progress=False))
+def load_ohlc(ticker, start, interval, period=None):
+    """Scarica OHLC. Per le barre 1h serve `period="730d"` (finestra massima):
+    con start=None yfinance usa il suo default period="1mo", quindi la
+    'finestra 730 giorni' era in realta' UN MESE (run 43356782169: benchmark
+    1H a -94,5% annuo e zero trade su 4H, impossibili su 730 giorni veri)."""
+    if period:
+        df = lib.flat_by_field(yf.download(ticker, period=period, interval=interval,
+                                           auto_adjust=False, progress=False))
+    else:
+        df = lib.flat_by_field(yf.download(ticker, start=start, interval=interval,
+                                           auto_adjust=False, progress=False))
     out = df[["Open", "High", "Low", "Close"]].astype(float).dropna()
     # yfinance a ticker singolo restituisce colonne MultiIndex (field, ticker):
     # senza appiattire, df["Close"] resta un DataFrame e .iat[i] con un solo
@@ -162,9 +170,11 @@ def main():
         print(row(f"  {t} da solo", eq_strat[t], all_trades[t], 365))
 
     # --- 1H e 4H sulla finestra disponibile (~2 anni) ---
-    print("\n### 4H (ricampionata da 1h, ~730 giorni, 365*6 barre/anno) — griglia dichiarata")
+    dfs_h = {t: load_ohlc(t, None, "1h", period="730d") for t in COINS}
+    w = dfs_h[COINS[0]]
+    print(f"\n### 4H (ricampionata da 1h, finestra reale {w.index[0].date()} → {w.index[-1].date()}, "
+          f"365*6 barre/anno) — griglia dichiarata")
     print(HEADER)
-    dfs_h = {t: load_ohlc(t, None, "1h") for t in COINS}  # start=None → finestra massima 1h
     dfs_4h = {t: resample_4h(dfs_h[t]) for t in COINS}
     for rsi_thr in (10.0, 12.0, 14.0):
         for stop_atr in (3.0, 3.5):
