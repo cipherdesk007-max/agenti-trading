@@ -20,6 +20,33 @@ final class EngineGuardsTests: XCTestCase {
                        "mai due sessioni sovrapposte")
     }
 
+    // MARK: - Doppio avvio parato (report 13/11 16:03: ripresa automatica + AVVIA)
+
+    @MainActor
+    func testStartRefusedWhileStartingOrRunning() {
+        XCTAssertTrue(QuantSwarmEngine.startAllowed(isRunning: false, startingSession: false),
+                     "col motore fermo il via è libero")
+        XCTAssertFalse(QuantSwarmEngine.startAllowed(isRunning: true, startingSession: false),
+                       "sessione attiva: mai due cicli")
+        XCTAssertFalse(QuantSwarmEngine.startAllowed(isRunning: false, startingSession: true),
+                       "avvio in corso (isRunning non ancora salito): il via va negato lo stesso")
+    }
+
+    // MARK: - Conto Alpaca con trading sospeso (40310000)
+
+    func testAccountFrozenDetection() {
+        let frozen = QuantSwarmError.httpStatus(
+            403, "{\"code\":40310000,\"message\":\"new orders are rejected by user request\"}"
+        )
+        XCTAssertTrue(QuantSwarmError.isAccountFrozen(frozen),
+                      "il 40310000 è il flag del conto, non un errore qualsiasi")
+        struct Other403: LocalizedError {
+            var errorDescription: String? { "Errore HTTP 403: qualcos'altro" }
+        }
+        XCTAssertFalse(QuantSwarmError.isAccountFrozen(Other403()))
+        XCTAssertFalse(QuantSwarmError.isAccountFrozen(URLError(.timedOut)))
+    }
+
     // MARK: - Bug B5: circuit breaker, formule pure
 
     func testDailyStopTriggersOnLoss() {

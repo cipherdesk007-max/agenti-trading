@@ -44,6 +44,11 @@ actor FakeNightBroker: NightBroker {
     func markOrder(clientOrderId: String, status: String) { known[clientOrderId] = status }
     func set(calendar: [TradingDay]?) { self.calendar = calendar }
     func set(fills: [String: Double]) { self.fills = fills }
+    /// Se true, submitAuction lancia l'errore 40310000 di Alpaca (conto con
+    /// trading sospeso dall'utente).
+    var rejectWithFrozen = false
+    func set(rejectWithFrozen: Bool) { self.rejectWithFrozen = rejectWithFrozen }
+
     func set(auctions: [String: Double]) { self.auctions = auctions }
     /// true simula lo STOP del motore durante il ciclo (CancellationError).
     var cancelOnClock = false
@@ -88,6 +93,13 @@ actor FakeNightBroker: NightBroker {
                        clientOrderId: String) async throws -> String {
         submitted.append((symbol, quantity, side, timeInForce, clientOrderId))
         events.append("auction \(side) \(timeInForce) \(symbol) \(quantity)")
+        if rejectWithFrozen {
+            // Il conto rifiuta TUTTI i nuovi ordini (flag "trades suspended").
+            known[clientOrderId] = "rejected"
+            throw QuantSwarmError.httpStatus(
+                403, "{\"code\":40310000,\"message\":\"new orders are rejected by user request\"}"
+            )
+        }
         if rejectAuction || rejectSymbols.contains(symbol.uppercased()) {
             // Il broker ha registrato l'ordine ma lo ha rifiutato.
             known[clientOrderId] = "rejected"
@@ -373,6 +385,25 @@ final class NightCycleTests: XCTestCase {
     }
 
     // MARK: - Ciclo
+
+    func testFrozenAccountLogsActionableAdviceNotRawJSON() async {
+        // Conto con trading sospeso (40310000): il log deve spiegare COSA
+        // fare (voce del pannello Alpaca), non sputare il JSON dell'errore
+        // per ogni simbolo (report 13/11 16:03).
+        let broker = FakeNightBroker(isOpen: true, nextClose: et(16))
+        await broker.set(rejectWithFrozen: true)
+        let input = NightCycleInput(book: NightBook(), today: "2026-11-11", now: et(14))
+        let sink = LogSink()
+        let result = await NightCycleRunner(broker: broker, settleWaitSeconds: 0).run(input) { event in
+            if let message = event.log { await sink.add(message) }
+        }
+        let logs = await sink.all()
+        XCTAssertTrue(result.buys.isEmpty, "con il conto sospeso nessun ordine passa")
+        let frozen = logs.filter { $0.contains("TRADING SOSPESO") }
+        XCTAssertFalse(frozen.isEmpty, "il rifiuto deve dire che il conto ha il trading sospeso: \(logs)")
+        XCTAssertTrue(frozen.allSatisfy { !$0.contains("40310000") }, "niente JSON grezzo: \(frozen)")
+        XCTAssertFalse(logs.contains { $0.contains("Errore HTTP") })
+    }
 
     func testStopDuringCycleIsNotLoggedAsBrokerError() async {
         // STOP del motore durante il ciclo: CancellationError, NON un errore

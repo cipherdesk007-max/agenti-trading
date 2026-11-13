@@ -23,6 +23,11 @@ struct AgentLogEntry: Identifiable, Sendable {
 final class QuantSwarmEngine: ObservableObject {
     @Published private(set) var isConfigured = false
     @Published private(set) var isRunning = false
+    /// True SOLO per la durata di start(): il vecchio guard !isRunning non
+    /// bastava perché isRunning viene impostato dentro startDaily, dopo varie
+    /// await. La ripresa automatica e il tap su AVVIA passavano entrambi la
+    /// guardia e partivano DUE cicli (banner doppi e ordini duplicati).
+    private var startingSession = false
     @Published private(set) var isKillInProgress = false
     @Published private(set) var paperTrading = true
     @Published private(set) var statusMessage = "Credenziali richieste"
@@ -151,6 +156,8 @@ final class QuantSwarmEngine: ObservableObject {
     /// Ultimo riepilogo "CRYPTO ciclo: …" scritto: identico a ogni tick di 60 s
     /// non viene ripetuto (cambia lo stato di una coppia e si riscrive).
     private var lastCryptoSummary: String?
+    /// Ultimo avviso "trading sospeso" scritto (una volta al giorno al massimo).
+    private var lastFrozenLog: String?
     /// Protezioni persistite (stop giornaliero UTC + drawdown): un riavvio
     /// dell'app non azzera i circuit breaker.
     private var guardState = RiskGuardStore.load()
@@ -514,7 +521,17 @@ final class QuantSwarmEngine: ObservableObject {
             statusMessage = "Credenziali mancanti"
             return
         }
-        guard !isRunning else { return }
+        // Doppio avvio PARATO: isRunning sale solo dentro startDaily (dopo
+        // le await di calendario/promemoria), quindi prima di questa guardia
+        // la ripresa automatica e il tap su AVVIA potevano partire ENTRAMBI
+        // (due cicli concorrenti = banner doppi e ORDINI DUPLICATI, vedi
+        // report di sessione delle 16:03). startingSession è sincrono.
+        if !Self.startAllowed(isRunning: isRunning, startingSession: startingSession) {
+            log("START ignorato: la sessione è già \(startingSession ? "in avvio" : "attiva"). Un solo ciclo per sessione.", agent: .system)
+            return
+        }
+        startingSession = true
+        defer { startingSession = false }
         if strategyConfig.sanitized.tradingMode.runsOnSchedule {
             await startDaily(credentials: credentials, kimi: kimiService)
             return
@@ -653,6 +670,14 @@ final class QuantSwarmEngine: ObservableObject {
     /// dal bottone, con la conferma "AVVIO CON SOLDI VERI" (bug B2).
     static func shouldAutoResume(enabled: Bool, isRunning: Bool, isPaper: Bool) -> Bool {
         enabled && !isRunning && isPaper
+    }
+
+    /// Un solo ciclo per sessione: il via è negato anche durante la finestra
+    /// in cui start() sta ancora salendo (le await di calendario). Il vecchio
+    /// check !isRunning da solo non bastava ( doppio avvio del 13/11: banner
+    /// doppi e ordini duplicati).
+    static func startAllowed(isRunning: Bool, startingSession: Bool) -> Bool {
+        !isRunning && !startingSession
     }
 
     private func resumeSavedSessionIfNeeded() async {
@@ -2582,6 +2607,19 @@ extension QuantSwarmEngine {
                 let key = "\(Self.dayKey(Date())) \(message)"
                 if key != lastStrategyLog { log(message, agent: event.agent) }
                 lastStrategyLog = key
+            } else if message.contains("TRADING SOSPESO") {
+                // Il conto Alpaca rifiuta TUTTI gli ordini: il messaggio lungo
+                // con le istruzioni si scrive UNA volta al giorno (ogni ordine
+                // rifiutato porterebbe la stessa informazione).
+                let key = "\(Self.dayKey(Date())) trading-sospeso"
+                if key != lastFrozenLog {
+                    log(message, agent: event.agent)
+                    NotificationManager.shared.notify(
+                        "TRADING SOSPESO",
+                        body: "Il conto Alpaca rifiuta tutti i nuovi ordini: riattiva il trading nelle impostazioni del conto su app.alpaca.markets, poi ripremi START."
+                    )
+                }
+                lastFrozenLog = key
             } else {
                 log(message, agent: event.agent)
             }

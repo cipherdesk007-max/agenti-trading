@@ -693,6 +693,16 @@ enum QuantSwarmError: LocalizedError {
             return "Persistenza SwiftData: \(message)"
         }
     }
+
+    /// Il 40310000 di Alpaca ("new orders are rejected by user request") è il
+    /// flag account-level "trades suspended" del conto: il broker rifiuta
+    /// TUTTI i nuovi ordini finché non si toglie dal pannello Alpaca
+    /// (app.alpaca.markets → impostazioni del conto, voce Trades Suspended).
+    /// Non è un problema dell'app né del singolo simbolo.
+    static func isAccountFrozen(_ error: Error) -> Bool {
+        let text = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
+        return text.contains("40310000") || text.contains("rejected by user request")
+    }
 }
 
 @Model
