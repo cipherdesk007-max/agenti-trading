@@ -453,3 +453,27 @@ non 730 giorni, vedi CHANGELOG).
 - **Balance Advisor consegnato insieme**: banner nel CRUSCOTTO e card in SISTEMA che consiglia
   la modalità in base al saldo (< 1.500 → CRYPTO; 1.500–5.000 → PORTAFOGLIO micro o CRYPTO;
   > 5.000 → PORTAFOGLIO completo).
+
+### 21 · P2 CRYPTO: cooldown dopo l'uscita e ingressi maker — STUDIO FATTO E RESPINTO (13/11/2026)
+
+- **Cosa era**: le due voci P2 in backlog dalla revisione pre-paper (ispirate alle "Protections" di
+  freqtrade): (a) una pausa di N barre dopo ogni uscita per non rientrare "a caldo" nel giorno dello
+  stop; (b) ingresso con ordine limit maker al livello di rottura invece che a mercato, per pagare
+  la fee maker (0,10%) invece della taker (0,20%) e comprare il pullback alla rottura.
+- **Studio**: `tools/backtest_trend_crypto.py`, sezione P2 (passo `quale=cryptotrend`, run 43517215495
+  su commit 7dfcd501), griglia PRE-REGISTRATA (pausa 3/5/10 barre, maker, maker+pausa5) con modello
+  di fill onesto per il maker: limit valido UNA barra, riempito solo se il livello viene scambiato
+  (Low <= livello), MAI un fill guardando avanti. Criteri di adozione dichiarati prima del run:
+  CAGR > baseline E maxDD entro 3pp E finestra orso entro 1pp E entrambe le metà > 0.
+- **Numeri** (daily 2018→oggi, 6 monete EW, costi 0,2%/lato; tra parentesi a 0,1%):
+  baseline V4 **+8,4%/−9%** (+8,5%); pausa3 +8,2% (+8,4%); pausa5 +8,4% (8,5%); pausa10 +8,2%
+  (+8,4%, maxDD −8%); **maker +7,4%** (7,5%) con orso in linea d'acqua sostanzialmente più basso
+  (+2,3% contro +3,9% della baseline); maker+pausa5 +7,2%.
+- **Perche' respinte**: il cooldown non aumenta MAI il CAGR (le uscite del V4 non sono "rabbia" da
+  raffreddare: sono uscite di regime o chandelier quasi sempre corrette, e saltare le barre dopo
+  costa i rientri buoni quanto risparmia quelli cattivi); l'ingresso maker perde i fill nelle
+  rotture forti (il prezzo parte e non torna al livello: l'ordine scade), e il risparmio di fee non
+  compensa gli ingressi mancati: −1 punto di CAGR e orso quasi dimezzato. **Le regole V4 in-app
+  restano esattamente quelle che sono.**
+- **Cosa cambia nel repo**: solo lo strumento di studio (la sezione P2 resta nel passo
+  `cryptotrend` per il controllo mensile) e la documentazione. Zero modifiche a Sources/.
