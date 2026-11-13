@@ -773,6 +773,8 @@ struct TerminalDashboardView: View {
 
     private var idleHint: String {
         switch displayedMode {
+        case .portfolio:
+            return "Premi START: il portafoglio divide il capitale in 30% giornaliera (ETF con stop sul broker) e 70% notte (compra in chiusura, vende all'apertura). Puoi chiudere l'app: gli ordini restano sul broker."
         case .daily:
             return "Premi START: controlla i \(DailyStrategy.basket.count) ETF, chiama Kimi solo se c'è un segnale e mette gli ordini con lo stop sul broker. Poi puoi chiudere l'app."
         case .night:
@@ -1629,6 +1631,8 @@ private struct SystemSettingsView: View {
     /// comprare con almeno 1 azione intera, sui prezzi dell'ultimo controllo.
     static func modeDescription(_ mode: TradingMode) -> String {
         switch mode {
+        case .portfolio:
+            return "Studio 2006–oggi (run 43338377889): CAGR +5,6%, perdita max −17%, Sharpe 0,79 (1,96 sugli ultimi 3 anni). Split fisso 30% giornaliera / 70% notte, niente regole dinamiche. Stop sul broker: puoi chiudere l'app."
         case .daily:
             return "Validata dal backtest 2006–oggi: batte il caso. Stop sul broker attivo anche ad app chiusa: basta aprirla qualche minuto al giorno."
         case .night:

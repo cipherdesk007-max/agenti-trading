@@ -171,18 +171,24 @@ enum CreditGuardStore {
 /// dal ciclo di decisioni successivo.
 /// Modalità operativa del motore.
 enum TradingMode: String, Codable, Sendable, CaseIterable {
-    /// Trend + Pullback su ETF, decisione su barre giornaliere, stop GTC sul
-    /// broker: l'unica validata dal backtest (batte il caso). Default.
+    /// PORTAFOGLIO: GIORNALIERA (30%) + NOTTE (70%) sullo stesso conto, budget
+    /// separati ri-bilanciati a ogni ciclo sull'equity corrente. Studio
+    /// tools/backtest_portfolio.py (run 43338377889): CAGR +5,6%, perdita max
+    /// −17%, Sharpe 0,79 (2006–oggi). Default.
+    case portfolio
+    /// Legacy (prima di PORTAFOGLIO): trend + pullback su ETF. Alla decodifica
+    /// viene migrata a .portfolio (vedi `migrated`).
     case daily
     /// Candele 15m in giornata: SPERIMENTALE, nei backtest perde e non batte
     /// il caso. Richiede l'app aperta e chiude tutto prima della chiusura.
     case intraday
-    /// Compra in chiusura (asta MOC) e vende all'apertura (asta OPG) su
-    /// S&P 500, Nasdaq-100, Russell 2000 e oro. Solo regole, zero crediti Kimi.
+    /// Legacy (prima di PORTAFOGLIO): compra in chiusura (MOC), vende
+    /// all'apertura (OPG). Migrata a .portfolio.
     case night
 
     var label: String {
         switch self {
+        case .portfolio: return "PORTAFOGLIO · 30/70"
         case .daily: return "GIORNALIERA · ETF"
         case .intraday: return "VELOCE · SPERIMENTALE"
         case .night: return "NOTTE · ETF"
@@ -192,9 +198,24 @@ enum TradingMode: String, Codable, Sendable, CaseIterable {
     /// Etichetta corta per il selettore.
     var shortLabel: String {
         switch self {
+        case .portfolio: return "PORTAFOGLIO"
         case .daily: return "GIORNALIERA"
         case .intraday: return "VELOCE"
         case .night: return "NOTTE"
+        }
+    }
+
+    /// Le modalità choices nel selettore: PORTAFOGLIO e VELOCE.
+    static var selectableModes: [TradingMode] { [.portfolio, .intraday] }
+
+    /// Migrazione dalle config salvate prima di PORTAFOGLIO: .daily e .night
+    /// diventano .portfolio. Le posizioni già aperte restano nei rispettivi
+    /// registri e corrono fino alla loro uscita normale: il nuovo budget si
+    /// applica SOLO ai nuovi ingressi.
+    var migrated: TradingMode {
+        switch self {
+        case .daily, .night: return .portfolio
+        case .portfolio, .intraday: return self
         }
     }
 
@@ -253,7 +274,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     static let botCapitalRange: ClosedRange<Double> = 500...1_000_000
 
     init(
-        tradingMode: TradingMode = .daily,
+        tradingMode: TradingMode = .portfolio,
         riskPerTradePercent: Double = 1.0,
         maxOpenPositions: Int = 3,
         dailyStopPercent: Double = 2.0,
@@ -295,7 +316,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.init(
-            tradingMode: try container.decodeIfPresent(TradingMode.self, forKey: .tradingMode) ?? .daily,
+            tradingMode: (try container.decodeIfPresent(TradingMode.self, forKey: .tradingMode) ?? .portfolio).migrated,
             riskPerTradePercent: try container.decodeIfPresent(Double.self, forKey: .riskPerTradePercent) ?? 1.0,
             maxOpenPositions: try container.decodeIfPresent(Int.self, forKey: .maxOpenPositions) ?? 3,
             dailyStopPercent: try container.decodeIfPresent(Double.self, forKey: .dailyStopPercent) ?? 2.0,
@@ -320,6 +341,7 @@ struct StrategyConfig: Codable, Sendable, Equatable {
     /// corrotto o un valore fuori scala non può mandare l'app fuori guardrail.
     var sanitized: StrategyConfig {
         var copy = self
+        copy.tradingMode = copy.tradingMode.migrated
         copy.riskPerTradePercent = min(max(copy.riskPerTradePercent, 0.25), 2.0)
         copy.dailyStopPercent = min(max(copy.dailyStopPercent, 0.5), 5.0)
         copy.decisionIntervalSeconds = min(max(copy.decisionIntervalSeconds, 30), 120)

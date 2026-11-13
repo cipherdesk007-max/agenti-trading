@@ -145,10 +145,10 @@ final class DailyStrategyTests: XCTestCase {
         ) { XCTFail("Meno di un'azione: va rifiutato") }
     }
 
-    func testDefaultModeIsDaily() {
-        XCTAssertEqual(StrategyConfig().tradingMode, .daily)
+    func testDefaultModeIsPortfolio() {
+        XCTAssertEqual(StrategyConfig().tradingMode, .portfolio)
         let legacy = try? JSONDecoder().decode(StrategyConfig.self, from: Data("{}".utf8))
-        XCTAssertEqual(legacy?.tradingMode, .daily)
+        XCTAssertEqual(legacy?.tradingMode, .portfolio)
         XCTAssertEqual(legacy?.widgetShowsAmounts, false, "Importi nel widget nascosti di default")
     }
 }
