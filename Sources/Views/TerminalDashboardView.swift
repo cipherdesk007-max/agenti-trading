@@ -1359,7 +1359,7 @@ struct TerminalDashboardView: View {
                                 .font(.caption.weight(.bold))
                                 .foregroundStyle(Theme.textPrimary)
                             if let state = signal?.state {
-                                StatusChip(text: cryptoStateLabel(state), color: cryptoStateColor(state))
+                                StatusChip(text: Self.cryptoStateLabel(state), color: Self.cryptoStateColor(state))
                             }
                             Spacer()
                             Text(price.map { Formatters.money($0) + " $" } ?? "—")
