@@ -391,6 +391,10 @@ statico negli studi, non come API in app. Nessuna di queste proposte è nel codi
   - **Conclusione**: la letteratura esterna NON sostiene una RSI2<12 su crypto come "sicura";
   i drawdown crypto sono enormi e lo Sharpe va deflato. Per decidere serve comunque il backtest
   locale (`tools/backtest_crypto.py`, `quale=crypto`) su cui misurare i parametri proposti.
+- **Aggiornamento 13/11/2026**: `tools/backtest_crypto.py` è PRONTO (1D dal 2018 + 1H/4H sulla
+  finestra yfinance ~730gg, griglia RSI2{10,12,14}×stop{3,3.5} ATR, controllo a metà campione,
+  Deflated Sharpe). Resta in attesa del run (`quale=crypto`, dispatch dell'altro revisore) e
+  della decisione del proprietario sui numeri: la modalità entra in app SOLO se i numeri reggono.
 
 ### 19 · CoinMarketCap API come fonte esterna crypto — SOLO PROPOSTA, non implementata (13/11/2026)
 

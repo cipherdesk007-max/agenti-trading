@@ -23,6 +23,12 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
   [docs/TESTI.md](docs/TESTI.md) (CI automatica, `uitest`/`screenshot`, backtest `quale=…`,
   controlli su telefono in VERIFICHE.md).
 
+### Studio pronto (analisi, non entra in app)
+- `tools/backtest_crypto.py` + `quale=crypto` in `backtest.yml`: testa la proposta crypto
+  (EMA100 + RSI2<12, stop 3,5 ATR, TP 2,5 ATR, rischio 1%) su 1D/4H/1H con controllo a metà
+  campione e Deflated Sharpe. Da lanciare con dispatch manuale; la modalità crypto entra in app
+  solo se i numeri reggono e solo dopo decisione del proprietario.
+
 ### Bloccato e documentato (richiesta "CRYPTO 24/7 + Balance Advisor + prompt Kimi" del 13/11/2026)
 - Non implementata: vedi proposta 18 in [docs/PROPOSTE.md](docs/PROPOSTE.md). Motivi: nessuno
   studio crypto in `tools/` (regola di progetto: ogni strategia entra solo con backtest

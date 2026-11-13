@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza | portafoglio"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza | portafoglio | crypto"
         default: "tutti"
 
 # pipefail: se uno script va in errore il passo FALLISCE anche se il tee ha scritto
@@ -84,6 +84,11 @@ jobs:
         if: env.Q == 'tutti' || env.Q == 'studi' || env.Q == 'portafoglio'
         working-directory: tools
         run: python backtest_portfolio.py | tee -a ../backtest.md
+      # STUDIO crypto 24/7 (solo analisi, non cambia l'app): RSI2<EMA100 + stop/TP ATR su 1D/4H/1H
+      - name: Studio crypto mean-reversion (solo analisi)
+        if: env.Q == 'tutti' || env.Q == 'studi' || env.Q == 'crypto'
+        working-directory: tools
+        run: python backtest_crypto.py | tee -a ../backtest.md
       # FASE 5: walk-forward out-of-sample, Monte Carlo, Sortino/profit
       # factor/expectancy/R-multiplo. Non cambia l'app: misura le regole attuali.
       - name: Robustezza (walk-forward + Monte Carlo + metriche complete)
