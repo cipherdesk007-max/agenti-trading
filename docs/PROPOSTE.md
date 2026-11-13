@@ -345,11 +345,17 @@ statico negli studi, non come API in app. Nessuna di queste proposte è nel codi
   `tools/backtest_crypto.py` (yfinance, dal 2021, con correzione Deflated Sharpe per le
   varianti provate) + passo `quale=crypto` in `backtest.yml`, lanciato dall'altro revisore
   (a me il dispatch dà 403 e non ho rete); poi decisione del proprietario sui numeri.
-- **Blocco 2 — frazioni e stop GTC sul broker sono incompatibili su Alpaca**: le frazioni
-  (`notional` / `qty` decimale) sono supportate **solo con ordini Day** — niente GTC/OCO
-  (vedi proposta 15 e https://docs.alpaca.markets/us/docs/brokerapi-trading). La richiesta
-  chiede entrambe le cose insieme: non è fattibile con questa API. Alternative da studiare:
-  stop Day riarmato ogni giorno, oppure protezione lato app (che però non gira ad app chiusa).
+- **Blocco 2 — frazioni e stop GTC: correzione verificata sulla doc Alpaca (13/11/2026)**: il
+  limite "solo ordini Day" riguarda le frazioni su **azioni US** (`notional`) — vedi proposta 15
+  e https://docs.alpaca.markets/us/docs/brokerapi-trading. Per le **coppie crypto** invece gli
+  ordini sono frazionari nativamente (`qty` decimale, es. 0.0001 BTC) e supportano
+  `time_in_force=gtc` con market/limit/stop_limit — https://docs.alpaca.markets/us/docs/crypto-orders.
+  Quindi per la crypto "frazione + stop GTC sul broker" è fattibile; resta il blocco 1 (backtest)
+  e il blocco 3 (iOS). I dati di mercato crypto (barre/quote/trade, storici e in streaming) sono
+  già in Alpaca Market Data: `data.alpaca.markets/v1beta3/crypto/us/...` —
+  https://docs.alpaca.markets/us/docs/real-time-crypto-pricing-data e
+  https://docs.alpaca.markets/us/docs/historical-crypto-data-1. **Non serve una quarta API** per
+  prezzi e ordini crypto (CoinMarketCap resta solo proposta 19, mai obbligatoria).
 - **Blocco 3 — iOS non esegue nulla 24/7 in background**: l'app gira solo quando è aperta
   (docs/GUIDA.md). Un refresh live ogni 60 s è possibile solo in primo piano (come già fa la
   VELOCE); "7 giorni su 7" richiederebbe stop sul broker sempre attivi, che è il blocco 2.
