@@ -1,32 +1,59 @@
 import XCTest
 @testable import QuantSwarmAlphaZero
 
-/// Broker crypto finto: registra ordini, cancellazioni e sequenza delle
-/// chiamate, così i test verificano l'ordine ESATTO delle operazioni
-/// (stop annullato PRIMA della vendita, market PRIMA dello stop GTC).
-actor FakeCryptoBroker: CryptoBrokerClient {
-    var equity: Double
-    var cash: Double
-    /// Barre per coppia; una coppia assente simula un errore/rate-limit.
-    var bars: [String: [Candle]] = [:]
-    var livePrices: [String: Double] = [:]
-    /// Quantità a carico del broker per coppia (0 = posizione chiusa).
-    var brokerQty: [String: Double] = [:]
-    /// Fattore di fill degli ordini market (1 = pieno, 0.5 = parziale).
-    var fillFactor: Double = 1.0
+// MARK: - Broker crypto finto (Swift 6 strict concurrency: stato solo via await)
 
-    /// Sequenza delle chiamate, per verificare l'ordine.
+/// Registra ordini, cancellazioni e sequenza delle chiamate, così i test
+/// verificano l'ordine ESATTO delle operazioni (stop annullato PRIMA della
+/// vendita, market PRIMA dello stop GTC).
+actor FakeCryptoBroker: CryptoBrokerClient {
+    let equity: Double
+    let cash: Double
+    /// Barre per coppia; una coppia assente simula errore/rate-limit.
+    let bars: [String: [Candle]]
+    let livePrices: [String: Double]
+    /// Quantità a carico del broker per coppia (assente = posizione chiusa).
+    let brokerQty: [String: Double]
+    /// Fattore di fill degli ordini market (1 = pieno, 0.5 = parziale).
+    let fillFactor: Double
+
     private(set) var events: [String] = []
-    private(set) var marketOrders: [(symbol: String, qty: Double, side: String, clientOrderId: String)] = []
-    private(set) var stopOrders: [(symbol: String, qty: Double, stopPrice: Double, limitPrice: Double, clientOrderId: String)] = []
+    private(set) var marketOrders: [MarketCall] = []
+    private(set) var stopOrders: [StopCall] = []
     private(set) var canceled: [String] = []
     private var nextId = 0
     /// Quantità inviata per ogni ordine market, per id.
     private var marketQtyById: [String: Double] = [:]
 
-    init(equity: Double, cash: Double) {
+    struct MarketCall: Sendable, Equatable {
+        let symbol: String, qty: Double, side: String, clientOrderId: String, id: String
+    }
+
+    struct StopCall: Sendable, Equatable {
+        let symbol: String, qty: Double, stopPrice: Double, limitPrice: Double, clientOrderId: String, id: String
+    }
+
+    struct Snapshot: Sendable, Equatable {
+        var events: [String]
+        var marketOrders: [MarketCall]
+        var stopOrders: [StopCall]
+        var canceled: [String]
+    }
+
+    init(equity: Double, cash: Double, bars: [String: [Candle]] = [:],
+         livePrices: [String: Double] = [:], brokerQty: [String: Double] = [:],
+         fillFactor: Double = 1.0) {
         self.equity = equity
         self.cash = cash
+        self.bars = bars
+        self.livePrices = livePrices
+        self.brokerQty = brokerQty
+        self.fillFactor = fillFactor
+    }
+
+    func snapshot() -> Snapshot {
+        Snapshot(events: events, marketOrders: marketOrders,
+                  stopOrders: stopOrders, canceled: canceled)
     }
 
     func account() async throws -> BrokerAccount {
@@ -53,7 +80,8 @@ actor FakeCryptoBroker: CryptoBrokerClient {
         nextId += 1
         let id = "mkt-\(nextId)"
         events.append("market:\(side):\(id)")
-        marketOrders.append((symbol, quantity, side, clientOrderId))
+        marketOrders.append(MarketCall(symbol: symbol, qty: quantity, side: side,
+                                       clientOrderId: clientOrderId, id: id))
         marketQtyById[id] = quantity
         return id
     }
@@ -63,7 +91,8 @@ actor FakeCryptoBroker: CryptoBrokerClient {
         nextId += 1
         let id = "stp-\(nextId)"
         events.append("stopLimit:\(id)")
-        stopOrders.append((symbol, quantity, stopPrice, limitPrice, clientOrderId))
+        stopOrders.append(StopCall(symbol: symbol, qty: quantity, stopPrice: stopPrice,
+                                    limitPrice: limitPrice, clientOrderId: clientOrderId, id: id))
         return id
     }
 
@@ -77,10 +106,9 @@ actor FakeCryptoBroker: CryptoBrokerClient {
     func filledQuantity(orderId: String) async throws -> Double {
         (marketQtyById[orderId] ?? 0) * fillFactor
     }
-
-    // helper di verifica
-    func index(of event: String) -> Int? { events.firstIndex(of: event) }
 }
+
+// MARK: - Test del ciclo
 
 /// Ciclo live della modalità CRYPTO (CryptoCycleRunner): ingressi frazionati
 /// SENZA bracket (market semplice, poi stop_limit GTC separato), uscite con
@@ -116,10 +144,11 @@ final class CryptoCycleTests: XCTestCase {
     // MARK: - Ingresso: ordine simple frazionato + stop SEPARATO (no bracket)
 
     func testEntrySendsFractionalMarketThenSeparateStopLimit() async {
-        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000)
-        broker.bars["BTC/USD"] = entryBars
-        broker.livePrices["BTC/USD"] = 130.5
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": entryBars],
+                                      livePrices: ["BTC/USD": 130.5])
         let result = await run(broker, book: CryptoBook())
+        let snap = await broker.snapshot()
 
         XCTAssertTrue(result.dataOK)
         XCTAssertEqual(result.livePrices["BTC/USD"] ?? 0, 130.5, accuracy: 0.001)
@@ -127,25 +156,24 @@ final class CryptoCycleTests: XCTestCase {
         XCTAssertEqual(result.signals["BTC/USD"]?.state, .entry)
 
         // Un solo ordine market di ACQUISTO, frazionato (1/5 di 5000 = 1000 USD).
-        XCTAssertEqual(broker.marketOrders.count, 1)
-        XCTAssertEqual(broker.marketOrders.first?.side, "buy")
-        XCTAssertEqual(broker.marketOrders.first?.symbol, "BTC/USD")
+        XCTAssertEqual(snap.marketOrders.count, 1)
+        XCTAssertEqual(snap.marketOrders.first?.side, "buy")
+        XCTAssertEqual(snap.marketOrders.first?.symbol, "BTC/USD")
         let expectedQty = CryptoStrategy.fractionalQty(budget: 1_000, price: 130)!
-        XCTAssertEqual(broker.marketOrders.first!.qty, expectedQty, accuracy: 1e-12)
-        XCTAssertTrue(broker.marketOrders.first!.qty < 8) // frazionato, non intero
+        XCTAssertEqual(snap.marketOrders.first?.qty ?? -1, expectedQty, accuracy: 1e-12)
+        XCTAssertTrue(expectedQty < 8) // frazionato, non intero
 
         // POI un ordine stop_limit GTC SEPARATO (niente bracket: 422 su crypto).
-        XCTAssertEqual(broker.stopOrders.count, 1)
+        XCTAssertEqual(snap.stopOrders.count, 1)
         let signal = result.signals["BTC/USD"]!
         let expectedStop = signal.close - CryptoStrategy.chandelierATR * signal.atr22
-        XCTAssertEqual(broker.stopOrders.first!.stopPrice, expectedStop, accuracy: 1e-9)
-        XCTAssertLessThan(broker.stopOrders.first!.limitPrice, broker.stopOrders.first!.stopPrice)
+        XCTAssertEqual(snap.stopOrders.first?.stopPrice ?? -1, expectedStop, accuracy: 1e-9)
+        XCTAssertLessThan(snap.stopOrders.first!.limitPrice, snap.stopOrders.first!.stopPrice)
         // Ordine delle chiamate: market PRIMA dello stop.
-        let marketIdx = await broker.index(of: "market:buy:mkt-1")
-        let stopIdx = await broker.index(of: "stopLimit:stp-2")
-        XCTAssertNotNil(marketIdx)
-        XCTAssertNotNil(stopIdx)
-        XCTAssertLessThan(marketIdx!, stopIdx!)
+        let marketIdx = snap.events.firstIndex(of: "market:buy:mkt-1")
+        let stopIdx = snap.events.firstIndex(of: "stopLimit:stp-2")
+        XCTAssertEqual(marketIdx, 0)
+        XCTAssertEqual(stopIdx, 1)
 
         // Registro aggiornato.
         let position = result.book.position("BTC/USD")
@@ -154,40 +182,42 @@ final class CryptoCycleTests: XCTestCase {
         XCTAssertEqual(position!.entryPrice, 130, accuracy: 0.001)
         XCTAssertEqual(position!.stopPrice ?? 0, expectedStop, accuracy: 1e-9)
         XCTAssertNotNil(position!.stopOrderId)
+        XCTAssertNil(position!.exitedDay)
     }
 
     func testPartialFillKeepsOnlyFilledQuantity() async {
-        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000)
-        broker.bars["BTC/USD"] = entryBars
-        broker.fillFactor = 0.5
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": entryBars], fillFactor: 0.5)
         let result = await run(broker, book: CryptoBook())
+        let snap = await broker.snapshot()
 
         let expectedQty = CryptoStrategy.fractionalQty(budget: 1_000, price: 130)!
         XCTAssertEqual(result.book.position("BTC/USD")?.qty ?? 0, expectedQty * 0.5, accuracy: 1e-9)
         XCTAssertEqual(result.orders.first?.quantity ?? 0, expectedQty * 0.5, accuracy: 1e-9)
         // Lo stop GTC copre la quantità realmente riempita, non di più.
-        XCTAssertEqual(broker.stopOrders.first?.qty ?? 0, expectedQty * 0.5, accuracy: 1e-9)
+        XCTAssertEqual(snap.stopOrders.first?.qty ?? 0, expectedQty * 0.5, accuracy: 1e-9)
     }
 
     // MARK: - Uscita: prima si annulla lo stop, poi si vende
 
     func testExitCancelsStopBeforeMarketSell() async {
-        let broker = FakeCryptoBroker(equity: 5_000, cash: 1_000)
-        broker.bars["BTC/USD"] = flatBars // chiusura 100 < chandelier: uscita
-        broker.brokerQty["BTC/USD"] = 0.1
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 1_000,
+                                      bars: ["BTC/USD": flatBars], // chiusura 100 < chandelier
+                                      brokerQty: ["BTC/USD": 0.1])
         var book = CryptoBook()
         book.upsert(.init(symbol: "BTC/USD", entryDay: "2026-11-01", entryPrice: 100,
                           qty: 0.1, highestClose: 150,
                           stopOrderId: "stp-99", stopPrice: 144))
         let result = await run(broker, book: book)
+        let snap = await broker.snapshot()
 
-        XCTAssertEqual(broker.canceled, ["stp-99"])
-        XCTAssertEqual(broker.marketOrders.count, 1)
-        XCTAssertEqual(broker.marketOrders.first?.side, "sell")
-        XCTAssertEqual(broker.marketOrders.first?.qty, 0.1, accuracy: 1e-12)
+        XCTAssertEqual(snap.canceled, ["stp-99"])
+        XCTAssertEqual(snap.marketOrders.count, 1)
+        XCTAssertEqual(snap.marketOrders.first?.side, "sell")
+        XCTAssertEqual(snap.marketOrders.first?.qty ?? 0, 0.1, accuracy: 1e-12)
         // ORDINE delle chiamate: cancel PRIMA della vendita (mai doppia vendita).
-        let cancelIdx = await broker.index(of: "cancel:stp-99")
-        let sellIdx = await broker.index(of: "market:sell:mkt-1")
+        let cancelIdx = snap.events.firstIndex(of: "cancel:stp-99")
+        let sellIdx = snap.events.firstIndex(of: "market:sell:mkt-1")
         XCTAssertNotNil(cancelIdx)
         XCTAssertNotNil(sellIdx)
         XCTAssertLessThan(cancelIdx!, sellIdx!)
@@ -200,24 +230,24 @@ final class CryptoCycleTests: XCTestCase {
     // MARK: - Chandelier: lo stop sale, mai scende
 
     func testHoldRaisesStopOnlyUpward() async {
-        let broker = FakeCryptoBroker(equity: 5_000, cash: 1_000)
         var bars = (0..<219).map { bar($0, close: 100) }
         bars.append(bar(219, close: 105, high: 106, low: 104)) // chandelier sale
-        broker.bars["BTC/USD"] = bars
-        broker.brokerQty["BTC/USD"] = 0.1
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 1_000,
+                                      bars: ["BTC/USD": bars], brokerQty: ["BTC/USD": 0.1])
         var book = CryptoBook()
         book.upsert(.init(symbol: "BTC/USD", entryDay: "2026-11-01", entryPrice: 100,
                           qty: 0.1, highestClose: 100,
                           stopOrderId: "stp-7", stopPrice: 96))
         let result = await run(broker, book: book)
+        let snap = await broker.snapshot()
 
         XCTAssertEqual(result.signals["BTC/USD"]?.state, .hold)
         let position = result.book.position("BTC/USD")
         XCTAssertNotNil(position)
         XCTAssertEqual(position!.highestClose, 105, accuracy: 0.001)
         // Stop sostituito SOLO verso l'alto.
-        XCTAssertEqual(broker.canceled, ["stp-7"])
-        XCTAssertEqual(broker.stopOrders.count, 1)
+        XCTAssertEqual(snap.canceled, ["stp-7"])
+        XCTAssertEqual(snap.stopOrders.count, 1)
         let signal = result.signals["BTC/USD"]!
         let expectedStop = 105 - CryptoStrategy.chandelierATR * signal.atr22
         XCTAssertEqual(position!.stopPrice ?? 0, expectedStop, accuracy: 1e-9)
@@ -226,24 +256,24 @@ final class CryptoCycleTests: XCTestCase {
     }
 
     func testHoldDoesNotLowerStop() async {
-        let broker = FakeCryptoBroker(equity: 5_000, cash: 1_000)
         var bars = (0..<219).map { bar($0, close: 100) }
         bars.append(bar(219, close: 105, high: 106, low: 104))
-        broker.bars["BTC/USD"] = bars
-        broker.brokerQty["BTC/USD"] = 0.1
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 1_000,
+                                      bars: ["BTC/USD": bars], brokerQty: ["BTC/USD": 0.1])
         var book = CryptoBook()
         // Stop già alto (100): il nuovo chandelier (≈98,4) NON lo abbassa.
         book.upsert(.init(symbol: "BTC/USD", entryDay: "2026-11-01", entryPrice: 100,
                           qty: 0.1, highestClose: 100,
                           stopOrderId: "stp-7", stopPrice: 100))
         let result = await run(broker, book: book)
+        let snap = await broker.snapshot()
 
         XCTAssertEqual(result.signals["BTC/USD"]?.state, .hold)
         let position = result.book.position("BTC/USD")
         XCTAssertEqual(position?.stopOrderId, "stp-7") // invariato
         XCTAssertEqual(position?.stopPrice ?? 0, 100, accuracy: 1e-9)
-        XCTAssertTrue(await broker.stopOrders.isEmpty)
-        XCTAssertTrue(await broker.canceled.isEmpty)
+        XCTAssertTrue(snap.stopOrders.isEmpty)
+        XCTAssertTrue(snap.canceled.isEmpty)
         // Il massimo chiusura comunque registrato per il chandelier futuro.
         XCTAssertEqual(position?.highestClose ?? 0, 105, accuracy: 0.001)
     }
@@ -251,42 +281,42 @@ final class CryptoCycleTests: XCTestCase {
     // MARK: - Riconciliazione: lo stop scattato ad app chiusa
 
     func testReconciliationRemovesPositionClosedByBrokerStop() async {
-        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000)
-        broker.bars["BTC/USD"] = flatBars
-        // Nessuna posizione sul broker: lo stop GTC è scattato ad app chiusa.
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": flatBars]) // nessuna posizione sul broker
         var book = CryptoBook()
         book.upsert(.init(symbol: "BTC/USD", entryDay: "2026-11-01", entryPrice: 100,
                           qty: 0.1, highestClose: 100,
                           stopOrderId: "stp-1", stopPrice: 96))
         let result = await run(broker, book: book)
+        let snap = await broker.snapshot()
 
         XCTAssertNil(result.book.position("BTC/USD"))
-        XCTAssertEqual(broker.canceled, ["stp-1"]) // stop residuo pulito
-        XCTAssertTrue(broker.marketOrders.isEmpty)  // nessuna vendita: già venduta dal broker
+        XCTAssertEqual(snap.canceled, ["stp-1"]) // stop residuo pulito
+        XCTAssertTrue(snap.marketOrders.isEmpty)  // nessuna vendita: già venduta dal broker
     }
 
     // MARK: - Blocco drawdown e fallback dati
 
     func testDrawdownBlockPreventsNewEntries() async {
-        let broker = FakeCryptoBroker(equity: 90, cash: 90) // −10% dal picco
-        broker.bars["BTC/USD"] = entryBars
+        let broker = FakeCryptoBroker(equity: 90, cash: 90, // −10% dal picco
+                                      bars: ["BTC/USD": entryBars])
         var book = CryptoBook()
         book.cashPeak = 100
         let result = await run(broker, book: book)
+        let snap = await broker.snapshot()
 
         XCTAssertTrue(result.orders.isEmpty)
         XCTAssertNil(result.book.position("BTC/USD"))
-        let marketCount = await broker.marketOrders.count
-        XCTAssertEqual(marketCount, 0)
+        XCTAssertTrue(snap.marketOrders.isEmpty)
     }
 
     func testSilentFallbackWhenOnePairHasNoData() async {
-        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000)
-        broker.bars["BTC/USD"] = entryBars
-        broker.bars["ETH/USD"] = flatBars
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": entryBars, "ETH/USD": flatBars])
         // SOL/USD senza dati (rate-limit simulato): le altre coppie continuano.
         let result = await run(broker, book: CryptoBook(),
                                pairs: ["BTC/USD", "ETH/USD", "SOL/USD"])
+        let snap = await broker.snapshot()
 
         XCTAssertFalse(result.dataOK) // non tutti i dati: badge LIVE spento
         // Il motore NON si ferma: BTC ha comunque operato.
@@ -294,27 +324,30 @@ final class CryptoCycleTests: XCTestCase {
         XCTAssertEqual(result.orders.first?.symbol, "BTC/USD")
         // ETH non dava segnali: nessun ordine.
         XCTAssertNil(result.book.position("ETH/USD"))
+        XCTAssertTrue(snap.marketOrders.allSatisfy { $0.symbol == "BTC/USD" })
     }
 
     func testNoDataAtAllSkipsCycle() async {
         let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000)
         let result = await run(broker, book: CryptoBook())
+        let snap = await broker.snapshot()
         XCTAssertFalse(result.dataOK)
         XCTAssertTrue(result.orders.isEmpty)
-        let marketCount = await broker.marketOrders.count
-        XCTAssertEqual(marketCount, 0)
+        XCTAssertTrue(snap.marketOrders.isEmpty)
     }
 
     // MARK: - Stessa barra: non si firma due volte
 
     func testSameBarDoesNotSignalTwice() async {
-        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000)
-        broker.bars["BTC/USD"] = entryBars
+        let broker = FakeCryptoBroker(equity: 5_000, cash: 5_000,
+                                      bars: ["BTC/USD": entryBars])
         var book = CryptoBook()
         // Barra già valutata: nessun nuovo ingresso sulla stessa barra.
         book.evaluatedBars["BTC/USD"] = CryptoCycleRunner.barDay(entryBars.last!)
         let result = await run(broker, book: book)
+        let snap = await broker.snapshot()
         XCTAssertTrue(result.orders.isEmpty)
+        XCTAssertTrue(snap.marketOrders.isEmpty)
         // Il segnale è comunque visibile nel pannello.
         XCTAssertEqual(result.signals["BTC/USD"]?.state, .entry)
     }
