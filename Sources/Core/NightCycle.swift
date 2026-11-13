@@ -71,7 +71,7 @@ enum NightStrategy {
         let weekday = weekdayET(now)
         let isWeekend = weekday == 1 || weekday == 7
         let todayDay = calendar?.first { $0.date == today }
-        if let calendar, !isWeekend, todayDay == nil, !isOpen {
+        if calendar != nil, !isWeekend, todayDay == nil, !isOpen {
             return .wait("oggi la borsa USA è chiusa (festivo): nessuna asta")
         }
         if isOpen {
