@@ -9,6 +9,14 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 Niente per ora.
 
+## [1.6.5] - 13/11/2026
+
+### Corretto (HARD KILL allinea i registri · 13/11/2026, dal report delle 21:49)
+
+- **HARD KILL azzerava il broker ma non i registri locali**: dopo l'HARD KILL delle 21:49 (ordini MOC cancellati, buying power tornato a 1000 USD) la ripartenza diceva ancora "Notte: acquisti in chiusura di oggi già in coda: GLDM, QQQM, SPYM, VTWO", e il ciclo notturno avrebbe saltato la ricompra della sera credendo quegli ordini ancora vivi. Ora, riuscita la cancellazione globale, l'app azzera dai registri tutto ciò che rappresentava il broker: posizioni e code d'asta della NOTTE, posizioni e stop d'ingresso della GIORNALIERA, posizioni della CRYPTO (log "Registri allineati al conto piatto" e notifica aggiornata). Se la cancellazione invece fallisce, i registri restano: è la riconciliazione dei cicli a sistemare.
+- **Resta la memoria, si perde solo il broker**: registro ombra e decisioni Kimi già pagate (la prova in ombra del filtro 48h non si cancella), contatore notti, picco drawdown crypto (la protezione non si azzera), barre già valutate.
+- Test: **+1** (hardKillBooks: via posizioni/stop/code, resta ombra/picco/contatori; i 272 della 1.6.4 diventano 273).
+
 ## [1.6.4] - 13/11/2026
 
 ### Corretto (self-healing dello stop CRYPTO · 13/11/2026, revisione completa prima dei test paper)

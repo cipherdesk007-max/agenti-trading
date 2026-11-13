@@ -126,4 +126,51 @@ final class EngineGuardsTests: XCTestCase {
         XCTAssertTrue(RiskRules.canBuyOneShare(price: 760, stopDistance: 5,
                                                capital: 100_000, freeCash: 100_000, riskFraction: 0.01))
     }
+
+    // MARK: - HARD KILL: i registri dicono ciò che c'è sul broker
+
+    @MainActor
+    func testHardKillBooksClearBrokerStateAndKeepMemory() {
+        // Scenario del report delle 21:49: acquisti di oggi "in coda" nella
+        // notte, posizione giornaliera con stop, posizione crypto con stop:
+        // l'HARD KILL ha cancellato ordini e chiuso posizioni sul broker.
+        var night = NightBook()
+        night.positions["SPYM"] = NightPosition(day: "2026-11-13", quantity: 2)
+        night.fillChecks = [NightFillCheck(symbol: "SPYM", side: "buy", orderId: "o1",
+                                            queueDay: "2026-11-13", refPrice: 100)]
+        night.nights = 5
+        var daily = DailyBook()
+        daily.entries["SPY"] = "2026-11-13"
+        daily.stops["SPY"] = 95
+        daily.decidedDay = "2026-11-13"
+        daily.decidedSymbols = ["SPY"]
+        daily.shadow = [ShadowEntry(symbol: "SPY", day: "2026-11-13", entry: 100,
+                                     stop: 95, outcome: ShadowEntry.bought)]
+        var crypto = CryptoBook()
+        crypto.positions = [CryptoBook.Position(symbol: "BTC/USD", entryDay: "2026-11-13",
+                                                entryPrice: 100, qty: 0.1, highestClose: 100,
+                                                stopOrderId: "stp-1", stopPrice: 96)]
+        crypto.cashPeak = 5_000
+        crypto.evaluatedBars["BTC/USD"] = "2026-11-13"
+
+        let flat = QuantSwarmEngine.hardKillBooks(night: night, daily: daily, crypto: crypto)
+
+        // Via TUTTO ciò che rappresentava il broker: altrimenti la notte
+        // vedrebbe ancora "in coda" acquisti cancellati e salterebbe la
+        // ricompra della sera.
+        XCTAssertTrue(flat.night.positions.isEmpty, "la coda notte cancellata sul broker non esiste più")
+        XCTAssertTrue(flat.night.fillChecks.isEmpty)
+        XCTAssertTrue(flat.daily.entries.isEmpty)
+        XCTAssertTrue(flat.daily.stops.isEmpty)
+        XCTAssertTrue(flat.crypto.positions.isEmpty)
+        // Resta la MEMORIA: contatore notti, ombra e decisioni Kimi della
+        // giornaliera, picco drawdown e barre già valutate della crypto.
+        XCTAssertEqual(flat.night.nights, 5)
+        XCTAssertEqual(flat.daily.decidedDay, "2026-11-13")
+        XCTAssertEqual(flat.daily.decidedSymbols, ["SPY"])
+        XCTAssertEqual(flat.daily.shadow.count, 1, "il registro ombra alimenta la prova del filtro 48h: non si cancella")
+        XCTAssertEqual(flat.crypto.cashPeak ?? 0, 5_000, accuracy: 1e-9,
+                       "il picco drawdown è memoria del conto, non una posizione")
+        XCTAssertEqual(flat.crypto.evaluatedBars["BTC/USD"], "2026-11-13")
+    }
 }

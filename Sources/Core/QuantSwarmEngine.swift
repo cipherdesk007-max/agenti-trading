@@ -925,9 +925,23 @@ final class QuantSwarmEngine: ObservableObject {
             try await riskAgent.emergencyFlatten(credentials: credentials.alpaca)
             statusMessage = "HARD KILL completato"
             log("Alpaca ha accettato cancellazione globale e chiusura delle posizioni.")
+            // Il broker è PIATTO: anche i registri locali devono dirlo. Se il
+            // registro notte restasse con gli acquisti di oggi "in coda"
+            // (ordini appena cancellati), alla ripartenza il ciclo vedrebbe
+            // ancora la coda e salterebbe la ricompra della sera credendola
+            // già fatta (report 21:49: "già in coda" dopo HARD KILL).
+            let acct = account?.accountNumber
+            let books = Self.hardKillBooks(night: NightBookStore.load(account: acct),
+                                            daily: DailyBookStore.load(account: acct),
+                                            crypto: CryptoBookStore.load(account: acct))
+            NightBookStore.save(books.night, account: acct)
+            DailyBookStore.save(books.daily, account: acct)
+            CryptoBookStore.save(books.crypto, account: acct)
+            cryptoPositions = []
+            log("Registri allineati al conto piatto: posizioni, stop e code d'asta azzerati (resta la memoria: registro ombra, pagelle, picco drawdown, contatori).")
             NotificationManager.shared.notify(
                 "HARD KILL COMPLETATO",
-                body: "Cancellazione ordini e chiusura posizioni accettate da Alpaca."
+                body: "Cancellazione ordini, chiusura posizioni e registri azzerati: conto e app dicono la stessa cosa."
             )
             await refreshPortfolio()
         } catch {
@@ -940,6 +954,26 @@ final class QuantSwarmEngine: ObservableObject {
         }
         // Rigenera il report includendo l'esito della liquidazione.
         exportSessionReport(reason: "HARD KILL")
+    }
+
+    /// HARD KILL riuscito: il broker non ha né ordini né posizioni, quindi via
+    /// dai registri locali tutto ciò che rappresentava broker (posizioni,
+    /// stop d'ingresso, code d'asta). Resta la sola MEMORIA: registro ombra e
+    /// decisioni già pagate a Kimi (giornaliera), contatore notti, picco
+    /// drawdown e barre già valutate (crypto). Azzerare quest'ultima parte
+    /// cancellerebbe la prova in ombra del filtro 48h e rischierebbe doppie
+    /// chiamate Kimi o ricompre sulla stessa barra.
+    static func hardKillBooks(night: NightBook, daily: DailyBook, crypto: CryptoBook)
+        -> (night: NightBook, daily: DailyBook, crypto: CryptoBook) {
+        var night = night
+        night.positions = [:]
+        night.fillChecks = []
+        var daily = daily
+        daily.entries = [:]
+        daily.stops = [:]
+        var crypto = crypto
+        crypto.positions = []
+        return (night, daily, crypto)
     }
 
     // MARK: - Foreground / background
