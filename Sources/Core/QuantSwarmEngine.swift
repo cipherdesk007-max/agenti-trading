@@ -933,6 +933,12 @@ final class QuantSwarmEngine: ObservableObject {
         creditsSpentToday = nil
         creditLimitHit = false
         creditLimitLogged = false
+        // Una volta al giorno: potatura della memoria agenti (SwiftData), che senza
+        // questo crescerebbe senza limite (CouncilRecord/DecisionSample).
+        let removed = MemoryPruner.prune(context: modelContext)
+        if removed > 0 {
+            log("Memoria agenti potata: \(removed) record più vecchi di \(MemoryPruner.retentionDays) giorni.", agent: .system)
+        }
     }
 
     /// Ogni chiamata Kimi (decisione, review, analisi) viene conteggiata.
