@@ -3,12 +3,17 @@ import SwiftUI
 /// Sistema visivo unico dell'app: colori dell'icona (verde terminale su nero),
 /// superfici a strati, angoli continui, numeri a cifre fisse.
 enum Theme {
-    // Colori
-    static let background = Color(red: 0.027, green: 0.035, blue: 0.043)
-    static let surface = Color(red: 0.058, green: 0.072, blue: 0.086)
-    static let surfaceHigh = Color(red: 0.090, green: 0.110, blue: 0.128)
+    // Colori · direzione "quadro strumenti" (docs/DESIGN.md): fondo grafite,
+    // comandi e numeri principali color avorio come le lancette di un
+    // cruscotto, colore solo per le spie (verde = guadagno o motore acceso,
+    // ambra = attenzione, rosso = perdita o pericolo).
+    static let background = Color(red: 0.051, green: 0.067, blue: 0.086)   // grafite notte #0D1116
+    static let surface = Color(red: 0.082, green: 0.106, blue: 0.133)      // #151B22
+    static let surfaceHigh = Color(red: 0.118, green: 0.149, blue: 0.184)  // #1E262F
     static let stroke = Color.white.opacity(0.08)
-    static let green = Color(red: 0.12, green: 0.95, blue: 0.63)
+    static let green = Color(red: 0.20, green: 0.83, blue: 0.52)           // spia verde #33D485
+    /// Avorio strumento: comandi (pulsanti, scheda scelta) e numeri principali.
+    static let ivory = Color(red: 0.949, green: 0.918, blue: 0.855)        // #F2EADA
     static let cyan = Color(red: 0.36, green: 0.80, blue: 1.0)
     static let amber = Color(red: 1.0, green: 0.72, blue: 0.25)
     static let red = Color(red: 1.0, green: 0.33, blue: 0.36)
@@ -161,7 +166,7 @@ struct SectionHeader: View {
             if let actionLabel, let action {
                 Button(actionLabel, action: action)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(Theme.ivory)
             }
         }
     }
@@ -193,7 +198,7 @@ struct InfoButton: View {
     }
 }
 
-/// Pulsante primario: pieno con l'unico accento, testo scuro, area ≥ 44 pt.
+/// Pulsante primario: tasto pieno color avorio, testo scuro, area ≥ 44 pt.
 struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -202,7 +207,7 @@ struct PrimaryButtonStyle: ButtonStyle {
             .foregroundStyle(Theme.background)
             .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal, Layout.paddingM)
-            .background(Theme.accent.opacity(configuration.isPressed ? 0.8 : 1), in: Theme.shape())
+            .background(Theme.ivory.opacity(configuration.isPressed ? 0.8 : 1), in: Theme.shape())
     }
 }
 
@@ -212,7 +217,7 @@ struct SecondaryButtonStyle: ButtonStyle {
         configuration.label
             .font(.subheadline.weight(.semibold))
             .multilineTextAlignment(.center)
-            .foregroundStyle(Theme.accent)
+            .foregroundStyle(Theme.ivory)
             .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal, Layout.paddingM)
             .background(Theme.surfaceHigh, in: Theme.shape())

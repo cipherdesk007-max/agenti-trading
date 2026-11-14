@@ -269,14 +269,17 @@ struct TerminalDashboardView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
+                    // Il numero principale è lo strumento: grande, stretto,
+                    // color avorio come le cifre di un quadro strumenti.
                     Text(engine.account.map { Formatters.amount($0.equityValue) + " $" } ?? "— $")
-                        .font(.system(size: 30, weight: .bold))
+                        .font(.system(size: 36, weight: .heavy))
+                        .fontWidth(.condensed)
                         .monospacedDigit()
-                        .foregroundStyle(Theme.textPrimary)
+                        .foregroundStyle(Theme.ivory)
                         .contentTransition(.numericText())
                     if let account = engine.account, let dayPnL = account.dayPnL {
                         let base = account.lastEquityValue ?? account.equityValue
-                        Text(Formatters.signedAmount(dayPnL) + " $ oggi" + (base > 0 ? String(format: " · %+.2f%%", dayPnL / base * 100) : ""))
+                        Text(Formatters.signedAmount(dayPnL) + " $ oggi" + (base > 0 ? String(format: " (%+.2f%%)", locale: Locale(identifier: "it_IT"), dayPnL / base * 100) : ""))
                             .font(.footnote.weight(.semibold))
                             .monospacedDigit()
                             .foregroundStyle(Theme.signed(dayPnL))
@@ -360,7 +363,7 @@ struct TerminalDashboardView: View {
                     }
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 8)
-                    .foregroundStyle(selectedSection == section ? terminalGreen : Theme.textTertiary)
+                    .foregroundStyle(selectedSection == section ? Theme.ivory : Theme.textTertiary)
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -777,33 +780,33 @@ struct TerminalDashboardView: View {
         let hidden = Formatters.sync(engine.strategyConfig.hideAmounts)
         if let advice = BalanceAdvisor.advise(equity: engine.account?.equityValue, maskAmounts: hidden),
            engine.strategyConfig.tradingMode != advice.recommended {
+            // Una riga, non un riquadro pieno: il consiglio non deve coprire
+            // lo stato del motore e i comandi. La spiegazione completa è in
+            // SISTEMA, dove porta il tocco.
             Button {
                 selectedSection = .system
             } label: {
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "lightbulb")
-                            .font(.caption.weight(.bold))
-                        Text(advice.headline)
-                            .font(.subheadline.weight(.semibold))
-                        Spacer()
-                        Text("Sistema →").font(.caption.weight(.semibold))
-                    }
-                    Text(advice.detail)
-                        .font(.caption)
-                        .fixedSize(horizontal: false, vertical: true)
-                    if let alternative = advice.alternative {
-                        Text(alternative)
-                            .font(.caption.weight(.medium))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                HStack(spacing: Layout.paddingS) {
+                    Image(systemName: "lightbulb")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.amber)
+                    Text(advice.headline)
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.textPrimary)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
+                    Spacer(minLength: Layout.paddingS)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(Theme.textTertiary)
                 }
+                .padding(.horizontal, Layout.paddingM)
+                .padding(.vertical, 12)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .foregroundStyle(Theme.background)
-                .padding(12)
-                .background(Theme.accent.opacity(0.85), in: Theme.shape(Theme.smallRadius))
+                .background(Theme.surface, in: Theme.shape(Theme.smallRadius))
             }
             .buttonStyle(.plain)
+            .accessibilityHint("Apre Sistema, dove trovi la spiegazione")
             .accessibilityIdentifier("balanceAdvisor")
         }
     }

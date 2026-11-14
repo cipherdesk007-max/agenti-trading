@@ -40,6 +40,14 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 - **Pulsante "CONTROLLA ORA" su una riga** (andava a capo accanto a STOP) ed etichette dei pulsanti centrate quando sono su due righe.
 - **Test dell'interfaccia**: se il simulatore non fa partire il runner, il flusso aspetta e riprova una volta (nel run 43552818891 nessun test era cominciato).
 
+### Cambiato (design, fase 1 della direzione "quadro strumenti" · docs/DESIGN.md)
+
+- **Fondo grafite e comandi color avorio.** Il verde resta solo per ciò che significa qualcosa: guadagno, motore acceso, stato a posto. I pulsanti pieni (START, CONTROLLA ORA), la scheda scelta nella barra in basso e le azioni di sezione sono in avorio. Il verde è anche meno acceso.
+- **Saldo principale come uno strumento**: più grande, stretto, color avorio.
+- **Il consiglio "Saldo piccolo" in CRUSCOTTO è una riga**, non più un riquadro verde pieno che copriva stato e comandi. Toccandola si apre SISTEMA, dove c'è la spiegazione completa.
+- **Percentuale del giorno con la virgola** e tra parentesi ("+3,30 $ oggi (+0,33%)"): prima virgola e punto nella stessa riga.
+- È un primo passo dichiarato: circa 80 punti del codice usano ancora il verde sia per comandi sia per stati; la separazione completa è la fase 2.
+
 ### Da sapere (non sono difetti, ma differenze dichiarate)
 
 - CRYPTO: lo stop sul broker scatta durante la giornata; lo studio esce solo alla chiusura giornaliera. L'app è quindi più prudente dello studio e i risultati possono differire.
