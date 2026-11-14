@@ -10,10 +10,11 @@ dell'interfaccia girano e passano; (4) tutte le schermate seguono una sola regol
 
 | Punto | Stato al 14/11 |
 |---|---|
-| Parità con lo studio | crypto e giornaliera fatte; la notte non ha un segnale da confrontare |
+| Parità con lo studio | segnali di crypto e giornaliera uguali barra per barra; la notte non ha un segnale da confrontare. **La dimensione delle posizioni crypto NON è quella dello studio** (1/5 del conto contro 1/36 del capitale): numeri rifatti e decisione aperta in docs/PROPOSTE.md n. 29 |
 | Ordini sul conto paper | crypto 12 su 12; azioni 8 su 8 a mercato chiuso; manca il giro completo a borsa aperta |
-| Test dell'interfaccia | girano nel flusso principale, ora su macchina Apple Silicon: 5 su 5 (run 43565035430, con 343 test unitari) |
-| Regola unica dei colori | applicata (docs/DESIGN.md) |
+| Test dell'interfaccia | girano nel flusso principale su macchina Apple Silicon: 5 su 5 (run 43572880617, con 350 test unitari) |
+| Regola unica dei colori | applicata (docs/DESIGN.md); decimali con la virgola in tutte le schermate dal giro del 14/11 (14 punti avevano ancora il punto) |
+| Regole di codice (AGENTS.md) | nessun force-unwrap, try! o fatalError: controllato da `tools/controlla_regole.py` a ogni build. Resta 1 avviso del compilatore (portachiavi, PROPOSTE n. 30) |
 
 ---
 

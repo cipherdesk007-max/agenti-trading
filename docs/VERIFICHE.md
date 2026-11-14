@@ -127,6 +127,21 @@ nel Keychain protetto da Face ID.
 - **Come**: flusso "Prova ordini su conto PAPER", scelta `azioni`, da lunedì a venerdì dopo le 15:30 italiane. Compra 1 azione di SPYM, controlla lo stop, lo annulla e vende.
 - **Atteso**: tutte le righe CONFERMATO e nessuna posizione a fine prova.
 
+## 18 · Regole di codice e indirizzo del conto paper (versione 1.6.9)
+
+- **Passo**: dalla cartella del progetto, `python3 tools/controlla_regole.py`.
+- **Atteso**: "Regole di AGENTS.md rispettate: nessun try!, fatalError o force-unwrap". Lo stesso controllo gira a ogni build (passo "Regole di codice" del flusso "Unsigned iOS IPA").
+- **Conto paper**: nel registro dei test deve comparire `FixedURLTests` passato: con un conto paper l'app parla solo con `paper-api.alpaca.markets`.
+- **Se è diverso**: lo script elenca file e riga; la build si ferma prima di compilare.
+
+## 19 · Studio crypto: la dimensione delle posizioni (14/11/2026)
+
+- **Passo**: su GitHub, Actions → "Backtest" → Run workflow → `universo`. Nel riepilogo cerca la tabella "CRYPTO 1".
+- **Atteso, riga di controllo**: "Come lo studio originale" deve dare +8,4% / -9% / 1,08, cioè i numeri scritti nei documenti fino alla 1.6.8: prova che il calcolo nuovo rifà lo studio vecchio.
+- **Atteso, riga "COME L'APP"**: le 5 coppie con 1/5 del conto per coppia. Il 14/11/2026 (run 43572591958 e 43573497317): +45,5% l'anno, perdita massima -41%, 30 cali oltre il -10% dal massimo. La tabella "CRYPTO 2 bis" dà gli stessi numeri per 1/8, 1/10, 1/15 e 1/25 del conto.
+- **Dove sta la differenza nel codice**: `tools/backtest_trend_crypto.py`, funzione `portfolio_v4` (`frac / len(COINS)` e poi `rets.mean(axis=1)`: divide due volte); `Sources/Core/CryptoStrategy.swift`, funzione `positionBudget` (`total / 5`).
+- **Se è diverso**: se la riga di controllo non ridà +8,4% / -9%, il calcolo nuovo non è confrontabile con quello vecchio e va rivisto prima di fidarsi.
+
 ## Come riportare un problema
 
 Screenshot dell'app (CRUSCOTTO con catena agenti ed eventi) + lo storico ordini di Alpaca

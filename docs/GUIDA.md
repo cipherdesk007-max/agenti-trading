@@ -1,14 +1,14 @@
 # Guida all'uso · QuantSwarm Alpha Zero
 
-*Versione 1.5.0 · 12/11/2026 · in italiano semplice, per chi non conosce il trading.*
+*Versione 1.6.9 · 14/11/2026 · in italiano semplice, per chi non conosce il trading.*
 
 > **Da leggere prima di tutto**: questa app **non promette e non garantisce alcun
 > guadagno**. I risultati passati non garantiscono quelli futuri. Puoi perdere
 > parte o tutto il capitale investito. L'app non è un consulente finanziario.
 
 Le immagini sono in `docs/screenshots/` (CRUSCOTTO, MERCATI, GRAFICO, DETTAGLI,
-BROKER, SISTEMA). *Nota: gli screenshot sono stati rifatti dopo il nuovo design
-della 1.5.0 dal ramo `screenshot`.*
+BROKER, SISTEMA). *Nota: gli screenshot sono quelli della build 228 (versione 1.6.9),
+presi dal ramo `screenshot`.*
 
 ---
 
@@ -45,11 +45,12 @@ ETF americani (S&P 500, Nasdaq-100, Russell 2000, oro) usando un conto Alpaca.
 | CRUSCOTTO | Saldo e P&L di oggi in grande, stato del motore, START/STOP/CONTROLLA ORA, posizioni aperte, catena agenti e registro a richiesta, HARD KILL in basso | `screenshots/CRUSCOTTO.png` |
 | MERCATI | Griglia dei 15 ETF con stato (in posizione, segnale, trend, non comprabile) e ultimo prezzo | `screenshots/MERCATI.png` |
 | GRAFICO | Toccando un ETF: grafico a candele (1G/1H/15M/5M), prezzo sempre visibile, medie, livelli di ingresso/stop/target, notizie 48h con TRADUCI | `screenshots/GRAFICO.png` |
-| DETTAGLI | Curva del capitale contro SPY, pagella agenti (Kimi contro le regole), consiglio degli specialisti (solo modalità veloce), portafoglio, crediti Kimi, performance, registro eventi | `screenshots/DETTAGLI.png` |
-| BROKER | Ordini aperti (Annulla) e posizioni (Chiudi) con controllo manuale, ordini recenti, link rapidi | `screenshots/BROKER.png` |
-| SISTEMA | Conti Alpaca (aggiungi/usa/elimina), sezioni Strategia, Kimi, App, Stato; versioni e aggiornamenti | `screenshots/SISTEMA.png` |
+| MERCATI e GRAFICO in CRYPTO | Le 5 coppie con prezzo, variazione e stato della regola; toccandone una, candele con media a 200, ingresso e stop | `screenshots/MERCATI-CRYPTO.png`, `screenshots/GRAFICO-CRYPTO.png` |
+| DETTAGLI | Curva del capitale contro SPY, ultime decisioni di Kimi, pagella agenti (Kimi contro le regole), consiglio degli specialisti (solo modalità veloce), performance, registro eventi | `screenshots/DETTAGLI.png` |
+| BROKER | Conto (a quale conto è collegata l'app, equity, cash, buying power, P&L di oggi e per strategia, se Alpaca accetta nuovi ordini), ordini aperti (Annulla) e posizioni (Chiudi) con controllo manuale, ordini recenti, link rapidi | `screenshots/BROKER.png` |
+| SISTEMA | Conti Alpaca (aggiungi/usa/elimina), sezioni Broker (stato del trading, Riattiva trading, Ricalibra equity), Strategia, Kimi (crediti, limite di spesa, modello), App, Stato; versioni e aggiornamenti | `screenshots/SISTEMA.png` |
 
-## 4. Le 2 modalità
+## 4. Le 3 modalità
 
 Tutti i numeri sono degli studi in `tools/` (backtest 2006–oggi con yfinance) e
 sono descritti in `docs/STATO.md`. **I risultati passati non garantiscono quelli
@@ -67,8 +68,8 @@ futuri.**
 - **Notte (la sua parte)**: compra in chiusura (asta MOC) S&P 500, Nasdaq-100,
   Russell 2000 e oro a peso uguale e vende all'apertura del giorno dopo (asta OPG).
   Zero crediti Kimi.
-- Ogni strategia ha il **suo registro** e tocca solo le sue posizioni; il pannello
-  Portafoglio (in DETTAGLI) mostra il **P&L separato per strategia** e il totale del
+- Ogni strategia ha il **suo registro** e tocca solo le sue posizioni; il riquadro
+  Conto (in BROKER) mostra il **P&L separato per strategia** e il totale del
   conto.
 - **Studio 2006–oggi** (`tools/backtest_portfolio.py`, run 43338377889): split 30/70
   → circa **+5,6% annuo**, **perdita massima −17%**, Sharpe 0,79 (Sharpe 1,96 sugli
@@ -83,6 +84,29 @@ futuri.**
   la borsa USA chiude tre ore prima, la seconda arriva tre ore prima. Per qualche
   settimana l'anno (cambio dell'ora in date diverse) gli orari italiani slittano
   di un'ora: fa fede l'ora di New York (8:45 e 45 minuti prima della chiusura).
+
+### Crypto · 24/7 (rischio alto — solo su conto paper)
+- Lavora su **5 coppie** di Alpaca: Bitcoin, Ethereum, Solana, Avalanche e Chainlink
+  contro dollaro. Ogni coppia riceve **un quinto del conto**.
+- **Compra** quando il prezzo supera il massimo degli ultimi 20 giorni e sta sopra la
+  media a 200 giorni. **Esce** quando il prezzo scende sotto uno stop che segue il
+  prezzo verso l'alto e non scende mai, oppure sotto la media a 200.
+- Lo **stop sta sul broker** e resta attivo anche ad app chiusa. Il mercato crypto è
+  sempre aperto, ma l'app lavora **solo mentre è aperta** (un controllo ogni 60
+  secondi): nuovi acquisti e spostamento dello stop avvengono quando la apri.
+- **Non chiama Kimi**: zero crediti. Alpaca trattiene lo 0,25% a ogni acquisto
+  (misurato sul conto paper).
+- **Numeri dello studio, rifatto il 14/11/2026 con le posizioni dell'app** (`tools/studio_universo.py`,
+  run 43572591958): dal luglio 2020 circa +45% l'anno, dall'aprile 2021 circa +21%
+  l'anno, in entrambi i casi con **perdita massima −41%** e 30 cali oltre il −10% dal
+  massimo. Comprare le stesse monete e tenerle: perdita massima −85%.
+- **Attenzione**: l'app blocca i nuovi acquisti quando il conto perde il 10% dal suo
+  massimo e si sblocca solo a mano. Con cali così frequenti il blocco scatterebbe
+  spesso: questa combinazione **non ha ancora uno studio suo**. I numeri scritti
+  nelle versioni precedenti (+8,4% l'anno, perdita massima −9%) valevano per
+  posizioni circa 7 volte più piccole.
+- **Non ancora visto dal vero**: un ciclo completo con un segnale reale. I singoli
+  ordini sono stati provati sul conto paper (12 controlli su 12).
 
 ### Veloce (sperimentale — sconsigliata con soldi veri)
 - Decide ogni pochi minuti con Kimi su candele da 1–15 minuti; chiude tutto prima

@@ -9,11 +9,20 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 Nessuna funzione nuova: completato e verificato ciò che c'era. Nessuna chiamata Kimi, nessun cambio di strategia, nessuna release pubblicata.
 
+### Errore trovato (decisione del proprietario)
+
+- **I numeri della modalità CRYPTO erano calcolati su posizioni circa 7 volte più piccole di quelle dell'app.** Lo studio (`tools/backtest_trend_crypto.py`) divide due volte per il numero di monete: ogni ingresso vale 1/36 del capitale; l'app dà a ogni coppia 1/5 del conto. Rifatto con un conto solo e la regola dell'app (run 43572591958): la riga di controllo ridà i numeri vecchi (+8,4% l'anno, perdita massima -9%); le 5 coppie con 1/5 del conto danno +45,5% l'anno dal 07/2020 e +20,8% dal 04/2021, con **perdita massima -41%** e 30 cali oltre il -10% dal massimo. Il blocco al 10% dell'app scatterebbe spesso: questa combinazione non ha uno studio suo. Con posizioni più piccole rendimento e perdita scendono insieme (run 43573497317): 1/10 del conto per coppia +26,3% l'anno e -24%; 1/15 +17,7% e -18%; 1/25 +10,7% e -11%, con 3 soli cali oltre il -10%. **Nell'app sono cambiati solo i testi** (descrizione della modalità, riga di registro all'avvio, consiglio in base al saldo, che ora dichiara il rischio). Regole e dimensione delle posizioni sono quelle di prima: la scelta è in docs/PROPOSTE.md n. 29.
+
+### Regole di codice
+
+- Tolti i 20 force-unwrap del codice dell'app (dati di mercato, fuso di New York, indirizzi fissi). `tools/controlla_regole.py` cerca force-unwrap, `try!` e `fatalError` a ogni build, prima di compilare.
+- Test nuovo `FixedURLTests`: con un conto paper l'app parla solo con `paper-api.alpaca.markets`. Era la riga più delicata dell'app e non aveva un test.
+
 ### Verificato
 
-- **Regole uguali agli studi (test di parità).** Gli script `tools/genera_parita_crypto.py` e `tools/genera_parita_giornaliera.py` fanno girare il codice degli studi su serie fisse; i test Swift rifanno le stesse barre con il codice dell'app. CRYPTO: stesso stato, ATR22, SMA200 e Donchian20 su 520 barre su 520. GIORNALIERA: stesse SMA200, SMA5, RSI2, ATR14 e stessi segnali su 356 barre su 356. La NOTTE non ha un segnale da confrontare (compra sempre i 4 indici a peso uguale).
+- **Regole uguali agli studi (test di parità).** Gli script `tools/genera_parita_crypto.py` e `tools/genera_parita_giornaliera.py` fanno girare il codice degli studi su serie fisse; i test Swift rifanno le stesse barre con il codice dell'app. CRYPTO: stesso stato, ATR22, SMA200 e Donchian20 su 520 barre su 520. GIORNALIERA: stesse SMA200, SMA5, RSI2, ATR14 e stessi segnali su 356 barre su 356. La NOTTE non ha un segnale da confrontare (compra sempre i 4 indici a peso uguale). **Limite del test**: confronta i segnali barra per barra, non la dimensione delle posizioni (vedi "Errore trovato").
 - **Ordini provati sul conto paper** (flusso "Prova ordini su conto PAPER"). Crypto: 12 controlli su 12 (acquisto, stop, annullo, vendita, doppioni rifiutati). Azioni a mercato chiuso: 8 su 8 (limite GTC con stop agganciato e stop GTC, bracket, aste di chiusura e apertura). Manca il giro completo delle azioni a borsa aperta.
-- **Test**: 343 unitari e 5 d'interfaccia, tutti passati (run 43565035430). I test d'interfaccia prima non partivano: il flusso ora gira su macchina Apple Silicon.
+- **Test**: 350 unitari e 5 d'interfaccia, tutti passati (run 43572880617, build 228). I test d'interfaccia prima non partivano: il flusso ora gira su macchina Apple Silicon. Nel run 43568943157 non erano partiti (limite di tempo troppo stretto): limite portato da 8 a 14 minuti, simulatore riavviato prima di riprovare.
 
 ### Corretto
 
@@ -33,17 +42,18 @@ Nessuna funzione nuova: completato e verificato ciò che c'era. Nessuna chiamata
 ### Cambiato (design)
 
 - **Una sola regola di colori** (docs/DESIGN.md): fondo grafite; comandi e saldo in avorio; verde solo per guadagno e stato a posto; ambra per attenzione; rosso per perdita e pericolo. Riviste le 82 righe che usavano il verde.
-- **Impostazioni riordinate per argomento**: nuovo riquadro Broker (stato del trading su Alpaca, "Riattiva trading", "Ricalibra equity", prima in fondo dentro Stato); "Carica modelli" sta nel riquadro Kimi e non più in Strategia; "Riprendi sessione" e "Promemoria" stanno in App e non più sotto Kimi.
-- Il consiglio "Saldo piccolo" in CRUSCOTTO è una riga, non un riquadro pieno; "CONTROLLA ORA" sta su una riga; il prossimo controllo è scritto una volta sola; i numeri hanno la virgola in tutte le schermate.
+- **Ogni cosa nella sua scheda.** BROKER si apre con il riquadro Conto (a quale conto è collegata l'app, equity, cash, buying power, P&L, se Alpaca accetta nuovi ordini), prima in DETTAGLI con il nome Portafoglio. SISTEMA: nuovo riquadro Broker (stato del trading, "Riattiva trading", "Ricalibra equity", prima in fondo dentro Stato); nel riquadro Kimi stanno crediti, chiamate e spesa del giorno (prima in DETTAGLI) insieme a limite, modello e "Carica modelli" (prima in Strategia); "Riprendi sessione" e "Promemoria" stanno in App. Aprire SISTEMA legge crediti Kimi e stato del trading.
+- Il consiglio "Saldo piccolo" in CRUSCOTTO è una riga, non un riquadro pieno; "CONTROLLA ORA" sta su una riga; il prossimo controllo è scritto una volta sola. I decimali hanno la virgola in tutte le schermate: 14 punti (pagella, spesa Kimi, impostazioni) avevano ancora il punto.
 
 ### Studiato e respinto
 
-- **Paniere più largo (più ETF, più coppie crypto).** Provato con le stesse regole dell'app, liste e criterio scritti prima (`tools/studio_universo.py`, run 43568807869). ETF da 15 a 23 e a 30: il rendimento annuo scende da +2,3% a +0,9%, la perdita massima passa da -9% a -20% e -22%, i segnali (cioè le chiamate a Kimi) salgono del 48% e dell'84%. Crypto da 5 a 8 e a 11 coppie, sulla stessa finestra: da +5,2% l'anno a +1,6% e +0,5%. Il paniere resta quello di oggi.
+- **Paniere più largo (più ETF, più coppie crypto).** Provato con le stesse regole dell'app, liste e criterio scritti prima (`tools/studio_universo.py`, run 43572591958). ETF da 15 a 23 e a 30: il rendimento annuo scende da +2,3% a +0,9%, la perdita massima passa da -9% a -20% e -21%, i segnali (cioè le chiamate a Kimi) salgono del 48% e dell'84%. Crypto da 5 a 8 e a 11 coppie, un conto solo e 1/N del conto per coppia, dal 04/2021: da +20,8% l'anno a +9,1% e +1,2%, perdita massima da -41% a -45% e -48%. Il paniere resta quello di oggi. Il primo giro (43568807869) per la crypto non valeva: usava il calcolo con l'errore descritto sotto.
 
 ### Da sapere
 
 - CRYPTO: lo stop sul broker scatta durante la giornata, lo studio esce alla chiusura giornaliera; l'app compra quando la apri, non alla chiusura della barra. Un ciclo completo con un segnale vero non si è ancora visto: serve una chiusura sopra la media a 200 giorni.
-- Controlli da fare a mano: `docs/VERIFICHE.md`, punti 14-17.
+- Controlli da fare a mano: `docs/VERIFICHE.md`, punti 14-19.
+- Resta 1 avviso del compilatore: la funzione che mostra Face ID per leggere le chiavi è superata ma funziona. Non è stata toccata perché si può provare solo sul telefono (docs/PROPOSTE.md n. 30).
 
 ## [1.6.8] - 14/11/2026
 
@@ -136,6 +146,7 @@ Nessuna funzione nuova: completato e verificato ciò che c'era. Nessuna chiamata
 
 ### Studio crypto trend a regime: V4 approvata dai numeri (13/11/2026)
 - **Esiti (run 43358878933, verde):** V4 Donchian20 + chandelier 3ATR **passa tutti i criteri** (+8,4%/anno, maxDD −9%, Sharpe 1,08; finestra orso 2024-11→oggi +7,4% contro −31,8% del buy &amp; hold; entrambe le metà positive) → implementata sopra come modalità CRYPTO · 24/7. V3 (+12,2%/−15%) passa A/C/D ma la perdita max supera il blocco drawdown al 10%: scartata. V1/V2 bocciate (maxDD −38%). Solo il paniere equal-weight funziona: le regole per singola moneta perdono quasi tutte. 4H controllo secondario: nell'orso −0,9% contro −32,3% (capitale salvato).
+- *Correzione del 14/11/2026: questi numeri valgono per ingressi da 1/36 del capitale, non per l'app, che usa 1/5 del conto. Numeri rifatti e decisione aperta: docs/PROPOSTE.md n. 29.*
 
 ### Studio crypto trend a regime (strumenti, 13/11/2026)
 - **`tools/backtest_trend_crypto.py` + passo `quale=cryptotrend` in `backtest.yml`.** Regole NUOVE dopo il bando della proposta 18 (mean-reversion bocciata): trend-following a regime long-only senza take-profit fisso — V1 SMA200, V2 SMA200 con isteresi 0,97, V3 EMA50>EMA200 + chandelier 3ATR, V4 Donchian20 + chandelier 3ATR. Daily dal 2018 (dove si decide) + 4H su finestra 730gg come controllo secondario. Criteri **pre-registrati** e stampati dallo script: CAGR ≥ +3%, maxDD ≤ −20%, finestra orso 2024-11→oggi ≥ −2%, entrambe le metà del campione positive. Sensibilità costi 0,2% e 0,1% per lato. La modalità CRYPTO 24/7 entra in app **solo se** una variante passa tutti i criteri e il proprietario lo decide.

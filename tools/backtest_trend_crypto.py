@@ -181,10 +181,19 @@ def verdict(eq, ppy):
     return " ".join(parts)
 
 
+# ATTENZIONE (14/11/2026): portfolio() e portfolio_v4() dividono DUE volte per il
+# numero di monete: ogni moneta entra con frac/len(COINS) del SUO sottoconto e poi
+# si fa la MEDIA dei sottoconti. Ogni ingresso vale quindi 1/N² del capitale (1/36
+# con 6 monete), non 1/N. I numeri che stampano (V4: +8,4% / -9% / 1,08) NON
+# descrivono l'app, che dà a ogni coppia 1/5 del conto: per quello usare
+# conto_unico() in tools/studio_universo.py (un conto solo, regola dell'app).
+# Le due funzioni restano come sono perché servono da controllo: devono ridare i
+# numeri scritti nei documenti fino alla 1.6.8.
 def portfolio(dfs, variant, frac):
     """Ogni moneta riceve 1/len(COINS) dell'equity quando il suo regime e'
     rialzista: equity per moneta normalizzata al suo punto di partenza, poi media
-    dei rendimenti (equal weight, ribilanciata implicitamente ogni barra)."""
+    dei rendimenti (equal weight, ribilanciata implicitamente ogni barra).
+    VEDI L'AVVISO QUI SOPRA: la dimensione effettiva e' 1/N², non 1/N."""
     eqs = {}
     for t, df in dfs.items():
         eq, _ = simulate_trend(df, variant, frac / len(COINS))

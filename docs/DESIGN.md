@@ -12,6 +12,18 @@ Questa sezione vale più di quelle sotto dove si contraddicono. L'app chiama gi�
 
 Regole: un comando non è mai verde; i titoli dei riquadri sono bianchi; i numeri si leggono con la virgola (`Theme.numberLocale`); il saldo principale è l'unico numero grande e stretto. Nel codice: `Theme.ivory` per i comandi, `Theme.accent` (verde) solo per gli stati.
 
+## Ogni cosa nella sua scheda (14/11/2026)
+
+| Scheda | Che cosa contiene |
+|---|---|
+| CRUSCOTTO | che cosa sta facendo il motore adesso e i comandi |
+| MERCATI | prezzi, grafici e stato della regola |
+| DETTAGLI | come sta andando il bot: capitale, decisioni, pagella, registro |
+| BROKER | il conto: saldo e liquidità, ordini aperti, posizioni, ordini recenti |
+| SISTEMA | le scelte: conti, broker (stato del trading), strategia, Kimi (crediti, limite, modello), app |
+
+Un dato sta in una scheda sola e un comando compare una volta per scheda.
+
 ---
 
 # DESIGN · da prototipo a prodotto finito · 12/11/2026
