@@ -1,0 +1,30 @@
+name: Prova crypto su conto PAPER
+
+# Solo a mano, mai da sola. Compra e rivende circa 12 dollari FINTI di BTC sul
+# conto paper delle chiavi salvate nei secrets, per controllare sul broker vero
+# le ipotesi della modalità CRYPTO (simboli, tempi, commissione, stop, doppioni).
+# Vedi tools/prova_crypto_paper.py e docs/VERIFICHE.md punto 14.
+on:
+  workflow_dispatch:
+    inputs:
+      conferma:
+        description: "Scrivi PAPER per confermare (circa 12 dollari finti di BTC, comprati e rivenduti)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  prova:
+    if: github.event.inputs.conferma == 'PAPER'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+      - name: Prova sul conto paper
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python3 tools/prova_crypto_paper.py | tee -a "$GITHUB_STEP_SUMMARY"
