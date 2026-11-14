@@ -35,7 +35,9 @@ concurrency:
 
 jobs:
   build:
-    runs-on: macos-15-intel
+    # Macchina Apple Silicon: sul runner Intel i test dell'interfaccia restavano
+    # fermi senza partire e l'intero giro durava circa il doppio.
+    runs-on: macos-15
     timeout-minutes: 50
     steps:
       - name: Checkout
