@@ -1,95 +1,19 @@
-# Revisione AI · 14/11/2026 (mattina) · Revisione dei percorsi che toccano soldi: crypto, HARD KILL, promemoria, uscita giornaliera · versione 1.6.9
+# Revisione AI · 14/11/2026 · versione 1.6.9 (in lavorazione)
 
-Richiesta del proprietario: "finisci l'app alla perfezione, portato il tutto a
-non poter aggiungere più niente". Lettura dichiarata in chat prima di
-iniziare: NESSUNA funzione nuova; rileggere riga per riga il codice che tocca
-soldi (giornaliera, notte, portafoglio, crypto, veloce, HARD KILL), correggere
-solo i difetti dimostrabili, ognuno con un test del caso normale e uno del
-caso d'errore; verificare con test, test d'interfaccia e screenshot; allineare
-versione e documenti; dire che cosa è verificato e che cosa no. "Perfetta" non
-si può garantire e non si scrive (AGENTS.md). Nessuna chiamata Kimi, nessuna
-release pubblicata, nessun ordine sul conto.
+Lavoro in corso su richiesta del proprietario: nessuna funzione nuova, si completa e si
+verifica ciò che c'è. Il dettaglio delle modifiche è nel CHANGELOG, voce [1.6.9]. Questa
+sezione si scrive per intero a lavoro finito; fino ad allora valgono solo queste righe.
 
-| Punto | Commit | Build CI |
-|---|---|---|
-| Crypto (simboli, doppioni, stop sulla quantità vera, uscita ritentata, ATR dello studio), HARD KILL verificato, promemoria in PORTAFOGLIO, versione 1.6.9 | `447a770` | run 43551033530 verde, 327 test |
-| Quantità crypto a 9 decimali, test su chiusura totale | `3c74702` | compreso nel run completo sotto |
-| Giornaliera: l'uscita aspetta l'annullo di stop e target | `ad172f1` | run completo 43552818891 (test, test d'interfaccia, screenshot, IPA): esito in fondo a questa sezione |
-| Strumento di prova sul conto PAPER (non lanciato) | `43158bd` | solo tools e un flusso manuale, niente build |
+Definizione di "finita" data dal proprietario: (1) ogni strategia ha il test di parità con
+il suo studio; (2) ogni tipo di ordine è provato sul conto paper; (3) i test
+dell'interfaccia girano e passano; (4) tutte le schermate seguono una sola regola di colori.
 
-## Secondo giro della mattina (dopo le risposte del proprietario: "sì", "lancia", "rifai il design")
-
-| Punto | Commit | Esito |
-|---|---|---|
-| Test di parità studio ↔ app (crypto), CONTROLLA ORA su una riga, secondo tentativo dei test d'interfaccia | `502784a` | run 43556570498: 333 test unitari, 0 falliti (parità compresa). Run annullato a mano: i test d'interfaccia erano fermi da 21 minuti |
-| Prova sul conto PAPER | strumento in `43158bd` | run 43557460572: 12 ipotesi su 12 confermate, conto lasciato pulito |
-| Design fase 1 "quadro strumenti" | `f7cbb38` | schermate nel ramo `screenshot` dopo il run finale |
-| "Trading sospeso" riconosciuto dal messaggio (difetto scoperto dalla prova paper) | `9f21087` | run finale 43559202966 |
-
-- **Parità**: su 720 barre fisse, l'app e lo studio decidono allo stesso modo in 520 barre su 520 (6 ingressi, 6 uscite), con ATR22, SMA200 e Donchian20 uguali. Con l'ATR della 1.6.8 lo stato sarebbe stato diverso in 13 barre e l'ATR fino al 20% diverso: fino a ieri la crypto non applicava la regola misurata nello studio.
-- **Prova paper**: confermati simbolo `BTCUSD` nelle posizioni, esecuzione in 0,15 s, commissione dello 0,25% pagata in BTC, ricerca per `client_order_id`, doppione rifiutato (422), stop `stop_limit` GTC accettato con prezzi a 2 decimali, secondo stop rifiutato, vendita dopo l'annullo, nessun residuo. Le chiavi paper le ha messe il proprietario nei secrets del repository.
-- **Test d'interfaccia: ancora NON eseguiti.** Sul runner Intel con Xcode 26.3 il comando dei test resta fermo senza far partire nessun test (prima volta errore "AX loaded", seconda volta 21 minuti di silenzio). È un problema della macchina di CI, non dell'app, ma finché non è risolto i 5 test d'interfaccia non danno nessuna garanzia. Ora ogni tentativo ha un tempo massimo di 8 minuti, così non può più far perdere l'IPA. Strade da provare: runner ARM (`macos-15`), un altro modello di simulatore.
-- **Design**: fatta solo la fase 1 (docs/DESIGN.md). La fase 2 parte dopo che il proprietario ha visto le schermate.
-- **Non fatto in questo giro**: parità per giornaliera e notte; fase 2 del design; ciclo completo della crypto con un segnale vero.
-
-## Come è stato trovato il difetto principale
-
-La CRYPTO passava tutti i test, ma i test usano un broker finto scritto da
-chi ha scritto il ciclo: il finto restituiva la posizione con lo stesso
-simbolo degli ordini (`BTC/USD`). Alpaca no: nell'elenco posizioni scrive
-`BTCUSD` (nota ufficiale "The Position list shows BTCUSD instead of BTC/USD",
-alpaca.markets/support/alpaca-crypto-coin-pair-faq). Il commento nel codice
-diceva il contrario ("le posizioni crypto usano lo stesso simbolo della
-coppia"). Il difetto è uscito confrontando ogni chiamata al broker con la
-documentazione di Alpaca invece che con il finto. Stesso metodo per gli altri
-punti: annullo asincrono, chiusura che non annulla gli ordini, commissione
-crypto pagata in moneta, massimo 9 decimali, risposta "ok" della chiusura
-totale che è un elenco di esiti. L'elenco completo è in STATO.md
-("Correzioni di sicurezza (14/11/2026)") e nel CHANGELOG [1.6.9].
-
-## Che cosa NON dimostra questo lavoro
-
-- I test nuovi provano che il codice fa ciò che la documentazione di Alpaca
-  descrive. NON provano che Alpaca si comporti come la documentazione: per
-  quello serve il broker vero. Lo strumento `tools/prova_crypto_paper.py`
-  (flusso "Prova crypto su conto PAPER") controlla in meno di un minuto le
-  ipotesi una per una con circa 12 dollari finti; è pronto e NON è stato
-  lanciato, perché mette ordini sul conto paper del proprietario e serve il
-  suo sì.
-- Non è stato verificato sui documenti di Alpaca se i prezzi di stop e limite
-  delle crypto abbiano un passo minimo più largo dei 2 decimali che l'app
-  usa: una tabella vecchia di Alpaca indica passi di 1 USD per BTC e 0,1 per
-  ETH, la documentazione attuale non lo ripete e mostra prezzi BTC con 3
-  decimali. Se lo stop venisse rifiutato per questo, l'app lo direbbe ("senza
-  stop") e la prova paper lo mostrerebbe subito.
-- Giornaliera, notte e veloce sono state rilette nei punti toccati dalle
-  revisioni precedenti (12-13/11) e nei percorsi di annullo/chiusura; non
-  riscritte. La sola correzione è l'attesa dopo l'annullo nell'uscita.
-- Le strategie non sono cambiate: i numeri degli studi in STATO.md restano
-  quelli (giornaliera debole fuori campione, notte e crypto V4 sopra i
-  criteri pre-registrati solo in backtest).
-
-## FATTO / NON FATTO / DA VERIFICARE (utente)
-
-- FATTO: correzioni elencate sopra con +39 test (335 totali); prova paper 12 su 12; parità crypto 520 su 520; design fase 1; versione 1.6.9
-  per app e widget; CHANGELOG, STATO, VERIFICHE (punti 14-17), GUIDA e README
-  aggiornati; IPA 1.6.9 mandato in chat al proprietario.
-- NON FATTO: nessuna funzione nuova; nessuna release pubblicata (apps.json
-  resta alla versione precedente); test d'interfaccia non eseguiti (CI);
-  nessuna modifica a strategie, limiti di rischio o prompt.
-- DA VERIFICARE SU TELEFONO E CONTO: VERIFICHE.md punto 14 (crypto: prova
-  rapida paper o primo ingresso vero), 15 (HARD KILL a mercato aperto e
-  chiuso), 16 (due promemoria al giorno in PORTAFOGLIO, orario del 27/11),
-  17 (uscita della giornaliera al primo tentativo); SISTEMA → VERSIONE deve
-  leggere 1.6.9.
-
-### Esito del run completo 43552818891 (commit `ad172f1`)
-
-- Test unitari: **331 eseguiti, 0 falliti**.
-- Test d'interfaccia: **NON eseguiti**. Il runner dei test non è partito ("The test runner failed to initialize for UI testing … Timed out waiting for AX loaded notification"): è un errore del simulatore su quella macchina, nessuno dei 5 test è cominciato. Non dice niente sull'app, né bene né male. Va rilanciato (una modifica al flusso per riprovare una volta era pronta e non è stata applicata: il proprietario ha fermato quell'operazione).
-- Screenshot: 6 su 6 prodotti e guardati uno per uno (CRUSCOTTO, MERCATI, GRAFICO, DETTAGLI, BROKER, SISTEMA). Nessuna schermata rotta. Un difetto estetico: in CRUSCOTTO la scritta del pulsante "CONTROLLA ORA" va a capo su due righe accanto a STOP (correzione di una riga pronta, non applicata). Gli screenshot usano dati di esempio: mostrano che le schermate si disegnano, non che i flussi funzionino.
-- Da notare negli screenshot: con 1.000 USD il riquadro "Saldo piccolo" in CRUSCOTTO e SISTEMA **consiglia la CRYPTO**, cioè la modalità mai provata su un conto vero. Finché la prova paper (proposta 27) non è passata, quel consiglio va preso con cautela; cambiarne il testo è una decisione del proprietario.
-- IPA: **1.6.9 build 220** sul ramo `bozza-ipa`, verificato (versione e build nel file) e mandato in chat.
+| Punto | Stato al 14/11 |
+|---|---|
+| Parità con lo studio | crypto e giornaliera fatte; la notte non ha un segnale da confrontare |
+| Ordini sul conto paper | crypto 12 su 12; azioni 8 su 8 a mercato chiuso; manca il giro completo a borsa aperta |
+| Test dell'interfaccia | girano su macchina ARM (`ui-tests.yml`): 5 su 5 |
+| Regola unica dei colori | applicata (docs/DESIGN.md) |
 
 ---
 

@@ -105,38 +105,27 @@ nel Keychain protetto da Face ID.
 - **Se è diverso**: sezione assente dopo una sessione con candidati → il flag non è stato registrato: da segnalare col report di sessione. IC presente con meno di 30 esiti per lato → bug.
 - **Criterio scritto prima** (docs/AGENTI.md 6-ter, corretto il 14/11): si passa all'ordine a regole SOLO se l'IC 95% per giorno della differenza SOLO REGOLE − SOLO CATENA (i disaccordi) risulta interamente sopra zero, e mai senza il tuo via esplicito. Il veto del Reviewer NON è provato: si attiva qualcosa solo se il suo IC esclude lo zero.
 
-## 14 · CRYPTO: primo ingresso, stop sul broker, ripresa, uscita (versione 1.6.9)
+## 14 · CRYPTO (versione 1.6.9)
 
-**Da sapere prima.** La modalità CRYPTO non è mai stata provata su un conto vero. Fino alla 1.6.8 non poteva funzionare: Alpaca scrive la coppia `BTC/USD` negli ordini e `BTCUSD` nell'elenco posizioni, l'app le confrontava così com'erano e dopo 60 secondi credeva la posizione sparita (la toglieva dal registro e annullava lo stop). Nei test non si vedeva perché il broker finto usava una sola scrittura. La 1.6.9 corregge questo e altri nove punti (CHANGELOG), ma la conferma può darla solo il broker vero.
+- **Già provato sul broker** (flusso "Prova ordini su conto PAPER", scelta `crypto`): acquisto, stop, annullo e vendita come li manda l'app. Si può rilanciare quando si vuole: compra e rivende circa 12 dollari finti di BTC.
+- **Da vedere con l'app**: al primo segnale vero (una coppia che chiude sopra il massimo dei 20 giorni e sopra la media a 200) la posizione deve restare nel pannello dopo 1 e 5 minuti, e su Alpaca deve esserci un solo stop `stop_limit` GTC per la quantità della posizione (scritta `BTCUSD`).
+- **Se è diverso**: posizione sparita dal pannello ma presente su Alpaca, oppure avviso "senza stop" che resta → mandare il report di sessione.
 
-**Prova rapida senza aspettare un segnale** (circa 12 dollari FINTI di BTC comprati e rivenduti sul conto paper, meno di un minuto): flusso GitHub **"Prova crypto su conto PAPER"** (Actions → Run workflow → scrivere `PAPER`), oppure chiedere a chi lavora sul repository di lanciarlo. Stampa una tabella con ogni ipotesi e l'esito CONFERMATO o DIVERSO: simbolo nell'elenco posizioni, tempo d'esecuzione dell'acquisto, commissione pagata in moneta, stop `stop_limit` accettato con quantità a 9 decimali e prezzi a 2, secondo stop rifiutato, stesso `client_order_id` rifiutato, vendita subito dopo l'annullo dello stop, nessun residuo dopo la vendita. Lo script (`tools/prova_crypto_paper.py`) usa solo l'indirizzo paper, non tocca il conto se c'è già una posizione o un ordine BTC e a fine prova rimette tutto com'era. **Lanciato il 14/11/2026 (run 43557460572): 12 ipotesi su 12 CONFERMATE**, conto lasciato senza posizioni né ordini BTC. In più ha mostrato che Alpaca usa il codice 40310000 anche per il saldo insufficiente: l'app lo scambiava per "trading sospeso", corretto. Resta da vedere il ciclo completo dell'app con un segnale vero (qui sotto).
+## 15 · HARD KILL (versione 1.6.9)
 
-**Prova con l'app** (serve un segnale vero: una coppia che chiude sopra il massimo dei 20 giorni e sopra la media a 200 giorni; con il mercato sotto la media può volerci molto):
-- **Nell'app**: modalità CRYPTO, START, app aperta.
-- **Su Alpaca dopo l'ingresso**: Positions → la coppia SENZA barra (es. `BTCUSD`), quantità un po' sotto l'ordinato se la commissione è in moneta. Orders → un BUY market `qsc-buy-BTCUSD-GIORNO` eseguito e UN SOLO SELL `stop_limit` GTC `qsc-stop-BTCUSD-GIORNO` per la stessa quantità della posizione.
-- **Atteso nell'app**: log "ingresso … stop stop_limit GTC a … sul broker". Dopo 1 e dopo 5 minuti la posizione è ANCORA nel pannello e nel log NON compare "la posizione non è più sul broker".
-- **Ripresa**: con la posizione aperta chiudi l'app, riaprila, START. Atteso: nessun nuovo acquisto, nessun secondo stop, niente "RIPRISTINATO" se lo stop era al suo posto.
-- **Uscita**: quando la chiusura giornaliera scende sotto il chandelier o la media a 200, l'app annulla lo stop, aspetta la conferma e vende (`qsc-sell-BTCUSD-GIORNO`). Su Alpaca: stop `canceled`, poi un SELL market eseguito, posizione assente.
-- **Se è diverso**: "lo stop GTC NON è stato accettato" seguito entro 60 s da "RIPRISTINATO" → funziona ma va segnalato; "senza stop" che resta → mandare il report (probabile rifiuto di Alpaca su prezzo o quantità dello stop); due BUY della stessa coppia nello stesso giorno → l'anti-doppione non ha funzionato; posizione sparita dal pannello ma presente su Alpaca → il difetto dei simboli non è risolto.
-- **Differenze dichiarate rispetto allo studio**: lo stop sul broker scatta durante la giornata (lo studio esce solo alla chiusura giornaliera) e l'app compra quando viene aperta, non alla chiusura della barra.
-
-## 15 · HARD KILL: l'esito è quello vero (versione 1.6.9)
-
-- **A mercato aperto, con almeno una posizione**: premi HARD KILL. Atteso: stato "HARD KILL completato" e nel log "HARD KILL verificato: sul conto non restano né posizioni né ordini". Su Alpaca: Positions e Orders vuoti.
-- **A mercato chiuso, con una posizione in azioni**: atteso "HARD KILL: chiusure in coda" con l'elenco dei simboli. Su Alpaca la posizione c'è ancora, con un SELL market in attesa che si esegue alla prossima apertura (fino ad allora è senza stop: è il comportamento di Alpaca, ora l'app lo dice).
-- **Se è diverso**: "completato" con posizioni ancora presenti su Alpaca → bug, mandare il report. "HARD KILL INCOMPLETO" con un elenco → ripremere; se resta, chiudere dal sito Alpaca e mandare il report.
+- **A mercato aperto con una posizione**: atteso "HARD KILL completato" e, su Alpaca, nessuna posizione e nessun ordine.
+- **A mercato chiuso con una posizione in azioni**: atteso "HARD KILL: chiusure in coda" con l'elenco; la vendita si esegue alla prossima apertura.
+- **Se è diverso**: "completato" con posizioni ancora su Alpaca, oppure "INCOMPLETO" che resta dopo averlo ripremuto → mandare il report.
 
 ## 16 · Promemoria in PORTAFOGLIO (versione 1.6.9)
 
-- **Nell'app**: SISTEMA → "Promemoria per aprire l'app" acceso, modalità PORTAFOGLIO, notifiche consentite per l'app in Impostazioni iOS. Apri l'app almeno una volta dopo l'aggiornamento (i promemoria si programmano all'avvio del motore o al salvataggio delle impostazioni, per i 21 giorni successivi).
-- **Atteso**: nei giorni di borsa due notifiche. "NOTTE: VENDITA" alle 8:45 di New York (14:45 in Italia quando la differenza è di 6 ore) e "NOTTE: ACQUISTO" 45 minuti prima della chiusura (21:15 in Italia). Venerdì 27/11/2026 la borsa chiude alle 13:00 di New York: la seconda deve arrivare alle 12:15 di New York (18:15 in Italia), non alle 21:15.
-- **Se è diverso**: nessuna notifica con i permessi a posto → segnalare con il report. Fino alla 1.6.8 in PORTAFOGLIO non ne partiva nessuna: se le notifiche non arrivavano non era un problema del telefono.
+- **Atteso** con l'interruttore acceso: nei giorni di borsa due notifiche, alle 8:45 di New York (di solito 14:45 in Italia) e 45 minuti prima della chiusura (di solito 21:15). Venerdì 27/11/2026, seduta corta, la seconda arriva alle 18:15 italiane.
+- **Se è diverso**: nessuna notifica con i permessi a posto → segnalare.
 
-## 17 · GIORNALIERA: uscita al primo tentativo (versione 1.6.9)
+## 17 · Azioni: giro completo a borsa aperta (versione 1.6.9)
 
-- **Quando capita**: alla prima uscita a regole della giornaliera (chiusura sopra la media a 5 giorni, o scadenza dei giorni) con l'app aperta a mercato aperto.
-- **Atteso**: log "USCITA — …" al primo ciclo. Su Alpaca: stop (e target) `canceled`, poi la vendita eseguita.
-- **Se è diverso**: "uscita non riuscita … stop rimesso sul broker, riprovo al prossimo ciclo" → la posizione è protetta ma l'attesa di 2 secondi non è bastata: mandare il report, serve allungarla.
+- **Come**: flusso "Prova ordini su conto PAPER", scelta `azioni`, da lunedì a venerdì dopo le 15:30 italiane. Compra 1 azione di SPYM, controlla lo stop, lo annulla e vende.
+- **Atteso**: tutte le righe CONFERMATO e nessuna posizione a fine prova.
 
 ## Come riportare un problema
 

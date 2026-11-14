@@ -537,30 +537,13 @@ non 730 giorni, vedi CHANGELOG).
   restare utile se un giorno si vorrà latenza più bassa; è un interruttino, non una
   strategia.
 
-## Confronto con i progetti open source · 14/11/2026 (richiesta del proprietario: "deve essere meglio di" Freqtrade, FinRL, Nautilus Trader, Jesse, Hummingbot/OctoBot, TradingAgents)
+## Confronto con i progetti open source · 14/11/2026
 
-Lettura onesta del confronto. Quei progetti sono **cassette degli attrezzi** per programmatori (motori di backtest ed esecuzione su server sempre accesi, molti exchange); nessuno contiene una strategia che guadagna, e TradingAgents si definisce da solo "research scaffold", con gli ordini eseguiti su un exchange simulato (README di github.com/TauricResearch/TradingAgents, v0.7.1). La nostra è un'app iPhone per una persona, tre strategie fisse su Alpaca, senza server. "Meglio" in generale non è misurabile; lo è su tre punti dove loro sono davvero avanti e che contano per i soldi: le proposte 24 e 27 qui sotto. Dove siamo già diversi: app nativa iPhone (nell'elenco github.com/LLMQuant/awesome-trading-agents nessun progetto lo è), rischio in codice, e una pagella che misura se l'AI aggiunge qualcosa e lo scrive anche quando la risposta è no.
+Freqtrade, Nautilus Trader, Jesse, FinRL, Hummingbot e TradingAgents sono strumenti per programmatori su server sempre accesi; nessuno contiene una strategia che guadagna. Da loro si prende ciò che conta per i soldi, non le funzioni.
 
-### 24 · Test di parità studio ↔ app — FATTO per la CRYPTO il 14/11/2026 (520 barre su 520 uguali); giornaliera e notte da fare
-
-- **Fatto**: Freqtrade, Nautilus Trader e Jesse eseguono backtest e trading reale con lo STESSO codice di strategia. Da noi lo studio è in Python (`tools/`) e l'app in Swift: possono divergere senza che nessun test se ne accorga. Il 14/11 ne è stata trovata una (ATR della crypto: media semplice nell'app, Wilder nello studio; corretta nella 1.6.9).
-- **Proposta**: per ogni strategia (crypto V4, giornaliera, notte) lo script dello studio scrive un file di riferimento con le barre e, giorno per giorno, segnale, ATR e livello di stop attesi; un test Swift verifica che l'app dia gli stessi valori.
-- **Criterio scritto prima**: 100% dei giorni uguali. Ogni differenza è un difetto da correggere oppure una differenza da dichiarare in STATO.md (come lo stop crypto che scatta durante la giornata).
-- **Costo**: nessuna API nuova, nessuna chiamata Kimi, nessuna modifica alle strategie.
-
-### 25 · ETF frazionati sul conto piccolo — STUDIATA, sconsigliata finché l'app gira solo sul telefono
-
-- **Fatto** (documentazione Alpaca, docs.alpaca.markets/us/docs/fractional-trading e 245-trading): gli ordini frazionati su azioni ed ETF accettano market, limit, stop e stop-limit ma solo con durata DAY; il GTC frazionato esiste solo con le sessioni estese/overnight abilitate.
-- **Conseguenza**: lo stop di una posizione frazionata scade ogni sera. La prima regola del progetto (ogni posizione ha uno stop GTC sul broker, perché l'app gira solo aperta) non si può rispettare; le aste MOC/OPG della notte lavorano a quote intere.
-- **Stato**: per questo i conti piccoli usano gli ETF gemelli a basso prezzo (SPYM, QQQM, VTWO, GLDM). Sulla crypto il frazionato c'è già (stop GTC ammesso). Si riapre solo con un server sempre acceso (VPS.md) o con un sì esplicito ad avere posizioni senza stop di notte.
-
-### 26 · Machine learning, reinforcement learning, market making — NON ora
-
-- **FreqAI / FinRL (modelli addestrati, RL)**: servono dati, addestramento e un server; sul telefono non girano. Nessuna prova sui nostri dati che aiutino, e la banca di prova degli agenti (AGENTI.md 6-bis) ha già mostrato che la scelta di Kimi rende come il caso. Regola 2 di AGENTS.md: prima criterio scritto e backtest, poi eventualmente codice.
-- **Hummingbot / OctoBot (market making, arbitraggio)**: richiedono esecuzione continua, più exchange e commissioni basse. Con un'app che gira solo aperta e le commissioni crypto di Alpaca non è praticabile.
-- **TradingAgents e varianti (crypto, Alpaca)**: la struttura a ruoli (analisti, ricercatori pro e contro, trader, rischio) è quella che l'app ha già (consiglio di specialisti, Brain, Reviewer, rischio in codice). Aggiungere altri agenti senza una misura che li giustifichi aumenterebbe solo il costo Kimi.
-
-### 27 · Prova sul conto paper delle ipotesi crypto — ESEGUITA il 14/11/2026 (run 43557460572): 12 su 12 confermate
-
-- `tools/prova_crypto_paper.py` e flusso manuale "Prova crypto su conto PAPER": circa 12 dollari finti di BTC comprati e rivenduti, tabella con ogni ipotesi CONFERMATA o DIVERSA. Dettagli in VERIFICHE.md punto 14. È il corrispondente del "dry-run" di Freqtrade: prima di fidarsi, si prova sul broker vero senza soldi veri.
-
+| N. | Proposta | Stato |
+|---|---|---|
+| 24 | Test di parità studio ↔ app (lo stesso principio di Freqtrade e Nautilus: backtest e bot con la stessa regola) | fatto per crypto e giornaliera |
+| 25 | ETF frazionati | sconsigliati: su Alpaca il frazionato vale solo per ordini che scadono a fine giornata, quindi niente stop GTC ad app chiusa |
+| 26 | Machine learning, reinforcement learning, market making | non ora: servono un server e una prova sui nostri dati che oggi non c'è |
+| 27 | Prova degli ordini sul conto paper (`tools/prova_crypto_paper.py`, `tools/prova_azioni_paper.py`) | fatta per crypto e per le azioni a mercato chiuso |

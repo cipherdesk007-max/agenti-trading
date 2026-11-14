@@ -1,56 +1,16 @@
-# DESIGN · direzione 2.0 "quadro strumenti" · 14/11/2026
+# DESIGN · regola unica dei colori "quadro strumenti" · 14/11/2026
 
-Richiesta del proprietario: rifare il design, "studiato e fatto bene, ogni dettaglio definito". Questa sezione vale più di quelle sotto dove si contraddicono.
+Questa sezione vale più di quelle sotto dove si contraddicono. L'app chiama già la prima schermata Cruscotto e il trading "motore": la schermata è un quadro strumenti, dove i numeri sono neutri e il colore compare solo quando vuol dire qualcosa.
 
-## Da dove nasce
-
-L'app chiama già la prima schermata **Cruscotto**, il trading **motore**, i comandi **START** e **STOP**: il vocabolario è quello di un'auto. Il design lo prende sul serio: la schermata principale è un **quadro strumenti**. In un quadro strumenti i numeri sono neutri e il colore compare solo quando vuol dire qualcosa (le spie).
-
-Che cosa non andava nella versione precedente (nero con un solo verde acceso):
-- il verde voleva dire due cose insieme, "questo è un pulsante" e "stai guadagnando";
-- in CRUSCOTTO il riquadro verde pieno "Saldo piccolo" era la cosa più visibile della schermata, più del saldo e dei comandi;
-- lo stato del motore era scritto tre volte (riga in alto, titolo della card, riga sotto);
-- numeri con la virgola e numeri con il punto nella stessa riga.
-
-## Colori (ognuno con un solo significato)
-
-| Nome | Valore | Dove |
+| Colore | Valore | Significato, uno solo |
 |---|---|---|
-| Grafite notte | `#0D1116` | fondo |
-| Grafite strumento | `#151B22`, `#1E262F` | card e campi |
-| Avorio strumento | `#F2EADA` | comandi (pulsanti pieni, scheda scelta, azioni di sezione) e saldo principale |
-| Spia verde | `#33D485` | guadagno, motore acceso, stato a posto |
-| Spia ambra | `#FFB840` | attenzione, STOP, consigli |
-| Spia rossa | `#FF5459` | perdita, pericolo, LIVE |
+| Grafite | `#0D1116`, `#151B22`, `#1E262F` | fondo, card, campi |
+| Avorio | `#F2EADA` | comandi (pulsanti, link, scheda scelta) e saldo principale |
+| Verde | `#33D485` | guadagno, stato a posto, interruttore acceso |
+| Ambra | `#FFB840` | attenzione, STOP |
+| Rosso | `#FF5459` | perdita, pericolo, LIVE |
 
-Regola: se un elemento è verde, ambra o rosso deve dire uno stato o un risultato. Un comando non è mai verde.
-
-## Caratteri
-
-Solo i caratteri di sistema (nessun file da distribuire). Il **saldo principale** è l'unico numero "strumento": 36 pt, peso heavy, larghezza condensata, cifre a larghezza fissa. Tutti gli altri numeri: cifre a larghezza fissa, peso semibold. Titoli in headline, testi in caption/footnote, mai tutto maiuscolo tranne i due comandi fisici START e STOP.
-
-## Schermata Cruscotto (ordine dall'alto)
-
-```
- 1.000,00 $                    [Paper]
- +3,30 $ oggi (+0,33%)
- ● Motore attivo                       <- stato, una volta
- [ consiglio su una riga            > ]
- ┌──────────────────────────────────┐
- │ In attesa: prossimo controllo ... │
- │ ▓▓▓░░░░░░░░░░░░                   │
- │ [ CONTROLLA ORA ]  [   STOP   ]   │  <- avorio / ambra
- └──────────────────────────────────┘
- Oggi · Posizioni · Catena agenti
-```
-Tutto allineato a sinistra; i comandi sono larghi quanto la card.
-
-## Fasi
-
-- **Fase 1 (fatta in questa versione)**: fondo grafite, comandi in avorio, saldo "strumento", consiglio su una riga, percentuale del giorno con la virgola, "CONTROLLA ORA" su una riga.
-- **Fase 2, colori (fatta il 14/11/2026)**: riviste una per una le 82 righe che usavano `Theme.accent`. `Theme.accent` ora vuol dire solo "spia verde" (stato a posto, interruttore acceso, guadagno); tutti i comandi usano `Theme.ivory`; i titoli dei riquadri sono bianchi; il link "Passa a CRYPTO" non è più blu.
-- **Fase 2, resto (da fare)**: stato del motore detto una volta sola; riga di spie (motore, mercato, protezioni, rete); numeri con la virgola anche in MERCATI e DETTAGLI.
-- **Come si verifica**: screenshot delle 6 schermate prima e dopo, sul ramo `screenshot`; nessun elemento verde che sia un comando.
+Regole: un comando non è mai verde; i titoli dei riquadri sono bianchi; i numeri si leggono con la virgola (`Theme.numberLocale`); il saldo principale è l'unico numero grande e stretto. Nel codice: `Theme.ivory` per i comandi, `Theme.accent` (verde) solo per gli stati.
 
 ---
 
