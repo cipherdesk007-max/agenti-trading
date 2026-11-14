@@ -172,6 +172,39 @@ final class AlpacaServiceTests: XCTestCase {
         XCTAssertTrue(lastRequest?.url?.absoluteString.hasSuffix("/v2/positions/SPY") ?? false)
     }
 
+    /// HARD KILL: la chiusura totale chiede ad Alpaca di annullare prima gli
+    /// ordini aperti (cancel_orders=true), altrimenti una posizione con lo
+    /// stop ancora in annullamento non si chiude.
+    func testFlattenAsksAlpacaToCancelOrdersFirst() async throws {
+        respond(status: 207, body: "[]")
+        try await service.cancelAllAndFlatten()
+        XCTAssertEqual(lastRequest?.httpMethod, "DELETE")
+        let url = lastRequest?.url?.absoluteString ?? ""
+        XCTAssertTrue(url.contains("/v2/positions"), url)
+        XCTAssertTrue(url.contains("cancel_orders=true"), url)
+    }
+
+    /// Ordini crypto: quantità con 9 decimali (il massimo di Alpaca), così la
+    /// posizione al netto della commissione si vende e si copre per intero,
+    /// mai arrotondata verso l'alto.
+    func testCryptoQuantityKeepsNineDecimalsWithoutRoundingUp() async throws {
+        XCTAssertEqual(AlpacaService.cryptoQuantityString(0.009975128), "0.009975128")
+        XCTAssertEqual(AlpacaService.cryptoQuantityString(7.69230769), "7.692307690")
+        XCTAssertEqual(AlpacaService.cryptoQuantityString(0.000000002), "0.000000002")
+
+        respond(status: 200, body: Self.orderJSON)
+        _ = try await service.submitCryptoStopLimit(symbol: "BTC/USD", quantity: 0.009975128,
+                                                    stopPrice: 98_234.5678, limitPrice: 98_038.1,
+                                                    clientOrderId: "qsc-stop-BTCUSD-2026-11-13")
+        let body = try XCTUnwrap(MockURLProtocol.lastBody)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: body) as? [String: Any])
+        XCTAssertEqual(json["qty"] as? String, "0.009975128")
+        XCTAssertEqual(json["type"] as? String, "stop_limit")
+        XCTAssertEqual(json["side"] as? String, "sell")
+        XCTAssertEqual(json["time_in_force"] as? String, "gtc")
+        XCTAssertEqual(json["stop_price"] as? String, "98234.57")
+    }
+
     // MARK: - Casi di errore
 
     func testSubmitOrderRejected422ThrowsHTTPStatus() async {

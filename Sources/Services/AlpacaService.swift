@@ -816,14 +816,17 @@ actor AlpacaService {
         return mids
     }
 
-    /// Ordine crypto `simple` a mercato, frazionato (qty decimale, max 8
-    /// decimali). Le crypto Alpaca NON supportano bracket/oto/oco (422) e il
-    /// loro time_in_force è solo gtc/ioc: qui sempre gtc.
+    /// Ordine crypto `simple` a mercato, frazionato. Le crypto Alpaca NON
+    /// supportano bracket/oto/oco (422) e il loro time_in_force è solo
+    /// gtc/ioc: qui sempre gtc. La quantità si scrive con 9 decimali, il
+    /// massimo che Alpaca accetta (docs.alpaca.markets/us/docs/crypto-trading-1):
+    /// una posizione al netto della commissione ha 9 decimali, e con 8
+    /// l'arrotondamento poteva chiedere di vendere più di quanto c'è.
     func submitCryptoMarket(symbol: String, quantity: Double, side: String,
                             clientOrderId: String) async throws -> AlpacaOrder {
         let body: [String: Any] = [
             "symbol": symbol.uppercased(),
-            "qty": decimalString(quantity, fractionDigits: 8),
+            "qty": Self.cryptoQuantityString(quantity),
             "side": side,
             "type": "market",
             "time_in_force": "gtc",
@@ -841,7 +844,7 @@ actor AlpacaService {
                                limitPrice: Double, clientOrderId: String) async throws -> AlpacaOrder {
         let body: [String: Any] = [
             "symbol": symbol.uppercased(),
-            "qty": decimalString(quantity, fractionDigits: 8),
+            "qty": Self.cryptoQuantityString(quantity),
             "side": "sell",
             "type": "stop_limit",
             "time_in_force": "gtc",
@@ -852,6 +855,12 @@ actor AlpacaService {
         ]
         let data = try await send(path: "/v2/orders", method: "POST", body: body)
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
+    }
+
+    /// Quantità crypto per gli ordini: 9 decimali, senza notazione
+    /// esponenziale e con il punto come separatore.
+    static func cryptoQuantityString(_ quantity: Double) -> String {
+        String(format: "%.9f", locale: Locale(identifier: "en_US_POSIX"), quantity)
     }
 
     /// Chiusura d'emergenza: annulla tutti gli ordini, poi chiude tutte le

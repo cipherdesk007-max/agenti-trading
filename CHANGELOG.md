@@ -17,6 +17,7 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 - **L'uscita fallita non veniva ritentata fino al giorno dopo**, anche se il log diceva "si riprova al prossimo tick": la barra restava segnata come già valutata. Ora torna da valutare e si riprova dopo 60 secondi. Inoltre una vendita accettata dal broker ma con lo stato non leggibile veniva trattata come fallita: ora conta come inviata.
 - **Annullo dello stop confermato prima di vendere o di sostituirlo.** Su Alpaca l'annullo è asincrono: finché lo stop è "in annullamento" la quantità resta impegnata e la vendita (o il nuovo stop) viene rifiutata. Ora l'app aspetta la conferma; se non arriva, lascia lo stop dov'è e riprova al tick dopo.
 - **Stop "mancante" che in realtà c'era.** Prima di rimettere uno stop l'app guarda gli stop vivi sul broker: se ce n'è uno della misura giusta lo adotta; se è della misura sbagliata lo toglie e ne mette uno giusto. Prima ne chiedeva un secondo, rifiutato a ogni ciclo.
+- **Quantità degli ordini crypto con 9 decimali** (il massimo che Alpaca accetta) invece di 8: una posizione al netto della commissione ha 9 decimali, e con 8 l'arrotondamento poteva chiedere di vendere o coprire un soffio più di quanto c'è sul conto (ordine rifiutato).
 - **Avviso "senza stop" una volta al giorno per coppia**, non ogni 60 secondi (il tentativo di ripristino continua a ogni ciclo).
 - **Acquisto calcolato sul prezzo di adesso**, non sulla chiusura di ieri (l'app può essere aperta ore dopo la barra). Se il prezzo live è già sotto lo stop della barra di rottura l'ingresso salta; se il prezzo live manca non si compra e si riprova. Due ingressi nello stesso controllo non possono più spendere due volte lo stesso contante, e sul contante si tiene un margine del 2% (senza, l'ultima posizione veniva rifiutata per saldo insufficiente).
 - **Chandelier salito ma prezzo già sotto il nuovo livello**: lo stop vecchio non viene più annullato per metterne uno che il broker rifiuterebbe.
@@ -34,7 +35,7 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 - CRYPTO: lo stop sul broker scatta durante la giornata; lo studio esce solo alla chiusura giornaliera. L'app è quindi più prudente dello studio e i risultati possono differire.
 - CRYPTO: l'app compra quando la apri. Se la apri ore dopo la chiusura della barra, il prezzo d'ingresso non è quello dello studio.
 - La modalità CRYPTO non è ancora stata provata su un conto Alpaca vero: i passi sono in `docs/VERIFICHE.md` (punto 14).
-- Test: **+31** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria).
+- Test: **+33** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria, 2 sulle chiamate ad Alpaca). Totale 329.
 
 ## [1.6.8] - 14/11/2026
 
