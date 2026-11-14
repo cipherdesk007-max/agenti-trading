@@ -1399,7 +1399,11 @@ struct TerminalDashboardView: View {
         @State private var count: Int?
 
         var body: some View {
-            Group {
+            // ZStack e non Group: un Group vuoto non è una vista, quindi il
+            // `.task` qui sotto non partiva mai, il conteggio restava nil e
+            // l'etichetta non compariva mai (scoperto dal test d'interfaccia
+            // testNewsBadgeOnOpenPosition, la prima volta che è girato).
+            ZStack {
                 if let count, count > 0 {
                     StatusChip(text: "Notizie 48h · \(count)", color: Theme.accent)
                         .accessibilityIdentifier("news-badge-\(symbol)")

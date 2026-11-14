@@ -50,6 +50,9 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 
 - **MERCATI in modalità CRYPTO.** La schermata mostrava solo i 15 ETF; in CRYPTO restava ferma sulla scritta "i grafici compaiono dopo il primo controllo", che per le crypto non arrivava mai. Ora mostra le 5 coppie (BTC, ETH, SOL, AVAX, LINK) con prezzo, variazione dalla chiusura di ieri e stato della regola con le stesse parole degli ETF (in posizione, segnale, trend su = sopra la media a 200 in attesa della rottura, trend giù = sotto la media, la regola non compra). Toccando una coppia si apre il grafico a candele su 1G, 1H, 15M e 5M con la media a 200, la spiegazione della regola e, se c'è una posizione, le linee di ingresso e stop. Le candele arrivano dallo stesso servizio dati del ciclo crypto: nessuna API nuova.
 
+- **Etichetta "Notizie 48h" sulle posizioni aperte: non compariva mai.** Era costruita in modo che il caricamento delle notizie non partisse (un contenitore vuoto a cui era agganciato l'avvio). L'ha scoperto il test d'interfaccia `testNewsBadgeOnOpenPosition` la prima volta che è riuscito a girare (macchina ARM, run 43562698344: 4 test passati, questo fallito). Corretto.
+- **Test dell'interfaccia su macchina ARM** (`ui-tests.yml`, solo a mano): sul runner Intel del flusso principale restavano fermi senza partire; su Apple Silicon i 5 test girano in poco più di 2 minuti.
+
 ### Cambiato (design, fase 1 della direzione "quadro strumenti" · docs/DESIGN.md)
 
 - **Fondo grafite e comandi color avorio.** Il verde resta solo per ciò che significa qualcosa: guadagno, motore acceso, stato a posto. I pulsanti pieni (START, CONTROLLA ORA), la scheda scelta nella barra in basso e le azioni di sezione sono in avorio. Il verde è anche meno acceso.
