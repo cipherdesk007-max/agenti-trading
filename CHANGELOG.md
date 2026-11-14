@@ -34,12 +34,18 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 - **In PORTAFOGLIO non partiva nessun promemoria.** L'interruttore accendeva i promemoria solo per le vecchie modalità GIORNALIERA e NOTTE, che l'app trasforma in PORTAFOGLIO: di fatto mai. Ora PORTAFOGLIO riceve i due della notte (8:45 di New York per la vendita, 45 minuti prima della chiusura per l'acquisto e il controllo giornaliero).
 - **Sedute corte** (chiusura alle 13:00 di New York, per esempio venerdì 27/11/2026): il promemoria d'acquisto segue la chiusura vera di quel giorno. Prima sarebbe arrivato a mercato già chiuso.
 
+### Aggiunto (verifica, nessuna funzione nuova)
+
+- **Test di parità studio ↔ app per la CRYPTO** (proposta 24). Lo studio è in Python, l'app in Swift: due codici che devono applicare la stessa regola. `tools/genera_parita_crypto.py` fa girare il codice dello studio (non una copia) su una serie fissa di 720 barre e scrive che cosa decide barra per barra; `Tests/CryptoParityTests.swift` rifà le stesse barre con il codice dell'app. Devono coincidere stato (dentro o fuori), ATR22, SMA200 e Donchian20 su tutte le 520 barre con decisione (6 ingressi, 6 uscite). Con la formula dell'ATR usata fino alla 1.6.8 il test sarebbe fallito: stato diverso dallo studio in 13 barre su 520 e ATR fino al 20% diverso.
+- **Pulsante "CONTROLLA ORA" su una riga** (andava a capo accanto a STOP) ed etichette dei pulsanti centrate quando sono su due righe.
+- **Test dell'interfaccia**: se il simulatore non fa partire il runner, il flusso aspetta e riprova una volta (nel run 43552818891 nessun test era cominciato).
+
 ### Da sapere (non sono difetti, ma differenze dichiarate)
 
 - CRYPTO: lo stop sul broker scatta durante la giornata; lo studio esce solo alla chiusura giornaliera. L'app è quindi più prudente dello studio e i risultati possono differire.
 - CRYPTO: l'app compra quando la apri. Se la apri ore dopo la chiusura della barra, il prezzo d'ingresso non è quello dello studio.
 - La modalità CRYPTO non è ancora stata provata su un conto Alpaca vero: i passi sono in `docs/VERIFICHE.md` (punto 14).
-- Test: **+35** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria, 2 sulle chiamate ad Alpaca, 2 sull'uscita della giornaliera). Totale 331.
+- Test: **+37** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria, 2 sulle chiamate ad Alpaca, 2 sull'uscita della giornaliera, 2 di parità con lo studio). Totale 333.
 
 ## [1.6.8] - 14/11/2026
 

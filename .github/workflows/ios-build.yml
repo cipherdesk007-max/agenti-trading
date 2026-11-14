@@ -100,14 +100,23 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.uitest
         continue-on-error: true
         run: |
-          xcodebuild \
-            -project QuantSwarmAlphaZero.xcodeproj \
-            -scheme QuantSwarmAlphaZero \
-            -destination "id=$SIM_UDID" \
-            -derivedDataPath "$PWD/DerivedDataTests" \
-            -only-testing:QuantSwarmUITests \
-            -retry-tests-on-failure -test-iterations 2 \
-            test-without-building
+          run_ui() {
+            xcodebuild \
+              -project QuantSwarmAlphaZero.xcodeproj \
+              -scheme QuantSwarmAlphaZero \
+              -destination "id=$SIM_UDID" \
+              -derivedDataPath "$PWD/DerivedDataTests" \
+              -only-testing:QuantSwarmUITests \
+              -retry-tests-on-failure -test-iterations 2 \
+              test-without-building
+          }
+          # Il primo avvio del runner dei test può scadere mentre il simulatore
+          # carica l'accessibilità ("Timed out waiting for AX loaded
+          # notification", run 43552818891): è il simulatore, non l'app, e in
+          # quel caso nessun test parte. Si aspetta l'avvio completo e si
+          # riprova una volta sola.
+          xcrun simctl bootstatus "$SIM_UDID" -b || true
+          run_ui || { echo "::notice::UI test: primo tentativo fallito, riprovo una volta"; sleep 45; run_ui; }
 
       - name: Avviso UI test
         if: steps.uitests.outcome == 'failure'

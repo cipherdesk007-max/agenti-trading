@@ -198,6 +198,7 @@ struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
+            .multilineTextAlignment(.center)
             .foregroundStyle(Theme.background)
             .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal, Layout.paddingM)
@@ -210,6 +211,7 @@ struct SecondaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.subheadline.weight(.semibold))
+            .multilineTextAlignment(.center)
             .foregroundStyle(Theme.accent)
             .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal, Layout.paddingM)
@@ -225,6 +227,7 @@ struct WarningButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.headline)
+            .multilineTextAlignment(.center)
             .foregroundStyle(Theme.background)
             .frame(maxWidth: .infinity, minHeight: 44)
             .padding(.horizontal, Layout.paddingM)

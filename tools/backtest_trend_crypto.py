@@ -76,10 +76,13 @@ def atr_series(h, l, c, n=22):
     return tr.ewm(alpha=1 / n, adjust=False).mean()
 
 
-def simulate_trend(df, variant, frac):
+def simulate_trend(df, variant, frac, trace=None):
     """Long-only a regime: `frac` = frazione dell'equity allocata quando il regime
     e' rialzista. Nessun take-profit: l'uscita e' il regime (V1/V2), il chandelier
-    o l'incrocio ribassista (V3/V4). Ritorna (equity, trades, n_switches)."""
+    o l'incrocio ribassista (V3/V4). Ritorna (equity, trades, n_switches).
+    `trace` (opzionale, non cambia i risultati): lista che riceve, barra per barra,
+    (indice, in posizione a fine barra, ATR22, SMA200, Donchian20). Serve al test
+    di parita' con l'app (tools/genera_parita_crypto.py)."""
     c = df["Close"]
     h, l = df["High"], df["Low"]
     sma200 = c.rolling(200).mean()
@@ -135,6 +138,8 @@ def simulate_trend(df, variant, frac):
                     cash -= spend
                     entry_px, highest = px, px
         equity[i] = cash + qty * px
+        if trace is not None:
+            trace.append((i, qty > 0, float(atr.iat[i]), float(sma200.iat[i]), float(don_hi.iat[i])))
     if qty > 0:  # chiusura forzata a fine dati (contata come trade)
         trades.append({"ret": (c.iat[-1] / entry_px - 1) - 2 * COST})
     return pd.Series(equity, index=df.index), trades

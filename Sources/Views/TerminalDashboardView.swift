@@ -871,8 +871,15 @@ struct TerminalDashboardView: View {
             HStack(spacing: 12) {
                 if engine.isRunning {
                     if engine.activeMode?.runsOnSchedule == true {
-                        Button("CONTROLLA ORA") {
+                        // Una riga sola: accanto a STOP la scritta andava a capo
+                        // ("CONTROLLA / ORA", allineata a sinistra). Se lo
+                        // spazio è poco il carattere si stringe un po'.
+                        Button {
                             engine.requestDailyCheck()
+                        } label: {
+                            Text("CONTROLLA ORA")
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
                         }
                         .primaryButton()
                     }
