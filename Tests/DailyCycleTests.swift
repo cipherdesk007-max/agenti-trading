@@ -52,7 +52,24 @@ actor FakeBroker: BrokerClient {
     }
     func account() async throws -> BrokerAccount { acct }
     func positions() async throws -> [BrokerPosition] { heldPositions }
-    func openOrders() async throws -> [BrokerOrder] { orders }
+    /// Annullo asincrono come su Alpaca: un ordine annullato resta fra gli
+    /// aperti ("in annullamento") per questo numero di letture successive.
+    var cancelLagReads = 0
+    /// true: la chiusura fallisce finché un ordine annullato impegna le azioni.
+    var closeNeedsFreeShares = false
+    private var pendingCancel: [BrokerOrder] = []
+    private var lagLeft = 0
+    func set(cancelLagReads: Int) { self.cancelLagReads = cancelLagReads }
+    func set(closeNeedsFreeShares: Bool) { self.closeNeedsFreeShares = closeNeedsFreeShares }
+
+    func openOrders() async throws -> [BrokerOrder] {
+        let snapshot = orders + pendingCancel
+        if lagLeft > 0 {
+            lagLeft -= 1
+            if lagLeft == 0 { pendingCancel = [] }
+        }
+        return snapshot
+    }
     func dailyBars(symbol: String) async throws -> [Candle] {
         guard let b = bars[symbol] else { throw FakeError() }
         return b
@@ -60,11 +77,16 @@ actor FakeBroker: BrokerClient {
     func latestPrice(symbol: String) async throws -> Double { price }
     func cancelOrder(id: String) async throws {
         cancelled.append(id)
+        if cancelLagReads > 0 {
+            pendingCancel += orders.filter { $0.id == id || $0.parentOrderId == id }
+            lagLeft = cancelLagReads
+        }
         // Annullare un ordine annulla anche le sue gambe.
         orders.removeAll { $0.id == id || $0.parentOrderId == id }
     }
     func closePosition(symbol: String) async throws -> String? {
         if failClose { throw FakeError() }
+        if closeNeedsFreeShares, pendingCancel.contains(where: { $0.symbol == symbol }) { throw FakeError() }
         closed.append(symbol)
         heldPositions.removeAll { $0.symbol == symbol }
         return "close-\(symbol)"
@@ -434,6 +456,44 @@ final class DailyCycleTests: XCTestCase {
         XCTAssertEqual(stops.count, 1, "Dopo un'uscita fallita lo stop va rimesso")
         XCTAssertEqual(stops.first?.stop, 135)
         XCTAssertEqual(stops.first?.qty, 10)
+        XCTAssertTrue(result.exits.isEmpty)
+        XCTAssertEqual(result.book.entries["SPY"], "2026-11-03")
+    }
+
+    /// Annullo asincrono: lo stop annullato impegna le azioni ancora per un
+    /// attimo. L'uscita aspetta che sparisca dagli ordini aperti e poi chiude,
+    /// invece di farsi rifiutare la vendita e rimandare tutto di un ciclo.
+    func testExitWaitsForCancelledStopBeforeClosing() async {
+        let broker = FakeBroker(bars: ["SPY": rising])
+        await broker.set(positions: [position(10, entry: 140)])
+        await broker.set(orders: [stopOrder(10)])
+        await broker.set(cancelLagReads: 2)
+        await broker.set(closeNeedsFreeShares: true)
+        let waiting = DailyCycleRunner(broker: broker, brain: FakeBrain(), basket: ["SPY"], exitFillWaitSeconds: 2)
+        let result = await waiting.run(input(book: bookWithSPY())) { _ in }
+        let closed = await broker.closed
+        let stops = await broker.stopCalls
+        XCTAssertEqual(closed, ["SPY"])
+        XCTAssertTrue(stops.isEmpty, "uscita riuscita: nessuno stop da rimettere")
+        XCTAssertEqual(result.exits.count, 1)
+        XCTAssertNil(result.book.entries["SPY"])
+    }
+
+    /// Se l'annullo non viene mai registrato, dopo l'attesa si prova lo
+    /// stesso: la chiusura viene rifiutata e lo stop torna al suo posto.
+    func testExitStillRestoresStopWhenCancelNeverClears() async {
+        let broker = FakeBroker(bars: ["SPY": rising])
+        await broker.set(positions: [position(10)])
+        await broker.set(orders: [stopOrder(10, stop: 135)])
+        await broker.set(cancelLagReads: 1_000)
+        await broker.set(closeNeedsFreeShares: true)
+        let waiting = DailyCycleRunner(broker: broker, brain: FakeBrain(), basket: ["SPY"], exitFillWaitSeconds: 0.4)
+        let result = await waiting.run(input(book: bookWithSPY())) { _ in }
+        let closed = await broker.closed
+        let stops = await broker.stopCalls
+        XCTAssertTrue(closed.isEmpty)
+        XCTAssertEqual(stops.count, 1, "uscita fallita: lo stop va rimesso")
+        XCTAssertEqual(stops.first?.stop, 135)
         XCTAssertTrue(result.exits.isEmpty)
         XCTAssertEqual(result.book.entries["SPY"], "2026-11-03")
     }

@@ -294,9 +294,14 @@ struct DailyCycleRunner: Sendable {
             }
             // Un take-profit rimasto senza il suo stop gemello va annullato prima:
             // due vendite scollegate potrebbero scattare entrambe e aprire uno short.
+            var orphanIds: Set<String> = []
             for orphan in orders where orphan.symbol.uppercased() == symbol && orphan.isTakeProfit {
                 try? await broker.cancelOrder(id: orphan.id)
+                orphanIds.insert(orphan.id)
             }
+            // Il target annullato impegna le azioni finché l'annullo non è
+            // registrato: senza attesa lo stop nuovo verrebbe rifiutato.
+            await waitForOrdersToClear(orphanIds)
             do {
                 _ = try await broker.submitStop(symbol: symbol, quantity: missingQty, stopPrice: stop)
                 book.stops[symbol] = stop
@@ -619,6 +624,9 @@ struct DailyCycleRunner: Sendable {
         let mine = open.filter { $0.symbol.uppercased() == symbol }
         let existingStop = mine.first(where: \.isProtectiveStop)?.stopPrice
         for order in mine { try? await broker.cancelOrder(id: order.id) }
+        // Stop e target annullati impegnano le azioni finché l'annullo non è
+        // registrato: chiudere subito farebbe rifiutare la vendita.
+        await waitForOrdersToClear(Set(mine.map(\.id)))
         do {
             let closeId = try await broker.closePosition(symbol: symbol)
             var fill: Double?
@@ -648,6 +656,24 @@ struct DailyCycleRunner: Sendable {
             } catch {
                 return .failedUnprotected(error.localizedDescription)
             }
+        }
+    }
+
+    /// Su Alpaca l'annullo di un ordine è asincrono: finché un ordine di
+    /// vendita è "in annullamento" le azioni restano impegnate e una chiusura
+    /// o un nuovo stop vengono rifiutati per quantità non disponibile
+    /// (docs.alpaca.markets/reference/deleteopenposition-1: la chiusura non
+    /// annulla gli ordini aperti). Aspetta che gli ordini appena annullati
+    /// spariscano dagli aperti, al massimo `exitFillWaitSeconds`; poi si
+    /// procede comunque e, se la quantità è ancora impegnata, il ramo
+    /// d'errore di chi chiama rimette lo stop come prima.
+    private func waitForOrdersToClear(_ ids: Set<String>) async {
+        guard !ids.isEmpty else { return }
+        let deadline = Date().addingTimeInterval(exitFillWaitSeconds)
+        while Date() < deadline {
+            guard let open = try? await broker.openOrders() else { return }
+            if !open.contains(where: { ids.contains($0.id) }) { return }
+            try? await Task.sleep(nanoseconds: 300_000_000)
         }
     }
 

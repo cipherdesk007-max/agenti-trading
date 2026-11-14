@@ -24,6 +24,10 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 - **Segnale d'ingresso bloccato da un motivo passeggero** (app in background, blocco drawdown): non viene più perso, si rivaluta quando il blocco cade.
 - **ATR uguale a quello dello studio.** L'app usava la media semplice delle ultime 22 barre, lo studio (`tools/backtest_trend_crypto.py`) l'ATR di Wilder. La distanza dello stop era quindi diversa da quella provata nel backtest. Ora la formula è la stessa. Non è un cambio di strategia: è l'app che torna a fare ciò che lo studio ha misurato.
 
+### Corretto (GIORNALIERA: uscita rifiutata e rimandata di un ciclo)
+
+- **L'uscita chiudeva la posizione un istante dopo aver annullato stop e target.** Su Alpaca l'annullo è asincrono e la chiusura non annulla gli ordini aperti: finché lo stop è "in annullamento" le azioni restano impegnate e la vendita viene rifiutata per quantità non disponibile. In quel caso l'app rimetteva lo stop (posizione sempre protetta) ma l'uscita slittava al ciclo successivo, 15 minuti dopo, o al giorno dopo se nel frattempo il mercato chiudeva. Ora, dopo l'annullo, aspetta che gli ordini spariscano dagli aperti (al massimo 2 secondi) e poi chiude. Stessa attesa quando toglie un target rimasto senza il suo stop prima di rimettere lo stop.
+
 ### Corretto (HARD KILL e promemoria)
 
 - **HARD KILL diceva "completato" senza controllare.** Alpaca risponde "ok" alla richiesta di chiudere tutto anche se una singola chiusura non parte, e a mercato chiuso le azioni restano in portafoglio con la vendita in coda. Ora, dopo la richiesta, l'app rilegge posizioni e ordini (fino a 4 volte) e dice che cosa c'è davvero: conto piatto, chiusure in coda fino all'apertura, oppure HARD KILL INCOMPLETO con l'elenco dei simboli ancora aperti (in quel caso i registri non vengono azzerati). La richiesta di chiusura usa `cancel_orders=true`, così gli ordini vengono annullati da Alpaca prima della liquidazione.
@@ -35,7 +39,7 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 - CRYPTO: lo stop sul broker scatta durante la giornata; lo studio esce solo alla chiusura giornaliera. L'app è quindi più prudente dello studio e i risultati possono differire.
 - CRYPTO: l'app compra quando la apri. Se la apri ore dopo la chiusura della barra, il prezzo d'ingresso non è quello dello studio.
 - La modalità CRYPTO non è ancora stata provata su un conto Alpaca vero: i passi sono in `docs/VERIFICHE.md` (punto 14).
-- Test: **+33** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria, 2 sulle chiamate ad Alpaca). Totale 329.
+- Test: **+35** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria, 2 sulle chiamate ad Alpaca, 2 sull'uscita della giornaliera). Totale 331.
 
 ## [1.6.8] - 14/11/2026
 
