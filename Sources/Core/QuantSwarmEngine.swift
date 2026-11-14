@@ -1989,8 +1989,11 @@ final class QuantSwarmEngine: ObservableObject {
         if let hit = newsCache[symbol], Date().timeIntervalSince(hit.at) < 300 { return hit.items }
         if let preview = previewHeadlines[symbol] { return preview }
         guard let credentials else { return nil }
+        // Le notizie di Alpaca vogliono la coppia crypto senza barra ("BTCUSD"):
+        // con "BTC/USD" il grafico crypto restava su "notizie non disponibili".
+        let querySymbol = symbol.contains("/") ? CryptoSymbol.key(symbol) : symbol
         guard let items = try? await AlpacaService(credentials: credentials.alpaca)
-            .news(symbols: [symbol], hours: 48, limit: 15) else { return nil }
+            .news(symbols: [querySymbol], hours: 48, limit: 15) else { return nil }
         newsCache[symbol] = (Date(), items)
         return items
     }

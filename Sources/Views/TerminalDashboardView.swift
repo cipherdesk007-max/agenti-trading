@@ -464,7 +464,9 @@ struct TerminalDashboardView: View {
         let capital = engine.account.map { min(engine.strategyConfig.capitalCap, $0.equityValue) }
         func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", locale: Theme.numberLocale, $0 * 100) } ?? "—" }
         return VStack(alignment: .leading, spacing: 8) {
-            panelHeader("Capitale bot · contro SPY")
+            // In CRYPTO non c'è il confronto con SPY (un altro mercato, senza
+            // punto di riferimento registrato): titolo, riga e legenda lo dicono.
+            panelHeader(displayedMode == .crypto ? "Capitale bot" : "Capitale bot · contro SPY")
             portfolioRow(
                 "Impegnato",
                 Formatters.amount(engine.botExposure) + (capital.map { " / " + Formatters.amount($0) } ?? "") + " USD",
@@ -473,12 +475,16 @@ struct TerminalDashboardView: View {
             if let summary {
                 portfolioRow("Bot (\(summary.days) sedute)", pct(summary.botReturn),
                              color: summary.botReturn >= 0 ? Theme.accent : Theme.red)
-                portfolioRow("SPY compra e tieni", pct(summary.benchmarkReturn), color: Theme.textSecondary)
+                if displayedMode != .crypto {
+                    portfolioRow("SPY compra e tieni", pct(summary.benchmarkReturn), color: Theme.textSecondary)
+                }
                 portfolioRow("Perdita massima dal picco", pct(summary.maxDrawdown), color: Theme.amber)
                 ComparisonChart(bot: series.bot, benchmark: series.benchmark,
                                 botColor: Theme.accent, benchmarkColor: Theme.textSecondary)
                     .frame(height: 150)
-                Text("Verde: bot (guadagno del conto sul capitale del bot). Grigio: SPY. 100 = primo giorno registrato. Il bot investe solo in parte e sta fermo molti giorni: deve perdere meno di SPY nei cali, non batterlo nei rialzi.")
+                Text(displayedMode == .crypto
+                     ? "Verde: guadagno del conto sul capitale del bot. 100 = primo giorno registrato."
+                     : "Verde: bot (guadagno del conto sul capitale del bot). Grigio: SPY. 100 = primo giorno registrato. Il bot investe solo in parte e sta fermo molti giorni: deve perdere meno di SPY nei cali, non batterlo nei rialzi.")
                     .font(.caption)
                     .foregroundStyle(.gray)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1536,7 +1542,9 @@ struct TerminalDashboardView: View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("Kimi Brain · ultime decisioni")
             if engine.decisions.isEmpty {
-                Text("Nessuna decisione ancora: Kimi viene chiamato solo quando la Strategia trova un segnale.")
+                Text(displayedMode == .crypto
+                     ? "In modalità CRYPTO decide solo la regola: Kimi non viene chiamato e qui non compare niente."
+                     : "Nessuna decisione ancora: Kimi viene chiamato solo quando la Strategia trova un segnale.")
                     .font(.caption)
                     .foregroundStyle(.gray)
             } else {
