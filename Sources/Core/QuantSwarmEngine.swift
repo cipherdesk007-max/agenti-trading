@@ -1999,8 +1999,16 @@ final class QuantSwarmEngine: ObservableObject {
         let key = "\(symbol)|\(timeframe)"
         if let hit = chartCache[key], Date().timeIntervalSince(hit.at) < 60 { return hit.candles }
         guard let credentials else { return nil }
-        guard let candles = try? await AlpacaService(credentials: credentials.alpaca)
-            .chartBars(symbol: symbol, timeframe: timeframe, days: days) else { return nil }
+        let service = AlpacaService(credentials: credentials.alpaca)
+        // Le coppie crypto ("BTC/USD") hanno il loro servizio dati: con quello
+        // delle azioni il grafico restava vuoto.
+        let loaded: [Candle]?
+        if symbol.contains("/") {
+            loaded = try? await service.cryptoChartBars(symbol: symbol, timeframe: timeframe, days: days)
+        } else {
+            loaded = try? await service.chartBars(symbol: symbol, timeframe: timeframe, days: days)
+        }
+        guard let candles = loaded else { return nil }
         chartCache[key] = (Date(), candles)
         return candles
     }
@@ -2869,7 +2877,47 @@ extension QuantSwarmEngine {
 // MARK: - Dati di esempio per gli screenshot della CI
 
 extension QuantSwarmEngine {
+    /// Anteprima della modalità CRYPTO per gli screenshot (-QSPreview -QSCrypto):
+    /// stato delle 5 coppie, una posizione e candele di esempio per il grafico
+    /// di BTC/USD (in anteprima non ci sono chiavi, quindi niente rete).
+    func loadCryptoPreviewState() {
+        activeMode = .crypto
+        statusMessage = "Crypto paper attiva"
+        positions = []
+        openOrders = []
+        func sample(_ pair: String, _ state: CryptoStrategy.Signal.State,
+                    _ close: Double, _ sma: Double, _ donchian: Double) -> CryptoStrategy.Signal {
+            CryptoStrategy.Signal(symbol: pair, state: state, close: close, sma200: sma,
+                                  donchianHigh: donchian, atr22: close * 0.03, chandelier: nil)
+        }
+        cryptoSignals = [
+            "BTC/USD": sample("BTC/USD", .hold, 71_250, 66_900, 70_100),
+            "ETH/USD": sample("ETH/USD", .flat, 2_180, 2_050, 2_260),
+            "SOL/USD": sample("SOL/USD", .entry, 96.4, 88.9, 95.1),
+            "AVAX/USD": sample("AVAX/USD", .flat, 8.12, 9.40, 8.95),
+            "LINK/USD": sample("LINK/USD", .flat, 6.85, 7.60, 7.30)
+        ]
+        cryptoPrices = ["BTC/USD": 71_980, "ETH/USD": 2_195, "SOL/USD": 97.1, "AVAX/USD": 8.05, "LINK/USD": 6.91]
+        cryptoPositions = [CryptoBook.Position(symbol: "BTC/USD", entryDay: "2026-11-09", entryPrice: 69_400,
+                                               qty: 0.00288, highestClose: 71_250,
+                                               stopOrderId: "anteprima", stopPrice: 64_800)]
+        var price = 58_000.0
+        var candles: [Candle] = []
+        for i in 0..<300 {
+            let open = price
+            price = max(1, price * (1 + 0.0007 + 0.004 * sin(Double(i) / 9)))
+            candles.append(Candle(timestamp: Date().addingTimeInterval(Double(i - 300) * 86_400),
+                                  open: open, high: max(open, price) * 1.008, low: min(open, price) * 0.992,
+                                  close: price, volume: 100))
+        }
+        chartCache["BTC/USD|1Day"] = (Date(), candles)
+    }
+
     func loadPreviewState() {
+        // Con -QSCrypto, dopo i dati comuni, l'anteprima passa alla modalità CRYPTO.
+        defer {
+            if ProcessInfo.processInfo.arguments.contains("-QSCrypto") { loadCryptoPreviewState() }
+        }
         activeMode = .daily
         isRunning = true
         paperTrading = true

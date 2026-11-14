@@ -166,6 +166,9 @@ jobs:
           for TAB in CRUSCOTTO DETTAGLI BROKER SISTEMA; do shot "$TAB" -QSTab "$TAB"; done
           shot MERCATI -QSTab MERCATI
           shot GRAFICO -QSTab MERCATI -QSMarket XLF
+          # Modalità CRYPTO: le 5 coppie in MERCATI e il grafico di una coppia.
+          shot MERCATI-CRYPTO -QSCrypto -QSTab MERCATI
+          shot GRAFICO-CRYPTO -QSCrypto -QSTab MERCATI -QSMarket BTC/USD
           ls -la shots
           echo "===== CRASH REPORT ====="
           find ~/Library/Logs/DiagnosticReports -name "QuantSwarm*" -mmin -30 2>/dev/null | while read f; do

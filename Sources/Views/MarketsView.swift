@@ -17,6 +17,12 @@ struct BrokerLevels: Equatable {
         let s = symbol.uppercased()
         var levels = BrokerLevels()
         levels.entry = engine.positions.first { $0.symbol.uppercased() == s }?.averageEntryPriceValue
+        // Crypto: il broker scrive la posizione "BTCUSD", il grafico è "BTC/USD".
+        // Ingresso e stop si leggono dal registro crypto dell'app.
+        if let position = engine.cryptoPositions.first(where: { $0.symbol.uppercased() == s }) {
+            levels.entry = position.entryPrice
+            levels.stop = position.stopPrice
+        }
         for order in engine.openOrders.flatMap(\.withLegs) where order.symbol.uppercased() == s {
             if order.side == "sell", order.type == "stop" || order.type == "stop_limit" {
                 levels.stop = order.stopPriceValue ?? levels.stop
@@ -40,6 +46,9 @@ struct MarketsPanel: View {
         (engine.activeMode ?? engine.strategyConfig.tradingMode) == .intraday
     }
 
+    private var isCrypto: Bool {
+        (engine.activeMode ?? engine.strategyConfig.tradingMode) == .crypto
+    }
     private var capital: Double? {
         engine.account.map { min(engine.strategyConfig.sanitized.capitalCap, $0.equityValue) }
     }
@@ -48,11 +57,11 @@ struct MarketsPanel: View {
         AppCard {
             VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text(isIntraday ? "Mercati · modalità veloce" : "Mercati · 15 ETF")
+                Text(isIntraday ? "Mercati · modalità veloce" : isCrypto ? "Mercati · 5 crypto" : "Mercati · 15 ETF")
                     .font(.headline)
                     .foregroundStyle(Theme.textPrimary)
                 Spacer()
-                Text(isIntraday
+                Text(isIntraday || isCrypto
                      ? "tocca per il grafico"
                      : engine.marketBarsDate.map { "dati \($0.formatted(date: .omitted, time: .shortened)) · tocca" } ?? "tocca per il grafico")
                     .font(.caption)
@@ -60,6 +69,8 @@ struct MarketsPanel: View {
             }
             if isIntraday {
                 intradayGrid
+            } else if isCrypto {
+                cryptoGrid
             } else if engine.marketBars.isEmpty {
                 Text("I grafici compaiono dopo il primo controllo (START o CONTROLLA ORA).")
                     .font(.caption)
@@ -103,6 +114,32 @@ struct MarketsPanel: View {
                 Button { selected = insight.symbol } label: { MarketTile(insight: insight) }
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("market-\(insight.symbol)")
+            }
+        }
+    }
+
+    /// Modalità CRYPTO: le 5 coppie con prezzo, variazione dalla chiusura di
+    /// ieri e stato della regola; il tocco apre il grafico come per gli ETF.
+    /// Prima in CRYPTO questa schermata restava sulla scritta "i grafici
+    /// compaiono dopo il primo controllo", che per le crypto non arrivava mai.
+    private var cryptoGrid: some View {
+        let held = Set(engine.cryptoPositions.map(\.symbol))
+        let insights = CryptoStrategy.pairs.map { pair in
+            MarketInsight.crypto(pair: pair, signal: engine.cryptoSignals[pair],
+                                 livePrice: engine.cryptoPrices[pair], held: held.contains(pair))
+        }
+        return VStack(alignment: .leading, spacing: 8) {
+            LazyVGrid(columns: columns, spacing: 8) {
+                ForEach(insights, id: \.symbol) { insight in
+                    Button { selected = insight.symbol } label: { MarketTile(insight: insight) }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("market-\(insight.symbol)")
+                }
+            }
+            if engine.cryptoSignals.isEmpty {
+                Text("Prezzi e stato compaiono dopo il primo controllo (START). I grafici si aprono già adesso.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textSecondary)
             }
         }
     }
@@ -300,6 +337,23 @@ struct MarketDetailView: View {
         // ultimo prezzo noto del simbolo (stream o barre giornaliere) quando le
         // candele sono in caricamento o non sono arrivate.
         let fallbackPrice = engine.intradayLastPrice(for: symbol) ?? engine.marketBars[symbol]?.last?.close
+            ?? engine.cryptoPrices[symbol].flatMap { $0 > 0 ? $0 : nil }
+        // Crypto: stato e regola in parole, come per gli ETF, sul giornaliero.
+        if interval == .day, CryptoStrategy.pairs.contains(symbol) {
+            let cryptoInsight = MarketInsight.crypto(
+                pair: symbol, signal: engine.cryptoSignals[symbol], livePrice: engine.cryptoPrices[symbol],
+                held: engine.cryptoPositions.contains { $0.symbol == symbol })
+            HStack {
+                StatusChip(text: cryptoInsight.state.rawValue,
+                           color: Self.color(for: cryptoInsight.state),
+                           filled: cryptoInsight.state == .held)
+                Spacer()
+            }
+            Text(cryptoInsight.reason)
+                .font(.footnote)
+                .foregroundStyle(Theme.textSecondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
         if explains {
             HStack {
                 StatusChip(text: insight.state.rawValue,

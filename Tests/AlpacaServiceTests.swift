@@ -205,6 +205,31 @@ final class AlpacaServiceTests: XCTestCase {
         XCTAssertEqual(json["stop_price"] as? String, "98234.57")
     }
 
+    /// Grafici crypto: stesso servizio dati del ciclo, candele più recenti
+    /// in ordine di tempo.
+    func testCryptoChartBarsAsksTheCryptoFeedAndSortsByTime() async throws {
+        respond(status: 200, body: """
+        {"bars": {"BTC/USD": [
+          {"t": "2026-11-13T10:00:00Z", "o": 101, "h": 103, "l": 100, "c": 102, "v": 5},
+          {"t": "2026-11-13T09:00:00Z", "o": 100, "h": 102, "l": 99, "c": 101, "v": 4}
+        ]}, "next_page_token": null}
+        """)
+        let candles = try await service.cryptoChartBars(symbol: "BTC/USD", timeframe: "1Hour", days: 30)
+        XCTAssertEqual(candles.count, 2)
+        XCTAssertEqual(candles.first?.close ?? 0, 101, accuracy: 1e-9)
+        XCTAssertEqual(candles.last?.close ?? 0, 102, accuracy: 1e-9)
+        let url = lastRequest?.url?.absoluteString ?? ""
+        XCTAssertTrue(url.contains("/v1beta3/crypto/us/bars"), url)
+        XCTAssertTrue(url.contains("timeframe=1Hour"), url)
+        XCTAssertTrue(url.contains("sort=desc"), url)
+    }
+
+    func testCryptoChartBarsWithoutDataIsEmptyNotAnError() async throws {
+        respond(status: 200, body: "{\"bars\": {}, \"next_page_token\": null}")
+        let candles = try await service.cryptoChartBars(symbol: "BTC/USD", timeframe: "1Day", days: 450)
+        XCTAssertTrue(candles.isEmpty)
+    }
+
     // MARK: - Casi di errore
 
     func testSubmitOrderRejected422ThrowsHTTPStatus() async {

@@ -73,3 +73,38 @@ struct MarketInsight: Sendable, Equatable {
         return result
     }
 }
+
+extension MarketInsight {
+    /// Casella di MERCATI per una coppia crypto, letta dalla regola V4 che
+    /// l'app applica davvero (`CryptoStrategy.Signal`): stesse parole degli
+    /// ETF. `livePrice` = prezzo di adesso; la variazione è rispetto
+    /// all'ultima chiusura giornaliera. Funzione pura, sotto test.
+    static func crypto(pair: String, signal: CryptoStrategy.Signal?, livePrice: Double?, held: Bool) -> MarketInsight {
+        let live = (livePrice ?? 0) > 0 ? livePrice : nil
+        guard let signal, signal.state != .warmup, signal.close > 0 else {
+            return MarketInsight(symbol: pair, state: held ? .held : .noData, close: live, dayChange: nil, snapshot: nil,
+                                 reason: "Dati non ancora disponibili: servono 200 chiusure giornaliere e il primo controllo dell'app.")
+        }
+        let price = live ?? signal.close
+        let change = price / signal.close - 1
+        let state: State
+        let reason: String
+        if held || signal.state == .hold || signal.state == .exit {
+            state = .held
+            reason = signal.state == .exit
+                ? "In posizione, ma la chiusura è scesa sotto il chandelier o la media a 200 giorni: l'app esce."
+                : "In posizione: esce se la chiusura giornaliera scende sotto il chandelier (massimo dall'ingresso meno 3 ATR) o sotto la media a 200 giorni. Stop sul broker."
+        } else if signal.state == .entry {
+            state = .signal
+            reason = "Chiusura sopra il massimo dei 20 giorni e sopra la media a 200: segnale d'ingresso."
+        } else if signal.close < signal.sma200 {
+            state = .trendDown
+            reason = "Sotto la media a 200 giorni (\(CryptoStrategy.priceText(signal.sma200))): la regola non compra."
+        } else {
+            state = .trendUp
+            reason = "Sopra la media a 200 giorni: compra se chiude sopra \(CryptoStrategy.priceText(signal.donchianHigh)), il massimo dei 20 giorni."
+        }
+        return MarketInsight(symbol: pair, state: state, close: price, dayChange: change, snapshot: nil, reason: reason)
+    }
+}
+

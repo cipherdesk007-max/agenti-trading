@@ -797,6 +797,27 @@ actor AlpacaService {
         return collected
     }
 
+    /// Candele crypto per i grafici di MERCATI (1Day, 1Hour, 15Min, 5Min): le
+    /// più recenti degli ultimi `days` giorni, compresa quella in formazione.
+    /// Stesso servizio dati del ciclo crypto, nessuna API nuova.
+    func cryptoChartBars(symbol: String, timeframe: String, days: Int, limit: Int = 300) async throws -> [Candle] {
+        let start = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-Double(days) * 86_400))
+        let data = try await send(
+            baseURL: credentials.marketDataBaseURL,
+            path: "/v1beta3/crypto/us/bars",
+            method: "GET",
+            query: [
+                URLQueryItem(name: "symbols", value: symbol),
+                URLQueryItem(name: "timeframe", value: timeframe),
+                URLQueryItem(name: "start", value: start),
+                URLQueryItem(name: "limit", value: String(limit)),
+                URLQueryItem(name: "sort", value: "desc")
+            ]
+        )
+        let response = try JSONDecoder().decode(CryptoBarsResponse.self, from: data)
+        return (response.bars?[symbol] ?? []).compactMap(\.candle).sorted { $0.timestamp < $1.timestamp }
+    }
+
     /// Ultime quotazioni (bid/ask) delle coppie crypto; prezzo medio = (bp+ap)/2.
     func latestCryptoQuotes(symbols: [String]) async throws -> [String: Double] {
         guard !symbols.isEmpty else { return [:] }

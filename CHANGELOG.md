@@ -45,6 +45,10 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 - **Pulsante "CONTROLLA ORA" su una riga** (andava a capo accanto a STOP) ed etichette dei pulsanti centrate quando sono su due righe.
 - **Test dell'interfaccia**: se il simulatore non fa partire il runner, il flusso aspetta e riprova una volta (nel run 43552818891 nessun test era cominciato).
 
+### Completato (funzioni che c'erano già ma erano a metà)
+
+- **MERCATI in modalità CRYPTO.** La schermata mostrava solo i 15 ETF; in CRYPTO restava ferma sulla scritta "i grafici compaiono dopo il primo controllo", che per le crypto non arrivava mai. Ora mostra le 5 coppie (BTC, ETH, SOL, AVAX, LINK) con prezzo, variazione dalla chiusura di ieri e stato della regola con le stesse parole degli ETF (in posizione, segnale, trend su = sopra la media a 200 in attesa della rottura, trend giù = sotto la media, la regola non compra). Toccando una coppia si apre il grafico a candele su 1G, 1H, 15M e 5M con la media a 200, la spiegazione della regola e, se c'è una posizione, le linee di ingresso e stop. Le candele arrivano dallo stesso servizio dati del ciclo crypto: nessuna API nuova.
+
 ### Cambiato (design, fase 1 della direzione "quadro strumenti" · docs/DESIGN.md)
 
 - **Fondo grafite e comandi color avorio.** Il verde resta solo per ciò che significa qualcosa: guadagno, motore acceso, stato a posto. I pulsanti pieni (START, CONTROLLA ORA), la scheda scelta nella barra in basso e le azioni di sezione sono in avorio. Il verde è anche meno acceso.
@@ -58,7 +62,7 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 - CRYPTO: lo stop sul broker scatta durante la giornata; lo studio esce solo alla chiusura giornaliera. L'app è quindi più prudente dello studio e i risultati possono differire.
 - CRYPTO: l'app compra quando la apri. Se la apri ore dopo la chiusura della barra, il prezzo d'ingresso non è quello dello studio.
 - CRYPTO: gli ordini (acquisto, stop, annullo, vendita) sono provati sul conto paper; il ciclo completo dell'app con un segnale vero no, perché serve una rottura sopra la media a 200 giorni (`docs/VERIFICHE.md`, punto 14).
-- Test: **+39** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria, 2 sulle chiamate ad Alpaca, 2 sull'uscita della giornaliera, 2 di parità con lo studio, 2 sul riconoscimento del trading sospeso). Totale 335.
+- Test: **+45** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria, 2 sulle chiamate ad Alpaca, 2 sull'uscita della giornaliera, 2 di parità con lo studio, 2 sul riconoscimento del trading sospeso, 6 su MERCATI crypto). Totale 341.
 
 ## [1.6.8] - 14/11/2026
 
