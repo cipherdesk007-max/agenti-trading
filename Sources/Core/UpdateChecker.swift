@@ -10,7 +10,7 @@ import UIKit
 /// Il codice resta nel repository privato; quello pubblico contiene solo IPA.
 enum UpdateChecker {
     static let releasesRepo = "cipherdesk007-max/quantswarm-releases"
-    static let sourceURL = URL(string: "https://raw.githubusercontent.com/\(releasesRepo)/main/apps.json")!
+    static let sourceURL = URL.fixed("https://raw.githubusercontent.com/\(releasesRepo)/main/apps.json")
     static let bundleIdentifier = "com.quantswarm.alphazero"
 
     struct Release: Sendable, Equatable {
@@ -59,7 +59,10 @@ enum UpdateChecker {
     /// MainActor perché interroga UIApplication.
     @MainActor
     static func currentStore(canOpenScheme: @MainActor (String) -> Bool
-        = { UIApplication.shared.canOpenURL(URL(string: "\($0)://")!) }) -> Store {
+        = { scheme in
+            guard let url = URL(string: "\(scheme)://") else { return false }
+            return UIApplication.shared.canOpenURL(url)
+        }) -> Store {
         if isRunningInLiveContainer { return .liveContainer }
         if canOpenScheme("sidestore") { return .sideStore }
         return .download

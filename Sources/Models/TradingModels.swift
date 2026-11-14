@@ -198,8 +198,11 @@ enum TradingMode: String, Codable, Sendable, CaseIterable {
     /// 43357136321-era: proposta 20, docs/PROPOSTE.md): ingresso a rottura del
     /// massimo a 20 barre con chiusura sopra la SMA200, uscita chandelier
     /// (massimo delle chiusure da ingresso − 3×ATR22) o chiusura sotto SMA200.
-    /// Daily dal 2018: +8,4%/anno, perdita max −9%, Sharpe 1,08; finestra orso
-    /// 2024-11→2026-11 +7,4% (B&H −31,8%). Zero crediti Kimi.
+    /// Studio rifatto con la dimensione delle posizioni dell'app
+    /// (tools/studio_universo.py, run 43572591958, 07/2020→11/2026): +45,5%/anno,
+    /// perdita max −41%, Sharpe 1,21. I +8,4% / −9% scritti fino alla 1.6.8
+    /// valevano per ingressi da 1/36 del capitale; l'app usa 1/5 del conto.
+    /// Zero crediti Kimi.
     case crypto
 
     var label: String {
@@ -566,17 +569,17 @@ struct AlpacaCredentials: Sendable {
     let paperTrading: Bool
 
     var tradingBaseURL: URL {
-        URL(string: paperTrading
+        URL.fixed(paperTrading
             ? "https://paper-api.alpaca.markets"
-            : "https://api.alpaca.markets")!
+            : "https://api.alpaca.markets")
     }
 
     var marketDataBaseURL: URL {
-        URL(string: "https://data.alpaca.markets")!
+        URL.fixed("https://data.alpaca.markets")
     }
 
     var marketDataStreamURL: URL {
-        URL(string: "wss://stream.data.alpaca.markets/v2/iex")!
+        URL.fixed("wss://stream.data.alpaca.markets/v2/iex")
     }
 }
 

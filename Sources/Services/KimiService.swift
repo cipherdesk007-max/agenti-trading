@@ -74,7 +74,7 @@ actor KimiService {
     /// Modello usato per decisioni e analisi; configurabile dalle impostazioni
     /// dell'app (tab SISTEMA) senza ricompilare.
     private let modelBox: KimiModelBox
-    private let endpoint = URL(string: "https://api.moonshot.ai/v1/chat/completions")!
+    private let endpoint = URL.fixed("https://api.moonshot.ai/v1/chat/completions")
     private let session: URLSession
     /// Log in-memory delle chiamate (prompt, durata, token): il motore lo
     /// svuota nel log di sessione con drainCallLog (punto f dell'audit).
@@ -110,7 +110,7 @@ actor KimiService {
     /// serve al picker del tab SISTEMA, così la scelta del modello si fa
     /// dall'app senza aprire la console web Moonshot.
     func listModels() async throws -> [String] {
-        let url = URL(string: "https://api.moonshot.ai/v1/models")!
+        let url = URL.fixed("https://api.moonshot.ai/v1/models")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
@@ -125,7 +125,7 @@ actor KimiService {
     }
 
     func balance() async throws -> KimiBalance {
-        let url = URL(string: "https://api.moonshot.ai/v1/users/me/balance")!
+        let url = URL.fixed("https://api.moonshot.ai/v1/users/me/balance")
         var request = URLRequest(url: url)
         request.httpMethod = "GET"
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")

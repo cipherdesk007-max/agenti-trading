@@ -38,10 +38,15 @@ jobs:
     # Macchina Apple Silicon: sul runner Intel i test dell'interfaccia restavano
     # fermi senza partire e l'intero giro durava circa il doppio.
     runs-on: macos-15
-    timeout-minutes: 50
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      # Regole di AGENTS.md che si controllano da sole (niente try!,
+      # fatalError, force-unwrap): pochi secondi, prima di tutto il resto.
+      - name: Regole di codice
+        run: python3 tools/controlla_regole.py
 
       # Serve Xcode 26: la build con Xcode 16.4 (default di questa immagine)
       # crasha all'avvio dopo il Face ID. Se Xcode 26 manca, la build fallisce
@@ -92,8 +97,8 @@ jobs:
             -only-testing:QuantSwarmTests \
             test-without-building
 
-      # Test dell'interfaccia: con riprova. Il simulatore Intel di GitHub a volte
-      # non si avvia in tempo ("AX loaded notification"): in quel caso avviso,
+      # Test dell'interfaccia: con riprova. Il simulatore di GitHub a volte non
+      # si avvia in tempo ("AX loaded notification"): in quel caso avviso,
       # senza bloccare l'IPA (i test unitari sopra restano bloccanti).
       # A ogni push solo i test unitari (veloci, bloccanti): i test
       # dell'interfaccia girano su richiesta (Run workflow) e prima delle release.
@@ -102,12 +107,16 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.uitest
         continue-on-error: true
         run: |
-          # Ogni tentativo ha un tempo massimo di 8 minuti: nel run
-          # 43556570498 xcodebuild è rimasto fermo 21 minuti senza far partire
-          # nessun test e stava per consumare il tempo dell'intero job (niente
-          # IPA). perl fa da timer: allo scadere il comando viene chiuso.
+          # Ogni tentativo ha un tempo massimo: nel run 43556570498 xcodebuild
+          # è rimasto fermo 21 minuti senza far partire nessun test e stava
+          # per consumare il tempo dell'intero job (niente IPA). perl fa da
+          # timer: allo scadere il comando viene chiuso.
+          # Il limite non può essere stretto: l'avvio del programma di test
+          # nel simulatore ha richiesto 3,5 minuti nel run 43565035430 e 7 nel
+          # run 43568943157, dove con 8 minuti di limite i test sono stati
+          # chiusi 20 secondi dopo essere partiti. I 5 test durano 80 secondi.
           run_ui() {
-            perl -e 'alarm shift; exec @ARGV' 480 xcodebuild \
+            perl -e 'alarm shift; exec @ARGV' "$1" xcodebuild \
               -project QuantSwarmAlphaZero.xcodeproj \
               -scheme QuantSwarmAlphaZero \
               -destination "id=$SIM_UDID" \
@@ -116,13 +125,21 @@ jobs:
               -retry-tests-on-failure -test-iterations 2 \
               test-without-building
           }
-          # Il primo avvio del runner dei test può scadere mentre il simulatore
-          # carica l'accessibilità ("Timed out waiting for AX loaded
-          # notification", run 43552818891): è il simulatore, non l'app, e in
-          # quel caso nessun test parte. Si aspetta l'avvio completo e si
-          # riprova una volta sola.
+          # Un tentativo chiuso dal timer lascia il programma di test appeso
+          # nel simulatore, e quello dopo fallisce con "Application failed
+          # preflight checks" (run 43568943157): prima di riprovare il
+          # simulatore va spento e riacceso.
+          riavvia_simulatore() {
+            xcrun simctl shutdown "$SIM_UDID" || true
+            xcrun simctl boot "$SIM_UDID" || true
+            xcrun simctl bootstatus "$SIM_UDID" -b || true
+          }
           xcrun simctl bootstatus "$SIM_UDID" -b || true
-          run_ui || { echo "::notice::UI test: primo tentativo fallito, riprovo una volta"; sleep 45; run_ui; }
+          run_ui 840 || {
+            echo "::notice::UI test: primo tentativo fallito, riavvio il simulatore e riprovo una volta"
+            riavvia_simulatore
+            run_ui 720
+          }
 
       - name: Avviso UI test
         if: steps.uitests.outcome == 'failure'

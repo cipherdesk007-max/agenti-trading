@@ -256,7 +256,9 @@ enum QuantSpecialist {
         let mean = window.reduce(0, +) / Double(window.count)
         let variance = window.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(window.count - 1)
         let sd = max(sqrt(variance), 1e-9)
-        let z = (window.last! - mean) / sd
+        // La finestra ha sempre 20 chiusure (controllo sopra): l'ultima è il prezzo attuale.
+        let lastClose = window.last ?? mean
+        let z = (lastClose - mean) / sd
         // Volatilità realizzata sui rendimenti 15m dell'ultimo giorno di seduta (~26 barre).
         let returns = zip(closes, closes.dropFirst()).map { $1 / $0 - 1 }.suffix(26)
         let rMean = returns.reduce(0, +) / Double(returns.count)
@@ -266,7 +268,7 @@ enum QuantSpecialist {
         if let sma200 = context?.fifteenMinuteIndicators.sma200, let last = closes.last {
             trendUp = last > sma200
         } else {
-            trendUp = closes.last! > mean
+            trendUp = lastClose > mean
         }
         let signal: CouncilSignal
         if z <= -1.5 && trendUp {
@@ -536,7 +538,7 @@ enum Council {
             let window = closes.suffix(10)
             let mean = window.reduce(0, +) / Double(window.count)
             let sd = max(sqrt(window.reduce(0) { $0 + ($1 - mean) * ($1 - mean) } / Double(window.count - 1)), 1e-9)
-            let z = (window.last! - mean) / sd
+            let z = ((window.last ?? mean) - mean) / sd
             quantitative = AgentReport(
                 agent: .quantitative, timestamp: now, asset: candidate.symbol, timeframe: "giornaliero",
                 analysis: z <= -1

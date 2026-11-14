@@ -60,4 +60,19 @@ final class BalanceAdvisorTests: XCTestCase {
         XCTAssertEqual(plain!.recommended, masked!.recommended)
         XCTAssertEqual(plain!.headline, masked!.headline)
     }
+
+    /// Lo studio rifatto il 14/11/2026 con la dimensione delle posizioni
+    /// dell'app (tools/studio_universo.py, run 43572591958) dà alla crypto una
+    /// perdita massima del 41%: il consiglio deve dirlo, in ogni fascia in cui
+    /// nomina la crypto, e non può più chiamarla "validata".
+    func testEveryAdviceThatNamesCryptoStatesItsRisk() {
+        let small = BalanceAdvisor.advise(equity: 1_000)
+        XCTAssertTrue(small?.detail.contains("−41%") ?? false)
+        let medium = BalanceAdvisor.advise(equity: 3_000)
+        XCTAssertTrue(medium?.alternative?.contains("−41%") ?? false)
+        for advice in [small, medium] {
+            let text = (advice?.detail ?? "") + (advice?.alternative ?? "")
+            XCTAssertFalse(text.contains("validat"), "Niente \"validata dallo studio\": lo studio usava posizioni 7 volte più piccole")
+        }
+    }
 }

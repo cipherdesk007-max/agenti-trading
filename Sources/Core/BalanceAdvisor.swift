@@ -38,7 +38,7 @@ enum BalanceAdvisor {
             return Advice(
                 recommended: .crypto,
                 headline: "Saldo piccolo: consiglio CRYPTO · 24/7",
-                detail: "\(balance) gli ordini frazionati della crypto (anche 0,0001 BTC) fanno operare il bot su ogni segnale; con le azioni intere un conto così resta spesso fermo. Blocco drawdown al 10% e stop GTC sul broker come nelle altre modalità.",
+                detail: "\(balance) gli ordini frazionati della crypto (anche 0,0001 BTC) fanno operare il bot su ogni segnale; con le azioni intere un conto così resta spesso fermo. Rischio alto: con 1/5 del conto per coppia lo studio rifatto il 14/11/2026 dà cali fino al −41%, e il blocco al 10% ferma spesso i nuovi ingressi. Stop GTC sul broker come nelle altre modalità.",
                 alternative: "Alternativa: PORTAFOGLIO · 30/70 con i gemelli micro SPYM/QQQM/VTWO/GLDM."
             )
         }
@@ -46,8 +46,8 @@ enum BalanceAdvisor {
             return Advice(
                 recommended: .portfolio,
                 headline: "Saldo medio: consiglio PORTAFOGLIO · 30/70 (micro) o CRYPTO · 24/7",
-                detail: "\(balance) il portafoglio 30/70 funziona già coi gemelli micro (SPYM, QQQM, VTWO, GLDM) senza azioni intere che bloccano gli ingressi; la crypto resta valida in parallelo o da sola, sempre frazionata.",
-                alternative: "CRYPTO · 24/7 come alternativa unica: regole validate dallo studio, paniere equal-weight."
+                detail: "\(balance) il portafoglio 30/70 funziona già coi gemelli micro (SPYM, QQQM, VTWO, GLDM) senza azioni intere che bloccano gli ingressi; la crypto resta possibile in parallelo o da sola, sempre frazionata, ma con rischio più alto.",
+                alternative: "CRYPTO · 24/7 come alternativa unica: più operazioni, ma rischio alto (cali fino al −41% nello studio rifatto il 14/11/2026)."
             )
         }
         return Advice(

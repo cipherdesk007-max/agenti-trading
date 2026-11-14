@@ -157,7 +157,7 @@ struct MarketsPanel: View {
                             let candles = engine.intradayCandles(for: symbol)
                             let last = engine.intradayLastPrice(for: symbol) ?? candles.last?.close
                             let first = candles.first?.open
-                            let change = (last != nil && first != nil && first! > 0) ? last! / first! - 1 : nil
+                            let change = relativeChange(from: first, to: last)
                             Button { selected = symbol } label: {
                                 MarketTile(insight: MarketInsight(
                                     symbol: symbol, state: candles.isEmpty ? .noData : .trendUp, close: last,
@@ -374,7 +374,7 @@ struct MarketDetailView: View {
             // Sugli altri intervalli (1H, 15M, 5M, live) il prezzo resta sempre
             // visibile: ultima candela dell'intervallo e variazione sulla precedente.
             let previous = candles.count > 1 ? candles[candles.count - 2].close : candles.last?.close
-            let change = (previous ?? 0) > 0 ? (price / previous! - 1) * 100 : nil
+            let change = relativeChange(from: previous, to: price).map { $0 * 100 }
             HStack(alignment: .firstTextBaseline) {
                 Text("Ultimo prezzo · \(interval.rawValue)")
                     .font(.caption2.weight(.semibold))
@@ -625,4 +625,11 @@ private struct NewsTranslation: ViewModifier {
         content
         #endif
     }
+}
+
+/// Variazione relativa fra due prezzi (0,01 = +1%): nil se manca un dato o se
+/// la base non è positiva.
+private func relativeChange(from base: Double?, to value: Double?) -> Double? {
+    guard let base, let value, base > 0 else { return nil }
+    return value / base - 1
 }

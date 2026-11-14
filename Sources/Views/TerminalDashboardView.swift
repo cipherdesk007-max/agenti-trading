@@ -146,15 +146,16 @@ struct TerminalDashboardView: View {
                                 MarketsPanel()
                                 if !engine.strategyConfig.proMode { marketsLegend }
                             case .agents:
+                                // Aprire la scheda aggiorna conto e statistiche: fino
+                                // alla 1.6.9 lo faceva il riquadro del conto, ora in BROKER.
                                 capitalPanel
+                                    .task { await engine.refreshPortfolio() }
                                 decisionsPanel
                                 shadowPanel
                                 // Pannelli della sola modalità veloce (stream 1m,
                                 // analisi a richiesta, dataset): in giornaliera non servono.
                                 if displayedMode == .intraday { analysisPanel }
                                 if displayedMode == .intraday { councilPanel }
-                                portfolioPanel
-                                kimiPanel
                                 if displayedMode == .intraday {
                                     edgePanel
                                     calibrationPanel
@@ -164,6 +165,7 @@ struct TerminalDashboardView: View {
                                 exportPanel
                                 logPanel
                             case .broker:
+                                accountPanel
                                 BrokerControlView()
                                 ordersPanel
                                 linksPanel
@@ -542,10 +544,10 @@ struct TerminalDashboardView: View {
                     .foregroundStyle(Theme.amber)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            portfolioRow("Valore di Kimi", s.kimiEdge.map { String(format: "%+.2f punti", $0 * 100) } ?? "—",
+            portfolioRow("Valore di Kimi", s.kimiEdge.map { String(format: "%+.2f punti", locale: Theme.numberLocale, $0 * 100) } ?? "—",
                          color: (s.kimiEdge ?? 0) >= 0 ? Theme.accent : Theme.red)
             if let older = s.olderEdge, let recent = s.recentEdge {
-                portfolioRow("Tendenza (prima → ora)", String(format: "%+.2f → %+.2f punti", older * 100, recent * 100),
+                portfolioRow("Tendenza (prima → ora)", String(format: "%+.2f → %+.2f punti", locale: Theme.numberLocale, older * 100, recent * 100),
                              color: recent >= older ? Theme.accent : Theme.amber)
             }
             portfolioRow("In corso", "\(s.pending)", color: Theme.textTertiary)
@@ -556,7 +558,7 @@ struct TerminalDashboardView: View {
                 stackedRow("Candidati senza evento", group(s.eventClean))
                 portfolioRow(
                     "Valore del filtro",
-                    s.eventFilterEdge.map { String(format: "%+.2f punti", $0 * 100) } ?? "—",
+                    s.eventFilterEdge.map { String(format: "%+.2f punti", locale: Theme.numberLocale, $0 * 100) } ?? "—",
                     color: (s.eventFilterEdge ?? 0) >= 0 ? Theme.accent : Theme.amber
                 )
                 if s.eventFlagged.count + s.eventClean.count < 20 {
@@ -579,7 +581,7 @@ struct TerminalDashboardView: View {
                 stackedRow("Comprato DAVVERO dopo Brain e Reviewer", group(s.chosen))
                 portfolioRow(
                     "Regole − comprato davvero",
-                    s.rulesVsBrainEdge.map { String(format: "%+.2f punti", $0 * 100) } ?? "—",
+                    s.rulesVsBrainEdge.map { String(format: "%+.2f punti", locale: Theme.numberLocale, $0 * 100) } ?? "—",
                     color: (s.rulesVsBrainEdge ?? 0) >= 0 ? Theme.accent : Theme.red
                 )
                 stackedRow("Disaccordo: solo regole (catena Kimi no)", group(s.rulesOnly))
@@ -1010,7 +1012,7 @@ struct TerminalDashboardView: View {
                 statTile(
                     "KIMI",
                     "\(engine.kimiCallsToday) chiamate",
-                    spent.map { s in "\(String(format: "%.2f", s)) USD" + (limit.map { " / \(String(format: "%.2f", $0))" } ?? "") } ?? "spesa n/d",
+                    spent.map { s in "\(String(format: "%.2f", locale: Theme.numberLocale, s)) USD" + (limit.map { " / \(String(format: "%.2f", locale: Theme.numberLocale, $0))" } ?? "") } ?? "spesa n/d",
                     engine.creditLimitHit ? Theme.red : Theme.accent
                 )
                 statTile("ORDINI", "\(ordersToday) inviati", "\(engine.openOrders.count) aperti sul broker", terminalGreen)
@@ -1090,7 +1092,7 @@ struct TerminalDashboardView: View {
                 }
             }
             if displayedMode != .intraday, !engine.dailyCandidates.isEmpty {
-                Text("Segnali di oggi: " + engine.dailyCandidates.map { "\($0.symbol) RSI2 \(String(format: "%.1f", $0.snapshot.rsi2))" }.joined(separator: " · "))
+                Text("Segnali di oggi: " + engine.dailyCandidates.map { "\($0.symbol) RSI2 \(String(format: "%.1f", locale: Theme.numberLocale, $0.snapshot.rsi2))" }.joined(separator: " · "))
                     .font(.caption2.weight(.bold))
                     .monospacedDigit()
                     .foregroundStyle(Theme.accent)
@@ -1176,13 +1178,18 @@ struct TerminalDashboardView: View {
         }
     }
 
-    private var portfolioPanel: some View {
+    /// Il conto sul broker: a quale conto è collegata l'app, saldo, liquidità,
+    /// guadagno del giorno e se Alpaca accetta nuovi ordini. Apre la scheda
+    /// BROKER (fino alla 1.6.9 stava in DETTAGLI con il nome "Portafoglio").
+    private var accountPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SectionHeader(title: "Portafoglio", actionLabel: "Aggiorna") {
+            SectionHeader(title: "Conto", actionLabel: "Aggiorna") {
                 Task { await engine.refreshPortfolio() }
             }
             .disabled(engine.isKillInProgress)
             if let account = engine.account {
+                portfolioRow("Collegato a", accountLabel(account),
+                             color: engine.paperTrading ? Theme.textPrimary : Theme.red)
                 portfolioRow("Equity", Formatters.amount(account.equityValue), color: Theme.textPrimary)
                 portfolioRow("Cash", Formatters.amount(account.cashValue), color: Theme.textPrimary)
                 portfolioRow("Buying power", Formatters.amount(account.buyingPowerValue), color: Theme.textPrimary)
@@ -1199,6 +1206,15 @@ struct TerminalDashboardView: View {
                     portfolioRow("P&L notte · 70%", Formatters.signedAmount(pnl.night.pnl),
                                  color: pnl.night.pnl >= 0 ? Theme.accent : Theme.red)
                 }
+                if let suspended = engine.accountTradingSuspended {
+                    portfolioRow("Nuovi ordini", suspended ? "rifiutati: trading sospeso" : "accettati",
+                                 color: suspended ? Theme.red : Theme.textPrimary)
+                    if suspended {
+                        Text("Si toglie da SISTEMA → Riattiva trading.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.textTertiary)
+                    }
+                }
             } else {
                 Text("Nessun dato: tocca Aggiorna per leggere il conto.")
                     .font(.caption)
@@ -1209,6 +1225,14 @@ struct TerminalDashboardView: View {
         .task {
             await engine.refreshPortfolio()
         }
+    }
+
+    /// "Paper · conto …1234": dice a quale conto è collegata l'app senza
+    /// mostrare il numero intero.
+    private func accountLabel(_ account: AccountSnapshot) -> String {
+        let kind = engine.paperTrading ? "Paper" : "Live"
+        guard let number = account.accountNumber, !number.isEmpty else { return kind }
+        return kind + " · conto …" + String(number.suffix(4))
     }
 
     /// Riga su due livelli per valori lunghi (etichetta sopra, numeri sotto).
@@ -1237,48 +1261,6 @@ struct TerminalDashboardView: View {
                 .foregroundStyle(color)
         }
         .padding(.vertical, 4)
-    }
-
-    /// Crediti Kimi: saldo reale, chiamate del giorno e spesa misurata dal
-    /// saldo (baseline UTC − saldo attuale). Se il limite impostato in
-    /// SISTEMA viene raggiunto, Kimi si ferma fino a mezzanotte UTC.
-    private var kimiPanel: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            panelHeader("Kimi · crediti USD")
-            if let balance = engine.kimiBalance {
-                portfolioRow("Disponibile", Formatters.money(balance.availableBalance), color: Theme.textPrimary)
-                portfolioRow("Voucher", Formatters.money(balance.voucherBalance), color: Theme.textPrimary)
-                portfolioRow(
-                    "Cash",
-                    Formatters.money(balance.cashBalance),
-                    color: (balance.cashBalance ?? 0) < 0 ? Theme.red : Theme.textPrimary
-                )
-            } else {
-                Text("Saldo non ancora letto: tocca Aggiorna nel pannello portafoglio.")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
-            }
-            portfolioRow("Chiamate oggi", "\(engine.kimiCallsToday)", color: Theme.textPrimary)
-            portfolioRow(
-                "Spesi oggi (da saldo)",
-                engine.creditsSpentToday.map { Formatters.money($0) } ?? "—",
-                color: Theme.textPrimary
-            )
-            if engine.strategyConfig.creditLimitEnabled {
-                portfolioRow(
-                    "Limite giornaliero",
-                    Formatters.money(engine.strategyConfig.dailyCreditLimitUSD),
-                    color: engine.creditLimitHit ? Theme.red : Theme.textTertiary
-                )
-            }
-            if engine.creditLimitHit {
-                Text("Limite raggiunto: Kimi fermo fino a mezzanotte UTC. Le posizioni restano protette dal broker.")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(Theme.red)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .panelStyle(Theme.accent)
     }
 
     /// Kimi Analyst: lettura qualitativa del mercato con cadenza configurabile
@@ -1721,10 +1703,10 @@ struct TerminalDashboardView: View {
     private var linksPanel: some View {
         VStack(alignment: .leading, spacing: 8) {
             panelHeader("Link rapidi")
-            Link(destination: URL(string: "https://app.alpaca.markets")!) {
+            Link(destination: URL.fixed("https://app.alpaca.markets")) {
                 linkRow("Alpaca dashboard · ordini e posizioni")
             }
-            Link(destination: URL(string: "https://platform.kimi.ai")!) {
+            Link(destination: URL.fixed("https://platform.kimi.ai")) {
                 linkRow("Kimi console · crediti e API key")
             }
         }
@@ -1793,9 +1775,7 @@ private struct BrokerControlView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionHeader(title: "Controllo broker · Alpaca", actionLabel: "Aggiorna") {
-                Task { await engine.refreshPortfolio() }
-            }
+            SectionHeader(title: "Controllo broker · Alpaca")
 
             Text("Ordini aperti · \(engine.openOrders.count)")
                 .font(.subheadline.weight(.semibold))
@@ -1900,7 +1880,7 @@ private struct SystemSettingsView: View {
         case .intraday:
             return "SPERIMENTALE: nei backtest perde e non batte il caso. Richiede l'app sempre aperta; chiude tutto prima della chiusura."
         case .crypto:
-            return "Studio trend 2018–oggi (run 43358878933): Donchian20 + chandelier 3 ATR sopra SMA200, +8,4%/anno, perdita max −9%, Sharpe 1,08. 5 coppie (BTC, ETH, SOL, AVAX, LINK in USD), budget 1/5 per coppia, ordini frazionati, stop sul broker attivo 24/7 anche ad app chiusa."
+            return "Rottura del massimo a 20 giorni sopra la media a 200, uscita con stop mobile a 3 ATR o sotto la media. 5 coppie (BTC, ETH, SOL, AVAX, LINK in USD), 1/5 del conto per coppia, ordini frazionati, stop sul broker attivo anche ad app chiusa. RISCHIO ALTO: lo studio rifatto con le posizioni dell'app (run 43572591958) dà +45% l'anno dal 07/2020 e +21% dal 04/2021, in entrambi i casi con perdita massima −41% e il conto sotto il −10% dal suo massimo per oltre l'80% del tempo. Il blocco al −10% dell'app fermerebbe spesso i nuovi ingressi: questa combinazione non ha uno studio suo. I numeri mostrati fino alla build 226 (+8,4% l'anno, perdita massima −9%) valevano per posizioni 7 volte più piccole."
         }
     }
 
@@ -1979,9 +1959,8 @@ private struct SystemSettingsView: View {
             AppCard {
                 VStack(alignment: .leading, spacing: 12) {
                 SectionHeader(title: "Broker")
-                settingRow("Trading Alpaca", engine.accountTradingSuspended == nil
-                    ? "verifica al primo controllo"
-                    : (engine.accountTradingSuspended! ? "SOSPESO: il broker rifiuta tutti i nuovi ordini" : "attivo: il broker accetta gli ordini"))
+                settingRow("Trading Alpaca", tradingStatusText,
+                           color: engine.accountTradingSuspended == true ? Theme.red : Theme.textPrimary)
                 if engine.accountTradingSuspended == true {
                     Button(engine.resumingTrading ? "Riattivo…" : "Riattiva trading sul conto Alpaca") {
                         Task { await engine.resumeAlpacaTrading() }
@@ -2068,14 +2047,14 @@ private struct SystemSettingsView: View {
                     .explanation()
                 if draft.tradingMode != .night { buyableRow }
                 Stepper(
-                    "Rischio per trade: \(String(format: "%.2f", draft.riskPerTradePercent))% capitale",
+                    "Rischio per trade: \(String(format: "%.2f", locale: Theme.numberLocale, draft.riskPerTradePercent))% capitale",
                     value: $draft.riskPerTradePercent,
                     in: 0.25...2.0,
                     step: 0.25
                 )
                 Stepper("Max posizioni aperte: \(draft.maxOpenPositions)", value: $draft.maxOpenPositions, in: 1...5)
                 Stepper(
-                    "Stop giornaliero: \(String(format: "%.1f", draft.dailyStopPercent))% capitale",
+                    "Stop giornaliero: \(String(format: "%.1f", locale: Theme.numberLocale, draft.dailyStopPercent))% capitale",
                     value: $draft.dailyStopPercent,
                     in: 0.5...5.0,
                     step: 0.5
@@ -2091,7 +2070,7 @@ private struct SystemSettingsView: View {
             SectionHeader(title: "Modalità veloce")
             Stepper("Ciclo decisioni: \(draft.decisionIntervalSeconds)s", value: $draft.decisionIntervalSeconds, in: 30...120, step: 5)
             Stepper(
-                "Validità analisi Analyst: \(String(format: "%.1f", draft.analysisIntervalMinutes)) min",
+                "Validità analisi Analyst: \(String(format: "%.1f", locale: Theme.numberLocale, draft.analysisIntervalMinutes)) min",
                 value: $draft.analysisIntervalMinutes,
                 in: 2...15,
                 step: 1
@@ -2124,11 +2103,13 @@ private struct SystemSettingsView: View {
                 Task { await engine.loadAvailableKimiModels() }
             }
 
+            kimiCredits
+
             Toggle("Limite crediti giornaliero", isOn: $draft.creditLimitEnabled)
                 .font(.callout.weight(.semibold))
                 .tint(Theme.accent)
             Stepper(
-                "Limite spesa: \(String(format: "%.2f", draft.dailyCreditLimitUSD)) USD/giorno",
+                "Limite spesa: \(String(format: "%.2f", locale: Theme.numberLocale, draft.dailyCreditLimitUSD)) USD/giorno",
                 value: $draft.dailyCreditLimitUSD,
                 in: 0.10...50.0,
                 step: 0.10
@@ -2244,7 +2225,7 @@ private struct SystemSettingsView: View {
                 settingRow("Capitale bot", (config.capitalLimitEnabled
                     ? "limitato a \(String(format: "%.0f", config.botCapitalUSD)) USD"
                     : "tutto il conto") + " · impegnati \(String(format: "%.0f", engine.botExposure)) USD")
-                settingRow("Stato applicato", "rischio \(String(format: "%.2f", config.riskPerTradePercent))% · max \(config.maxOpenPositions) · stop giorno \(String(format: "%.1f", config.dailyStopPercent))%")
+                settingRow("Stato applicato", "rischio \(String(format: "%.2f", locale: Theme.numberLocale, config.riskPerTradePercent))% · max \(config.maxOpenPositions) · stop giorno \(String(format: "%.1f", locale: Theme.numberLocale, config.dailyStopPercent))%")
                 settingRow("Modello attivo", config.kimiModel)
                 if config.tradingMode == .night {
                     settingRow("Paniere", "S&P 500 · Nasdaq-100 · Russell 2000 · oro, peso uguale, originale o gemello secondo il saldo")
@@ -2260,7 +2241,7 @@ private struct SystemSettingsView: View {
                     settingRow("Kimi", "solo la giornaliera, e solo se c'è un segnale")
                 } else if config.tradingMode == .daily {
                     settingRow("Segnali", "15 ETF · sopra SMA200 e RSI2 < 10 · Kimi solo se c'è un segnale")
-                    settingRow("Ordini", "limite + stop \(String(format: "%.1f", DailyStrategy.stopATR)) ATR + target \(String(format: "%.0f", DailyStrategy.takeProfitATR)) ATR, GTC sul broker")
+                    settingRow("Ordini", "limite + stop \(String(format: "%.1f", locale: Theme.numberLocale, DailyStrategy.stopATR)) ATR + target \(String(format: "%.0f", DailyStrategy.takeProfitATR)) ATR, GTC sul broker")
                     settingRow("Uscite", "chiusura > SMA5 o \(DailyStrategy.maxHoldingDays) giorni, solo a mercato aperto")
                     settingRow("Dati", "barre giornaliere SIP (consolidate), ripiego IEX")
                     settingRow("Controlli", "subito, ogni 15 min ad app aperta e a ogni riapertura")
@@ -2297,9 +2278,14 @@ private struct SystemSettingsView: View {
         .onChange(of: engine.strategyConfig) { _, newValue in
             draft = newValue
         }
+        // Aprire la scheda legge crediti Kimi e stato del trading: senza,
+        // restavano "non ancora letti" e "verifica al primo controllo" finché
+        // non si passava da un'altra scheda. Sola lettura: non tocca le
+        // impostazioni in corso di modifica.
+        .task { await engine.refreshPortfolio() }
     }
 
-    private func settingRow(_ label: String, _ value: String) -> some View {
+    private func settingRow(_ label: String, _ value: String, color: Color = Theme.textPrimary) -> some View {
         HStack(alignment: .top) {
             Text(label)
                 .font(.caption)
@@ -2307,9 +2293,40 @@ private struct SystemSettingsView: View {
             Spacer()
             Text(value)
                 .font(.caption)
-                .foregroundStyle(Theme.textPrimary)
+                .foregroundStyle(color)
                 .multilineTextAlignment(.trailing)
         }
+    }
+
+    /// Crediti Kimi accanto al limite che li regola (fino alla 1.6.9 stavano in
+    /// DETTAGLI): saldo reale, chiamate del giorno e spesa misurata dal saldo
+    /// (saldo di inizio giornata UTC − saldo attuale). Raggiunto il limite,
+    /// Kimi si ferma fino a mezzanotte UTC.
+    @ViewBuilder
+    private var kimiCredits: some View {
+        if let balance = engine.kimiBalance {
+            settingRow("Crediti disponibili (USD)", Formatters.money(balance.availableBalance))
+            settingRow("Voucher", Formatters.money(balance.voucherBalance))
+            settingRow("Cash", Formatters.money(balance.cashBalance),
+                       color: (balance.cashBalance ?? 0) < 0 ? Theme.red : Theme.textPrimary)
+        } else {
+            settingRow("Crediti disponibili (USD)", "non ancora letti")
+        }
+        settingRow("Chiamate oggi", "\(engine.kimiCallsToday)")
+        settingRow("Spesi oggi (dal saldo)", engine.creditsSpentToday.map { Formatters.money($0) } ?? "—",
+                   color: engine.creditLimitHit ? Theme.red : Theme.textPrimary)
+        if engine.creditLimitHit {
+            Text("Limite raggiunto: Kimi fermo fino a mezzanotte UTC. Le posizioni restano protette dal broker.")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.red)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// Stato del trading sul conto, letto dalle impostazioni del conto Alpaca.
+    private var tradingStatusText: String {
+        guard let suspended = engine.accountTradingSuspended else { return "verifica al primo controllo" }
+        return suspended ? "SOSPESO: il broker rifiuta tutti i nuovi ordini" : "attivo: il broker accetta gli ordini"
     }
 }
 

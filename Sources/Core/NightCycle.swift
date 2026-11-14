@@ -49,13 +49,13 @@ enum NightStrategy {
 
     /// Minuti dalla mezzanotte di New York.
     static func minutesET(_ date: Date) -> Int {
-        let c = Calendar(identifier: .gregorian).dateComponents(in: TimeZone(identifier: "America/New_York")!, from: date)
+        let c = Calendar(identifier: .gregorian).dateComponents(in: .newYork, from: date)
         return (c.hour ?? 0) * 60 + (c.minute ?? 0)
     }
 
     /// Giorno della settimana in ora di New York (1 = domenica, 7 = sabato).
     static func weekdayET(_ date: Date) -> Int {
-        Calendar(identifier: .gregorian).dateComponents(in: TimeZone(identifier: "America/New_York")!, from: date).weekday ?? 0
+        Calendar(identifier: .gregorian).dateComponents(in: .newYork, from: date).weekday ?? 0
     }
 
     /// Regole di Alpaca: le OPG si accettano FUORI da 9:28–19:00 ET (anche il

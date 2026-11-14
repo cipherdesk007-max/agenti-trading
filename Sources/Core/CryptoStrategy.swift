@@ -9,6 +9,13 @@ import Foundation
 /// tutto; V4 (Donchian20 + chandelier) è scelta perché la sua perdita max
 /// (−9%) è compatibile col blocco drawdown al 10% dell'app.
 ///
+/// CORREZIONE 14/11/2026: quei numeri valgono per ingressi da 1/36 del
+/// capitale (lo studio divideva due volte per il numero di monete). Con la
+/// dimensione usata QUI (1/5 del conto per coppia) lo studio rifatto
+/// (tools/studio_universo.py, run 43572591958) dà perdita massima −41%: il
+/// criterio B non è rispettato e il blocco al 10% scatterebbe spesso. Le
+/// regole non sono state cambiate: la decisione è del proprietario.
+///
 /// Regole V4 per ogni coppia (barre 1D CHIUSE di Alpaca crypto):
 /// - regime: chiusura > SMA200;
 /// - ingresso: chiusura sopra il massimo degli HIGH delle 20 barre PRECEDENTI;

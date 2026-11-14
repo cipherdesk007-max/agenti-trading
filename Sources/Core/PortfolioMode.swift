@@ -17,7 +17,8 @@ enum PortfolioSplit {
     /// posizioni già aperte corrono fino alla loro uscita normale.
     static func budgets(equity: Double?, capitalCap: Double) -> (daily: Double, night: Double) {
         let cap = capitalCap.isFinite ? max(capitalCap, 0) : .infinity
-        let eq: Double? = (equity != nil && equity!.isFinite && equity! > 0) ? equity : nil
+        let eq: Double?
+        if let equity, equity.isFinite, equity > 0 { eq = equity } else { eq = nil }
         if eq == nil, !cap.isFinite { return (.infinity, .infinity) }
         let eff = min(eq ?? cap, cap)
         return (dailyFraction * eff, nightFraction * eff)

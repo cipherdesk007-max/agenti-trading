@@ -114,7 +114,7 @@ final class QuantSwarmEngine: ObservableObject {
     /// Ordini d'ingresso giornalieri: inviati, mai eseguiti, eseguiti in parte.
     @Published private(set) var entryStats = (placed: 0, unfilled: 0, partial: 0)
 
-    // MARK: - Modalità CRYPTO · 24/7 (proposta 20, regole V4 validate dallo studio)
+    // MARK: - Modalità CRYPTO · 24/7 (proposta 20, regole V4 dello studio)
     /// Segnale corrente per coppia (ultimo ciclo): per il pannello CRUSCOTTO.
     @Published private(set) var cryptoSignals: [String: CryptoStrategy.Signal] = [:]
     /// Prezzi live (mid quote) dell'ultimo tick: badge LIVE.
@@ -2510,7 +2510,7 @@ extension QuantSwarmEngine {
         } else if mode == .portfolio {
             log("Modalità PORTAFOGLIO: 30% del capitale alla GIORNALIERA (ETF con stop GTC sul broker) e 70% alla NOTTE (MOC/OPG), riequilibrato a ogni ciclo sull'equity corrente. Studio run 43338377889: CAGR +5,6%, perdita max -17%, Sharpe 0,79. Registri separati: ogni strategia gestisce solo le sue posizioni.")
         } else if mode == .crypto {
-            log("Modalità CRYPTO · 24/7 (proposta 20, regole V4 validate dallo studio backtest_trend_crypto: +8,4%/anno, perdita max −9%, Sharpe 1,08; finestra orso 2024→26 +7,4%): paniere equal-weight BTC/ETH/SOL/AVAX/LINK in USD, ingresso a rottura del massimo a 20 barre sopra la SMA200, uscita chandelier 3×ATR22 o sotto SMA200. Ordini frazionati `simple` (le crypto Alpaca NON supportano bracket) con stop stop_limit GTC sul broker. Aggiornamento live ogni 60 secondi a app aperta; zero crediti Kimi; blocco drawdown al 10%.")
+            log("Modalità CRYPTO · 24/7 (proposta 20, regole V4 dello studio backtest_trend_crypto. RISCHIO ALTO: con 1/5 del conto per coppia lo studio rifatto, run 43572591958, dà perdita massima −41% e il conto sotto il −10% dal massimo per oltre l'80% del tempo; il blocco al 10% fermerà spesso i nuovi ingressi): paniere equal-weight BTC/ETH/SOL/AVAX/LINK in USD, ingresso a rottura del massimo a 20 barre sopra la SMA200, uscita chandelier 3×ATR22 o sotto SMA200. Ordini frazionati `simple` (le crypto Alpaca NON supportano bracket) con stop stop_limit GTC sul broker. Aggiornamento live ogni 60 secondi a app aperta; zero crediti Kimi; blocco drawdown al 10%.")
         } else {
         log(
             "Modalità GIORNALIERA su \(DailyStrategy.basket.count) ETF: Trend (sopra SMA200) + Pullback (RSI2 < 10), "
@@ -2812,7 +2812,7 @@ extension QuantSwarmEngine {
     }
 
     private static func dayKey(_ date: Date) -> String {
-        let c = Calendar(identifier: .gregorian).dateComponents(in: TimeZone(identifier: "America/New_York")!, from: date)
+        let c = Calendar(identifier: .gregorian).dateComponents(in: .newYork, from: date)
         return "\(c.year ?? 0)-\(c.month ?? 0)-\(c.day ?? 0)"
     }
 
