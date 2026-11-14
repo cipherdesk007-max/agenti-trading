@@ -207,3 +207,61 @@ senza battere il prompt attuale E il via dell'utente):
   finestra di replay (max_days più alto, quando i giorni con candidati
   saranno di più) può essere rilanciata con `quale=replay` senza costi di
   sviluppo (solo i centesimi di Kimi: ~0,02 USD per chiamata).
+
+## 6-bis. Secondo replay: 150 giorni uniformi dal 2006, solo Brain attuale (criterio dichiarato PRIMA dell'esecuzione)
+
+Il primo banco (30 giorni, 65 verdetti) è troppo piccolo per concludere
+qualcosa. Il proprietario ha chiesto di allargare il campione. TUTTO quello
+che segue è dichiarato PRIMA di lanciare le run.
+
+**Selezione dei giorni (deterministica, scritta prima)**: si prende l'elenco
+completo dei giorni con candidati dal 2006 (stesse regole del backtest:
+chiusura sopra SMA200 e RSI2 sotto 10 sui 15 ETF) ordinato per data; se ne
+selezionano 150 con passo uniforme: il k-esimo selezionato è l'elemento
+`round(k*(N-1)/149)` dell'elenco completo, con il PRIMO e l'ULTIMO giorno
+inclusi (formula in `uniform_indices` di tools/replay_agents.py). Non gli
+ultimi 30: tutto il periodo.
+
+**Finestre e tetto**: 150 giorni non stanno in un solo run da 40 minuti,
+quindi si dividono in 4 run (`REPLAY_SAMPLE=uniform`, `REPLAY_MAX_DAYS=150`,
+`REPLAY_WINDOW=40`, `REPLAY_OFFSET=0/40/80/120`, ultimo run 30 giorni):
+stessa selezione deterministica, finestre disgiunte, nessun giorno ripetuto.
+Tetto totale: 700 chiamate Kimi (175 per run). SOLO variante base (prompt
+attuale), stabilità disattivata: le varianti b/c sono già state scartate
+nella sezione 6, non si ripagano per riguardarle.
+
+**Nessuna chiamata sprecata se un run si taglia**: lo script stampa a ogni
+giorno una riga `REPLAYDAY`/`REPLAYREV` per candidato (data, ticker, esito,
+rendimenti) e riscrive il JSON dei risultati a ogni giorno: anche un run
+cancellato a metà lascia nel log tutto ciò che ha già pagato; il JSON
+finale di ogni finestra resta come artifact del run.
+
+**Misure (le stesse della sezione 6, più una nuova)**: scelti vs scartati vs
+casuale a 5 e 10 sedute, Brier per fasce, valore del veto del Reviewer. NUOVA:
+intervallo di confidenza al 95% (bootstrap, 5000 ricampionamenti con
+ripetizione, seed fisso 42, scelti e scartati ricampionati separatamente,
+percentili 2,5-97,5) della differenza media scelti − scartati a 5 e 10 sedute,
+calcolata sull'UNIONE delle 4 finestre (`--combine`). L'unione non duplica
+niente: ogni giorno appartiene a una sola finestra.
+
+**CRITERIO DI GIUDIZIO (dichiarato prima, non negoziabile dopo i numeri)**:
+
+- Se l'IC 95% della differenza scelti − scartati CONTIENE lo zero (a 5 o 10
+  sedute), allora il Brain giornaliero NON seleziona meglio delle regole su
+  questo banco: la sua scelta non è distinguibile dal caso. In quel caso si
+  PROPONE (senza implementare niente): (1) ordinamento dei candidati a
+  regole (RSI2 più basso, poi correlazione più bassa) al posto della scelta
+  del Brain; (2) Kimi ridotto a veto sulle notizie delle ultime 48 ore.
+  Entrambe le cose da MISURARE IN OMBRA prima di qualsiasi cambio nell'app,
+  con lo stesso metodo (criterio scritto prima, IC bootstrap, via
+  dell'utente). NOTA: il banco NON ha notizie nel payload (limite dichiarato
+  in sezione 4), quindi questo banco NON può validare da solo il veto-notizie.
+- Se l'IC 95% NON contiene lo zero (differenza positiva), il Brain aggiunge
+  valore misurabile e resta così com'è; se è negativa, il Brain sceglie
+  PEGGIO delle regole e la proposta di semplificazione vale ancora di più.
+- Il risultato è sul MECCANISMO DI SCELTA (payload anonimizzato, senza
+  notizie né date), non su Kimi in generale: il veto-notizie e il ruolo in
+  VELOCE/CONSIGLIO non sono messi in discussione da questo numero.
+
+**Stato: DA ESEGUIRE** (i risultati dell'unione si scrivono qui sotto dopo
+le 4 run, senza toccare il criterio sopra).

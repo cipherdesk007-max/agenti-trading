@@ -10,6 +10,28 @@ on:
       quale:
         description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza | portafoglio | crypto | cryptotrend | replay"
         default: "tutti"
+      # Replay agenti (FASE 2-3): campionamento e finestre dichiarati in docs/AGENTI.md
+      max_days:
+        description: "Replay: giorni con candidati da selezionare (recent = ultimi N, uniform = N uniformi dal 2006)"
+        default: "30"
+      variants:
+        description: "Replay: varianti del prompt separate da virgola (base, b, c)"
+        default: "base,b,c"
+      stability:
+        description: "Replay: ripete il Brain per misurare l'accordo (yes/no)"
+        default: "yes"
+      sample:
+        description: "Replay: recent (ultimi N giorni) o uniform (N giorni uniformi su tutto il periodo)"
+        default: "recent"
+      offset:
+        description: "Replay: offset della finestra sui giorni selezionati (per dividere in piu' run)"
+        default: "0"
+      window:
+        description: "Replay: giorni di questa finestra (0 = tutti i giorni selezionati)"
+        default: "0"
+      budget:
+        description: "Replay: tetto chiamate Kimi per run"
+        default: "400"
 
 # pipefail: se uno script va in errore il passo FALLISCE anche se il tee ha scritto
 # l'output (prima "| tee" nascondeva l'errore e le tabelle restavano vuote).
@@ -109,5 +131,19 @@ jobs:
         env:
           MOONSHOT_API_KEY: ${{ secrets.MOONSHOT_API_KEY }}
           REPLAY_MAX_DAYS: ${{ github.event.inputs.max_days || '30' }}
+          REPLAY_VARIANTS: ${{ github.event.inputs.variants || 'base,b,c' }}
+          REPLAY_STABILITY: ${{ github.event.inputs.stability || 'yes' }}
+          REPLAY_SAMPLE: ${{ github.event.inputs.sample || 'recent' }}
+          REPLAY_OFFSET: ${{ github.event.inputs.offset || '0' }}
+          REPLAY_WINDOW: ${{ github.event.inputs.window || '0' }}
+          REPLAY_BUDGET: ${{ github.event.inputs.budget || '400' }}
         run: python tools/replay_agents.py | tee -a backtest.md
+      # I risultati restano scaricabili anche se il run viene tagliato.
+      - name: Risultati replay come artifact
+        if: env.Q == 'replay'
+        uses: actions/upload-artifact@v4
+        with:
+          name: replay-risultati
+          path: replay_agents_risultati.json
+          if-no-files-found: ignore
       - run: cat backtest.md >> "$GITHUB_STEP_SUMMARY"

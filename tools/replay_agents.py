@@ -32,13 +32,34 @@ Costi: tetto REPLAY_BUDGET chiamate (default 400). Tariffe stimate (env):
 KIMI_PRICE_IN / KIMI_PRICE_OUT USD per milione di token (default 0,60 / 2,50:
 ASSUNZIONE DICHIARATA, verificare le tariffe correnti di Moonshot).
 
+Selezione dei giorni e finestre (dichiarate PRIMA in docs/AGENTI.md 6-bis):
+- REPLAY_SAMPLE=recent (default): gli ultimi REPLAY_MAX_DAYS giorni con
+  candidati;
+- REPLAY_SAMPLE=uniform: REPLAY_MAX_DAYS giorni scelti con passo uniforme su
+  TUTTI i giorni con candidati dal 2006 (indici round(i*(N-1)/(m-1)), primo
+  e ultimo giorno inclusi, formula dichiarata prima di eseguire);
+- REPLAY_OFFSET / REPLAY_WINDOW: finestra sulla lista selezionata, per
+  dividere un campione lungo in piu' run che restano dentro il timeout.
+
+Risultati parziali: a ogni giorno lo script stampa una riga REPLAYDAY o
+REPLAYREV per candidato (ricavabile dal log anche se il run viene tagliato a
+meta': le chiamate gia' pagate non si perdono) e riscrive
+replay_agents_risultati.json.
+
+Bootstrap: differenza media scelti - scartati con intervallo di confidenza al
+95% (5000 ricampionamenti con ripetizione, seed fisso, scelti e scartati
+ricampionati separatamente). Con --combine file1.json file2.json ... unisce i
+JSON di piu' finestre e stampa la tabella dell'unione senza chiamare Kimi.
+
 Senza MOONSHOT_API_KEY stampa un messaggio chiaro ed esce con codice 0 (non è
 un errore del run). Con --smoke costruisce i payload su dati sintetici e li
 valida SENZA rete (test locale della struttura, senza pandas/yfinance).
 """
 import json
 import os
+import random
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -295,17 +316,27 @@ def review_payload(payload, verdict, meta, blind=False):
     }
 
 
+class BudgetExceeded(Exception):
+    """Tetto delle chiamate raggiunto: stop pulito con risultati parziali."""
+
+
+RETRYABLE_HTTP = (429, 500, 502, 503, 504, 529)
+
+
 class Kimi:
-    """Client Moonshot minimale: stessa richiesta di KimiService.chatOnce."""
+    """Client Moonshot minimale: stessa richiesta di KimiService.chatOnce.
+    Due tentativi totali su errori transitori (come sendWithRetry dell'app),
+    attesa 5 s fra un tentativo e l'altro."""
 
     def __init__(self, key, model, budget):
         self.key, self.model, self.budget = key, model, budget
         self.calls = 0
+        self.retries = 0
         self.tokens_in = self.tokens_out = 0
 
     def chat(self, prompt, payload, schema, name):
         if self.calls >= self.budget:
-            raise RuntimeError(f"budget di {self.budget} chiamate esaurito")
+            raise BudgetExceeded(f"budget di {self.budget} chiamate esaurito")
         body = {
             "model": self.model,
             "messages": [
@@ -325,8 +356,22 @@ class Kimi:
             headers={"Authorization": f"Bearer {self.key}",
                      "Content-Type": "application/json"},
             method="POST")
-        with urllib.request.urlopen(req, timeout=180) as r:
-            data = json.load(r)
+        data = None
+        for attempt in (1, 2):
+            try:
+                with urllib.request.urlopen(req, timeout=180) as r:
+                    data = json.load(r)
+                break
+            except urllib.error.HTTPError as e:
+                if attempt == 2 or e.code not in RETRYABLE_HTTP:
+                    raise
+                self.retries += 1
+                time.sleep(5)
+            except (urllib.error.URLError, TimeoutError):
+                if attempt == 2:
+                    raise
+                self.retries += 1
+                time.sleep(5)
         self.calls += 1
         usage = data.get("usage") or {}
         self.tokens_in += usage.get("prompt_tokens", 0) or 0
@@ -338,7 +383,10 @@ class Kimi:
         s, e = content.find("{"), content.rfind("}")
         if s < 0 or e <= s:
             raise RuntimeError("nessun oggetto JSON nella risposta")
-        return json.loads(content[s:e + 1])
+        try:
+            return json.loads(content[s:e + 1])
+        except ValueError:
+            raise RuntimeError("risposta Kimi non decodificabile come JSON")
 
 
 def load_data():
@@ -362,7 +410,20 @@ def load_data():
             "ret": close.pct_change(), "index": close.index}
 
 
-def find_days(data, max_days):
+def uniform_indices(n, m):
+    """Indici uniformemente spaziati su n elementi (primo e ultimo inclusi).
+    Formula dichiarata PRIMA in docs/AGENTI.md 6-bis: j(i) = round(i*(n-1)/(m-1))."""
+    if m <= 0:
+        return []
+    if n <= m:
+        return list(range(n))
+    return sorted({round(i * (n - 1) / (m - 1)) for i in range(m)})
+
+
+def find_days(data, max_days, sample="recent"):
+    """Giorni con candidati (stesse regole del backtest). sample='recent'
+    prende gli ultimi max_days (0 = tutti); sample='uniform' sceglie max_days
+    giorni con passo uniforme su tutto il periodo dal 2006."""
     close, sma200, rsi2 = data["close"], data["sma200"], data["rsi2"]
     days = []
     for i in range(len(data["index"]) - 12):
@@ -373,7 +434,11 @@ def find_days(data, max_days):
                 cands.append(t)
         if cands:
             days.append((i, data["index"][i], cands))
-    return days[-int(max_days):]
+    if sample == "uniform" and 0 < max_days < len(days):
+        return [days[j] for j in uniform_indices(len(days), max_days)]
+    if max_days:
+        return days[-int(max_days):]
+    return days
 
 
 def fwd(data, idx, ticker, horizon):
@@ -409,6 +474,28 @@ def brier_rows(samples):
     return rows
 
 
+def bootstrap_diff(rows, key, n_boot=5000, seed=42, level=0.95):
+    """Differenza media scelti - scartati con IC bootstrap (ricampionamento
+    con ripetizione, scelti e scartati separati, seed fisso: riproducibile).
+    Metodo dichiarato PRIMA in docs/AGENTI.md 6-bis."""
+    a = [r[key] for r in rows if r["chosen"] and r[key] is not None]
+    b = [r[key] for r in rows if not r["chosen"] and r[key] is not None]
+    if len(a) < 2 or len(b) < 2:
+        return None
+    rng = random.Random(seed)
+    ma, mb = sum(a) / len(a), sum(b) / len(b)
+    diffs = []
+    for _ in range(n_boot):
+        sa = sum(a[rng.randrange(len(a))] for _ in a) / len(a)
+        sb = sum(b[rng.randrange(len(b))] for _ in b) / len(b)
+        diffs.append(sa - sb)
+    diffs.sort()
+    lo = diffs[max(0, int((1 - level) / 2 * n_boot) - 1)]
+    hi = diffs[min(n_boot - 1, int((1 + level) / 2 * n_boot))]
+    return {"diff": ma - mb, "lo": lo, "hi": hi,
+            "n_chosen": len(a), "n_skipped": len(b)}
+
+
 def validate_verdicts(decisions, allowed):
     """Fail-closed come l'app: solo simboli candidati, azione buy/skip,
     confidence numero in [0,1]. Il resto si scarta (resta scartato)."""
@@ -426,7 +513,8 @@ def validate_verdicts(decisions, allowed):
 def render_verdicts(rows, label, days):
     chosen = [r for r in rows if r["chosen"]]
     skipped = [r for r in rows if not r["chosen"]]
-    print(f"\n## {label}: {len(rows)} verdetti su {len(days)} giorni")
+    ndays = days if isinstance(days, int) else len(days)
+    print(f"\n## {label}: {len(rows)} verdetti su {ndays} giorni")
     print("| misura | 5 sedute | 10 sedute |")
     print("|---|---|---|")
     print(f"| scelti (media, n={len(chosen)}) | {pct(mean([r['ret5'] for r in chosen]))} | "
@@ -439,6 +527,14 @@ def render_verdicts(rows, label, days):
     print("Brier per fasce di confidence (win = 5 sedute > 0; minimo 20 esiti per giudicare):")
     for lab, n, score in brier_rows(samples):
         print(f"- {lab}: n={n} brier={'n/d' if score is None else f'{score:.3f}'}")
+    print("Differenza scelti - scartati (bootstrap 95%: contiene lo zero = non distinguibile):")
+    for key, lab in (("ret5", "5 sedute"), ("ret10", "10 sedute")):
+        b = bootstrap_diff(rows, key)
+        if b is None:
+            print(f"- {lab}: troppo pochi esiti (servono almeno 2 per lato)")
+        else:
+            print(f"- {lab}: {pct(b['diff'])} [IC 95%: {pct(b['lo'])}, {pct(b['hi'])}] "
+                  f"(n scelti {b['n_chosen']}, scartati {b['n_skipped']})")
 
 
 def render_reviews(rows, label):
@@ -463,6 +559,9 @@ def run_replay():
         print("Backtest filtro. Uscita senza errore: non è una falla del run.")
         return 0
     max_days = int(os.environ.get("REPLAY_MAX_DAYS", "30"))
+    sample = os.environ.get("REPLAY_SAMPLE", "recent").strip().lower()
+    offset = int(os.environ.get("REPLAY_OFFSET", "0"))
+    window = int(os.environ.get("REPLAY_WINDOW", "0"))
     variants = [v.strip() for v in os.environ.get("REPLAY_VARIANTS", "base,b,c").split(",")
                 if v.strip()]
     stability_on = os.environ.get("REPLAY_STABILITY", "yes").lower() not in ("no", "0", "false")
@@ -472,55 +571,105 @@ def run_replay():
     price_out = float(os.environ.get("KIMI_PRICE_OUT", "2.50"))
 
     data = load_data()
-    days = find_days(data, max_days)
-    print(f"# Replay agenti: {len(days)} giorni con candidati, varianti {variants}, "
-          f"stabilita' {'si' if stability_on else 'no'}, tetto {budget} chiamate")
+    all_days = find_days(data, 0)
+    selected = find_days(data, max_days, sample)
+    days = selected[offset:offset + window] if window > 0 else selected[offset:]
+    print(f"# Replay agenti: campionamento {sample} ({max_days} giorni richiesti su "
+          f"{len(all_days)} giorni con candidati dal 2006), finestra offset {offset} "
+          f"+ {window if window else 'tutti'} -> {len(days)} giorni di questa run, "
+          f"varianti {variants}, stabilita' {'si' if stability_on else 'no'}, "
+          f"tetto {budget} chiamate")
     anon = anon_map()
     brain_rows = {"base": [], "b": []}
     review_rows = {"base": [], "c": []}
     first_pass_verdicts = {}   # idx -> {symbol anon: action}
     stability_pairs = []       # (esecuzione 1, esecuzione 2) per candidato
+    skipped_days = 0
     stop_reason = None
+
+    def dump(stop=None):
+        c = kimi.tokens_in / 1e6 * price_in + kimi.tokens_out / 1e6 * price_out
+        with open("replay_agents_risultati.json", "w") as f:
+            json.dump({"sample": sample, "selected": len(selected), "offset": offset,
+                       "window": window, "days": len(days), "calls": kimi.calls,
+                       "retries": kimi.retries, "tokens_in": kimi.tokens_in,
+                       "tokens_out": kimi.tokens_out, "cost_usd": round(c, 2),
+                       "skipped_days": skipped_days, "stop": stop,
+                       "brain": brain_rows, "reviews": review_rows}, f, indent=1)
+
+    def fmt(x):
+        return "nan" if x is None else f"{x:.6f}"
+
     try:
-        for idx, day, cands in days:
-            payload, meta = build_payload(data, idx, cands, anon)
-            allowed = {anon[t].upper() for t in cands}
-            first = kimi.chat(BRAIN_PROMPT, payload, brain_schema(), "daily_decisions")
-            verdicts = validate_verdicts(first.get("decisions", []), allowed)
-            first_pass_verdicts[idx] = {v["symbol"]: v["action"] for v in verdicts}
-            for v in verdicts:
-                t = meta[v["symbol"]]["ticker"]
-                brain_rows["base"].append({
-                    "ticker": t, "chosen": v["action"] == "buy",
-                    "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10),
-                    "conf": v["confidence"]})
-            buys = sorted([v for v in verdicts if v["action"] == "buy"],
-                          key=lambda v: -v["confidence"])[:SLOTS]
-            for v in buys:
-                rev = kimi.chat(REVIEWER_PROMPT, review_payload(payload, v, meta),
-                                REVIEW_SCHEMA, "daily_review")
-                t = meta[v["symbol"]]["ticker"]
-                review_rows["base"].append({
-                    "ticker": t, "approved": rev.get("verdict") == "approve",
-                    "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10)})
-            if "b" in variants:
-                second = kimi.chat(BRAIN_PROMPT, payload, brain_schema(structured=True),
-                                   "daily_decisions_v2")
-                for v in validate_verdicts(second.get("decisions", []), allowed):
+        for dnum, (idx, day, cands) in enumerate(days, 1):
+            dstr = str(day)[:10]
+            day_base, day_b, day_rev = [], [], []
+            try:
+                payload, meta = build_payload(data, idx, cands, anon)
+                allowed = {anon[t].upper() for t in cands}
+                first = kimi.chat(BRAIN_PROMPT, payload, brain_schema(), "daily_decisions")
+                verdicts = validate_verdicts(first.get("decisions", []), allowed)
+                first_pass_verdicts[idx] = {v["symbol"]: v["action"] for v in verdicts}
+                for v in verdicts:
                     t = meta[v["symbol"]]["ticker"]
-                    brain_rows["b"].append({
-                        "ticker": t, "chosen": v["action"] == "buy",
-                        "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10),
-                        "conf": v["confidence"]})
-            if "c" in variants:
+                    row = {"ticker": t, "chosen": v["action"] == "buy",
+                           "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10),
+                           "conf": v["confidence"]}
+                    brain_rows["base"].append(row)
+                    day_base.append(row)
+                buys = sorted([v for v in verdicts if v["action"] == "buy"],
+                              key=lambda v: -v["confidence"])[:SLOTS]
                 for v in buys:
-                    rev = kimi.chat(REVIEWER_PROMPT,
-                                    review_payload(payload, v, meta, blind=True),
+                    rev = kimi.chat(REVIEWER_PROMPT, review_payload(payload, v, meta),
                                     REVIEW_SCHEMA, "daily_review")
                     t = meta[v["symbol"]]["ticker"]
-                    review_rows["c"].append({
-                        "ticker": t, "approved": rev.get("verdict") == "approve",
-                        "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10)})
+                    row = {"ticker": t, "approved": rev.get("verdict") == "approve",
+                           "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10)}
+                    review_rows["base"].append(row)
+                    day_rev.append(row)
+                if "b" in variants:
+                    second = kimi.chat(BRAIN_PROMPT, payload, brain_schema(structured=True),
+                                       "daily_decisions_v2")
+                    for v in validate_verdicts(second.get("decisions", []), allowed):
+                        t = meta[v["symbol"]]["ticker"]
+                        row = {"ticker": t, "chosen": v["action"] == "buy",
+                               "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10),
+                               "conf": v["confidence"]}
+                        brain_rows["b"].append(row)
+                        day_b.append(row)
+                if "c" in variants:
+                    for v in buys:
+                        rev = kimi.chat(REVIEWER_PROMPT,
+                                       review_payload(payload, v, meta, blind=True),
+                                       REVIEW_SCHEMA, "daily_review")
+                        t = meta[v["symbol"]]["ticker"]
+                        row = {"ticker": t, "approved": rev.get("verdict") == "approve",
+                               "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10)}
+                        review_rows["c"].append(row)
+                        day_rev.append(row)
+            except BudgetExceeded:
+                raise
+            except RuntimeError as e:
+                skipped_days += 1
+                print(f"REPLAYSKIP {dstr} giorno {dnum}/{len(days)} saltato: {e}")
+                dump()
+                continue
+            for r in day_base:
+                print(f"REPLAYDAY {dstr} base {r['ticker']} "
+                      f"{'buy' if r['chosen'] else 'skip'} "
+                      f"{fmt(r['ret5'])} {fmt(r['ret10'])} {r['conf']:.3f}")
+            for r in day_b:
+                print(f"REPLAYDAY {dstr} b {r['ticker']} "
+                      f"{'buy' if r['chosen'] else 'skip'} "
+                      f"{fmt(r['ret5'])} {fmt(r['ret10'])} {r['conf']:.3f}")
+            for r in day_rev:
+                print(f"REPLAYREV {dstr} {r['ticker']} "
+                      f"{'approve' if r['approved'] else 'reject'} "
+                      f"{fmt(r['ret5'])} {fmt(r['ret10'])}")
+            if dnum % 10 == 0 or dnum == len(days):
+                print(f"# progresso: {dnum}/{len(days)} giorni, {kimi.calls} chiamate, "
+                      f"{kimi.tokens_in} token in, {kimi.tokens_out} token out")
+            dump()
         if stability_on and "base" in variants:
             for idx, day, cands in days:
                 payload, meta = build_payload(data, idx, cands, anon)
@@ -532,6 +681,8 @@ def run_replay():
                 for sym, action in second_actions.items():
                     if sym in first_pass_verdicts.get(idx, {}):
                         stability_pairs.append((first_pass_verdicts[idx][sym], action))
+    except BudgetExceeded as e:
+        stop_reason = str(e)
     except RuntimeError as e:
         stop_reason = str(e)
 
@@ -567,14 +718,60 @@ def run_replay():
     else:
         print("\n## Stabilità: non eseguita")
 
-    with open("replay_agents_risultati.json", "w") as f:
-        json.dump({"calls": kimi.calls, "tokens_in": kimi.tokens_in,
-                   "tokens_out": kimi.tokens_out, "cost_usd": round(cost, 2),
-                   "days": len(days), "brain": brain_rows, "reviews": review_rows},
-                  f, indent=1)
+    dump(stop_reason)
+    if skipped_days:
+        print(f"\nGiorni saltati per risposta Kimi non valida: {skipped_days}")
     print("\nDettaglio in replay_agents_risultati.json")
     print("REGOLA DI LETTURA (dichiarata prima in docs/AGENTI.md): nessuna variante b/c")
     print("diventa attiva senza battere il Brain attuale su queste misure e il via dell'utente.")
+    return 0
+
+
+def combine(paths):
+    """Unisce i JSON di piu' finestre di replay e stampa la tabella dell'unione
+    (nessuna chiamata Kimi): i verdetti di un giorno appartengono a una sola
+    finestra, quindi l'unione non duplica niente."""
+    merged_brain = {"base": [], "b": []}
+    merged_rev = {"base": [], "c": []}
+    calls = tokens_in = tokens_out = days = skipped = 0
+    cost = 0.0
+    windows = []
+    for path in paths:
+        with open(path) as f:
+            d = json.load(f)
+        for k in ("base", "b"):
+            merged_brain[k].extend(d.get("brain", {}).get(k, []))
+        for k in ("base", "c"):
+            merged_rev[k].extend(d.get("reviews", {}).get(k, []))
+        calls += d.get("calls", 0) or 0
+        tokens_in += d.get("tokens_in", 0) or 0
+        tokens_out += d.get("tokens_out", 0) or 0
+        cost += d.get("cost_usd", 0) or 0
+        days += d.get("days", 0) or 0
+        skipped += d.get("skipped_days", 0) or 0
+        windows.append(f"{path} (offset {d.get('offset')}, giorni {d.get('days')})")
+    print("# Replay agenti COMBINATO (unione delle finestre, nessuna nuova chiamata):")
+    for w in windows:
+        print(f"- {w}")
+    print(f"Giorni: {days} (saltati {skipped}) | chiamate {calls} | token in {tokens_in} "
+          f"out {tokens_out} | costo stimato {cost:.2f} USD")
+    if merged_brain["base"]:
+        render_verdicts(merged_brain["base"], "Brain attuale (unione)", days)
+    else:
+        print("\n## Brain attuale: nessun risultato")
+    if merged_brain["b"]:
+        render_verdicts(merged_brain["b"], "Variante b (unione)", days)
+    if merged_rev["base"]:
+        render_reviews(merged_rev["base"], "Reviewer attuale (unione)")
+    else:
+        print("\n## Reviewer attuale: nessun risultato")
+    if merged_rev["c"]:
+        render_reviews(merged_rev["c"], "Variante c (unione)")
+    with open("replay_agents_risultati_combinati.json", "w") as f:
+        json.dump({"calls": calls, "tokens_in": tokens_in, "tokens_out": tokens_out,
+                   "cost_usd": round(cost, 2), "days": days,
+                   "brain": merged_brain, "reviews": merged_rev}, f, indent=1)
+    print("\nDettaglio in replay_agents_risultati_combinati.json")
     return 0
 
 
@@ -659,12 +856,27 @@ def smoke():
     assert validate_verdicts([{"symbol": c0["symbol"], "action": "buy", "confidence": 0.6}],
                              allowed) != [], "verdetto valido rifiutato!"
     assert len(REASON_CODES) == len(set(REASON_CODES)), "reason codes duplicati"
+    assert uniform_indices(10, 4) == [0, 3, 6, 9], "selezione uniforme sbagliata"
+    assert uniform_indices(5, 10) == [0, 1, 2, 3, 4], "piu' richiesti che disponibili"
+    assert len(uniform_indices(2000, 150)) == 150, "150 su 2000 devono essere 150"
+    assert uniform_indices(2000, 150)[0] == 0 and uniform_indices(2000, 150)[-1] == 1999, \
+        "primo e ultimo giorno esclusi"
+    rows = ([{"chosen": True, "ret5": 0.01, "ret10": 0.02},
+             {"chosen": False, "ret5": -0.01, "ret10": -0.02}] * 5)
+    b1, b2 = bootstrap_diff(rows, "ret5"), bootstrap_diff(rows, "ret5")
+    assert b1["lo"] == b2["lo"] and b1["hi"] == b2["hi"], "bootstrap non riproducibile"
+    assert b1["lo"] > 0 and b1["hi"] > 0, "IC di una differenza nettamente positiva"
+    assert bootstrap_diff([{"chosen": False, "ret5": 0.0}] * 3, "ret5") is None, \
+        "bootstrap senza scelti deve dare None"
     print("SMOKE OK: payload conforme a dailyDecide/dailyReview, anonimizzato,")
-    print("normalizzazione a base 100, review cieco senza rationale, fail-closed attivo")
+    print("normalizzazione a base 100, review cieco senza rationale, fail-closed attivo,")
+    print("selezione uniforme e bootstrap riproducibili")
     return 0
 
 
 if __name__ == "__main__":
+    if "--combine" in sys.argv:
+        sys.exit(combine(sys.argv[sys.argv.index("--combine") + 1:]))
     if "--smoke" in sys.argv:
         sys.exit(smoke())
     try:
