@@ -541,7 +541,7 @@ non 730 giorni, vedi CHANGELOG).
 
 Lettura onesta del confronto. Quei progetti sono **cassette degli attrezzi** per programmatori (motori di backtest ed esecuzione su server sempre accesi, molti exchange); nessuno contiene una strategia che guadagna, e TradingAgents si definisce da solo "research scaffold", con gli ordini eseguiti su un exchange simulato (README di github.com/TauricResearch/TradingAgents, v0.7.1). La nostra è un'app iPhone per una persona, tre strategie fisse su Alpaca, senza server. "Meglio" in generale non è misurabile; lo è su tre punti dove loro sono davvero avanti e che contano per i soldi: le proposte 24 e 27 qui sotto. Dove siamo già diversi: app nativa iPhone (nell'elenco github.com/LLMQuant/awesome-trading-agents nessun progetto lo è), rischio in codice, e una pagella che misura se l'AI aggiunge qualcosa e lo scrive anche quando la risposta è no.
 
-### 24 · Test di parità studio ↔ app — PROPOSTA, la prima da fare
+### 24 · Test di parità studio ↔ app — FATTO per la CRYPTO il 14/11/2026 (520 barre su 520 uguali); giornaliera e notte da fare
 
 - **Fatto**: Freqtrade, Nautilus Trader e Jesse eseguono backtest e trading reale con lo STESSO codice di strategia. Da noi lo studio è in Python (`tools/`) e l'app in Swift: possono divergere senza che nessun test se ne accorga. Il 14/11 ne è stata trovata una (ATR della crypto: media semplice nell'app, Wilder nello studio; corretta nella 1.6.9).
 - **Proposta**: per ogni strategia (crypto V4, giornaliera, notte) lo script dello studio scrive un file di riferimento con le barre e, giorno per giorno, segnale, ATR e livello di stop attesi; un test Swift verifica che l'app dia gli stessi valori.
@@ -560,7 +560,7 @@ Lettura onesta del confronto. Quei progetti sono **cassette degli attrezzi** per
 - **Hummingbot / OctoBot (market making, arbitraggio)**: richiedono esecuzione continua, più exchange e commissioni basse. Con un'app che gira solo aperta e le commissioni crypto di Alpaca non è praticabile.
 - **TradingAgents e varianti (crypto, Alpaca)**: la struttura a ruoli (analisti, ricercatori pro e contro, trader, rischio) è quella che l'app ha già (consiglio di specialisti, Brain, Reviewer, rischio in codice). Aggiungere altri agenti senza una misura che li giustifichi aumenterebbe solo il costo Kimi.
 
-### 27 · Prova sul conto paper delle ipotesi crypto — PRONTA, aspetta il sì del proprietario
+### 27 · Prova sul conto paper delle ipotesi crypto — ESEGUITA il 14/11/2026 (run 43557460572): 12 su 12 confermate
 
 - `tools/prova_crypto_paper.py` e flusso manuale "Prova crypto su conto PAPER": circa 12 dollari finti di BTC comprati e rivenduti, tabella con ogni ipotesi CONFERMATA o DIVERSA. Dettagli in VERIFICHE.md punto 14. È il corrispondente del "dry-run" di Freqtrade: prima di fidarsi, si prova sul broker vero senza soldi veri.
 

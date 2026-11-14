@@ -715,9 +715,16 @@ enum QuantSwarmError: LocalizedError {
     /// TUTTI i nuovi ordini finché non si toglie dal pannello Alpaca
     /// (app.alpaca.markets → impostazioni del conto, voce Trades Suspended).
     /// Non è un problema dell'app né del singolo simbolo.
+    ///
+    /// Conta SOLO il messaggio. Il codice 40310000 da solo non basta: Alpaca lo
+    /// usa per ogni rifiuto 403, compreso il saldo insufficiente (prova sul
+    /// conto paper del 14/11/2026, run 43557460572: "insufficient balance for
+    /// BTC (requested: …, available: 0)" con lo stesso codice). Guardando il
+    /// codice, un ordine rifiutato per saldo faceva comparire "TRADING
+    /// SOSPESO" e il pulsante RIATTIVA TRADING: diagnosi sbagliata.
     static func isAccountFrozen(_ error: Error) -> Bool {
         let text = (error as? LocalizedError)?.errorDescription ?? error.localizedDescription
-        return text.contains("40310000") || text.contains("rejected by user request")
+        return text.contains("rejected by user request")
     }
 }
 
