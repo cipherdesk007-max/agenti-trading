@@ -57,7 +57,7 @@ private enum Formatters {
 
     static func percent(_ value: Double?) -> String {
         guard let value else { return "—" }
-        return String(format: "%.1f%%", locale: Locale(identifier: "en_US_POSIX"), value * 100)
+        return String(format: "%.1f%%", locale: Theme.numberLocale, value * 100)
     }
 
     static func trimmed(_ raw: String) -> String {
@@ -455,7 +455,7 @@ struct TerminalDashboardView: View {
         let summary = EquityHistory.summary(points)
         let series = EquityHistory.normalized(points)
         let capital = engine.account.map { min(engine.strategyConfig.capitalCap, $0.equityValue) }
-        func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", $0 * 100) } ?? "—" }
+        func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", locale: Theme.numberLocale, $0 * 100) } ?? "—" }
         return VStack(alignment: .leading, spacing: 8) {
             panelHeader("Capitale bot · contro SPY")
             portfolioRow(
@@ -492,8 +492,8 @@ struct TerminalDashboardView: View {
     private var shadowPanel: some View {
         let s = engine.shadowSummary
         let stats = engine.entryStats
-        func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", $0 * 100) } ?? "—" }
-        func win(_ v: Double?) -> String { v.map { String(format: "%.0f%% in guadagno", $0 * 100) } ?? "—" }
+        func pct(_ v: Double?) -> String { v.map { String(format: "%+.2f%%", locale: Theme.numberLocale, $0 * 100) } ?? "—" }
+        func win(_ v: Double?) -> String { v.map { String(format: "%.0f%% in guadagno", locale: Theme.numberLocale, $0 * 100) } ?? "—" }
         func group(_ g: ShadowSummary.Group) -> String { g.count == 0 ? "—" : "\(g.count) · \(pct(g.average)) · \(win(g.winRate))" }
         let verdict: (String, Color) = {
             switch s.verdict {
@@ -840,10 +840,17 @@ struct TerminalDashboardView: View {
                 StatusChip(text: displayedMode.shortLabel.capitalized,
                            color: displayedMode == .intraday ? Theme.amber : Theme.accent)
             }
-            Text(engine.isRunning ? engine.currentActivity : idleHint)
-                .font(.callout)
-                .foregroundStyle(.white)
-                .fixedSize(horizontal: false, vertical: true)
+            // "In attesa: prossimo controllo alle…" e il conto alla rovescia qui
+            // sotto dicevano la stessa cosa due volte: quando c'è il conto alla
+            // rovescia basta quello (con l'ora).
+            let onlyWaiting = engine.isRunning && engine.activeMode?.runsOnSchedule == true
+                && engine.nextCheckAt != nil && engine.currentActivity.hasPrefix("In attesa")
+            if !onlyWaiting {
+                Text(engine.isRunning ? engine.currentActivity : idleHint)
+                    .font(.callout)
+                    .foregroundStyle(.white)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             if engine.isRunning, engine.activeMode?.runsOnSchedule == true, let next = engine.nextCheckAt {
                 TimelineView(.periodic(from: .now, by: 1)) { context in
                     let left = max(0, next.timeIntervalSince(context.date))
@@ -851,9 +858,12 @@ struct TerminalDashboardView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         ProgressView(value: 1 - min(left / cycle, 1))
                             .tint(terminalGreen)
-                        Text(left > 0 ? String(format: "Prossimo controllo tra %d:%02d", Int(left) / 60, Int(left) % 60) : "Controllo in corso…")
-                            .font(.caption.monospacedDigit())
-                            .foregroundStyle(Theme.textSecondary)
+                        Text(left > 0
+                             ? "Prossimo controllo alle \(next.formatted(date: .omitted, time: .shortened)) (tra "
+                                + String(format: "%d:%02d", Int(left) / 60, Int(left) % 60) + ")"
+                             : "Controllo in corso…")
+                            .font(.callout.monospacedDigit())
+                            .foregroundStyle(Theme.textPrimary)
                     }
                 }
             }

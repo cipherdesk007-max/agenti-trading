@@ -12,6 +12,9 @@ enum Theme {
     static let surfaceHigh = Color(red: 0.118, green: 0.149, blue: 0.184)  // #1E262F
     static let stroke = Color.white.opacity(0.08)
     static let green = Color(red: 0.20, green: 0.83, blue: 0.52)           // spia verde #33D485
+    /// Numeri sullo schermo all'italiana (virgola decimale), uguali in tutte le
+    /// schermate. Solo per ciò che si legge: mai per valori da rileggere come numero.
+    static let numberLocale = Locale(identifier: "it_IT")
     /// Avorio strumento: comandi (pulsanti, scheda scelta) e numeri principali.
     static let ivory = Color(red: 0.949, green: 0.918, blue: 0.855)        // #F2EADA
     static let cyan = Color(red: 0.36, green: 0.80, blue: 1.0)

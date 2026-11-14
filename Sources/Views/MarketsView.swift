@@ -186,12 +186,12 @@ private struct MarketTile: View {
             Text(insight.symbol)
                 .font(.subheadline.weight(.bold))
                 .foregroundStyle(Theme.textPrimary)
-            Text(insight.close.map { String(format: "%.2f", $0) } ?? "—")
+            Text(insight.close.map { String(format: "%.2f", locale: Theme.numberLocale, $0) } ?? "—")
                 .tabularNumber(.caption, .semibold)
                 .foregroundStyle(Theme.textSecondary)
             // Riga sempre presente (segnaposto invisibile senza variazione):
             // tutte le tile della griglia restano alte uguali.
-            Text(insight.dayChange.map { String(format: "%+.2f%%", $0 * 100) } ?? " ")
+            Text(insight.dayChange.map { String(format: "%+.2f%%", locale: Theme.numberLocale, $0 * 100) } ?? " ")
                 .font(.caption2.weight(.bold))
                 .monospacedDigit()
                 .foregroundStyle(insight.dayChange.map(Theme.signed) ?? .clear)
@@ -361,7 +361,7 @@ struct MarketDetailView: View {
                            filled: insight.state == .held)
                 Spacer()
                 if let close = insight.close ?? fallbackPrice {
-                    Text(String(format: "%.2f", close))
+                    Text(String(format: "%.2f", locale: Theme.numberLocale, close))
                         .tabularNumber(.title3, .heavy)
                         .accessibilityIdentifier("chart-price")
                 }
@@ -381,11 +381,11 @@ struct MarketDetailView: View {
                     .foregroundStyle(Theme.textSecondary)
                 Spacer()
                 if let change {
-                    Text(String(format: "%+.2f%%", change))
+                    Text(String(format: "%+.2f%%", locale: Theme.numberLocale, change))
                         .tabularNumber(.footnote, .semibold)
                         .foregroundStyle(change >= 0 ? Theme.green : Theme.red)
                 }
-                Text(String(format: "%.2f", price))
+                Text(String(format: "%.2f", locale: Theme.numberLocale, price))
                     .tabularNumber(.title3, .heavy)
                     .accessibilityIdentifier("chart-price")
             }
@@ -513,7 +513,7 @@ struct MarketDetailView: View {
         HStack {
             Text(label).foregroundStyle(Theme.textSecondary)
             Spacer()
-            Text(String(format: "%.\(digits)f", value)).foregroundStyle(Theme.textPrimary).monospacedDigit()
+            Text(String(format: "%.\(digits)f", locale: Theme.numberLocale, value)).foregroundStyle(Theme.textPrimary).monospacedDigit()
         }
         .font(.caption.weight(.semibold))
     }
@@ -599,7 +599,7 @@ private struct CandleChart: View {
     }
 
     private func tag(_ text: String, _ value: Double, _ color: Color) -> some View {
-        Text("\(text) \(String(format: "%.2f", value))")
+        Text("\(text) \(String(format: "%.2f", locale: Theme.numberLocale, value))")
             .font(.system(size: 9, weight: .heavy))
             .foregroundStyle(color)
             .padding(.horizontal, 4)
