@@ -923,27 +923,62 @@ final class QuantSwarmEngine: ObservableObject {
         }
         do {
             try await riskAgent.emergencyFlatten(credentials: credentials.alpaca)
-            statusMessage = "HARD KILL completato"
             log("Alpaca ha accettato cancellazione globale e chiusura delle posizioni.")
-            // Il broker è PIATTO: anche i registri locali devono dirlo. Se il
-            // registro notte restasse con gli acquisti di oggi "in coda"
-            // (ordini appena cancellati), alla ripartenza il ciclo vedrebbe
-            // ancora la coda e salterebbe la ricompra della sera credendola
-            // già fatta (report 21:49: "già in coda" dopo HARD KILL).
-            let acct = account?.accountNumber
-            let books = Self.hardKillBooks(night: NightBookStore.load(account: acct),
-                                            daily: DailyBookStore.load(account: acct),
-                                            crypto: CryptoBookStore.load(account: acct))
-            NightBookStore.save(books.night, account: acct)
-            DailyBookStore.save(books.daily, account: acct)
-            CryptoBookStore.save(books.crypto, account: acct)
-            cryptoPositions = []
-            log("Registri allineati al conto piatto: posizioni, stop e code d'asta azzerati (resta la memoria: registro ombra, pagelle, picco drawdown, contatori).")
-            NotificationManager.shared.notify(
-                "HARD KILL COMPLETATO",
-                body: "Cancellazione ordini, chiusura posizioni e registri azzerati: conto e app dicono la stessa cosa."
-            )
-            await refreshPortfolio()
+            // "Accettato" non vuol dire "fatto": si rilegge il conto. A
+            // mercato chiuso le azioni restano con la vendita in coda fino
+            // all'apertura; una chiusura può anche non essere partita.
+            let check = await verifyFlatAfterKill(credentials: credentials.alpaca)
+            if let check, !check.stillOpen.isEmpty {
+                // Posizioni ancora aperte senza ordine di chiusura: i registri
+                // NON si azzerano, così l'app continua a sapere che esistono.
+                let list = check.stillOpen.joined(separator: ", ")
+                statusMessage = "HARD KILL INCOMPLETO: verifica il broker"
+                log("HARD KILL INCOMPLETO: ancora aperte senza ordine di chiusura: \(list). Ripremi HARD KILL o chiudile dal sito Alpaca. Registri lasciati come sono.")
+                NotificationManager.shared.notify(
+                    "HARD KILL INCOMPLETO",
+                    body: "Ancora aperte: \(list). Ripremi HARD KILL o chiudile dal sito Alpaca."
+                )
+                await refreshPortfolio()
+            } else {
+                // Anche i registri locali devono dire "piatto". Se il
+                // registro notte restasse con gli acquisti di oggi "in coda"
+                // (ordini appena cancellati), alla ripartenza il ciclo vedrebbe
+                // ancora la coda e salterebbe la ricompra della sera credendola
+                // già fatta (report 21:49: "già in coda" dopo HARD KILL).
+                let acct = account?.accountNumber
+                let books = Self.hardKillBooks(night: NightBookStore.load(account: acct),
+                                                daily: DailyBookStore.load(account: acct),
+                                                crypto: CryptoBookStore.load(account: acct))
+                NightBookStore.save(books.night, account: acct)
+                DailyBookStore.save(books.daily, account: acct)
+                CryptoBookStore.save(books.crypto, account: acct)
+                cryptoPositions = []
+                log("Registri allineati: posizioni, stop e code d'asta azzerati (resta la memoria: registro ombra, pagelle, picco drawdown, contatori).")
+                if let check, !check.queued.isEmpty {
+                    let list = check.queued.joined(separator: ", ")
+                    statusMessage = "HARD KILL: chiusure in coda"
+                    log("HARD KILL: \(check.queued.count) posizioni hanno la vendita in coda (\(list)). A mercato chiuso si eseguono alla prossima apertura: fino ad allora restano in portafoglio senza stop.")
+                    NotificationManager.shared.notify(
+                        "HARD KILL: CHIUSURE IN CODA",
+                        body: "Vendita in coda per \(list): a mercato chiuso si esegue alla prossima apertura."
+                    )
+                } else if check != nil {
+                    statusMessage = "HARD KILL completato"
+                    log("HARD KILL verificato: sul conto non restano né posizioni né ordini.")
+                    NotificationManager.shared.notify(
+                        "HARD KILL COMPLETATO",
+                        body: "Conto riletto: nessuna posizione e nessun ordine. Registri azzerati."
+                    )
+                } else {
+                    statusMessage = "HARD KILL inviato: verifica il broker"
+                    log("HARD KILL: richiesta accettata ma il conto non si riesce a rileggere (rete). Controlla sul sito Alpaca che non restino posizioni.")
+                    NotificationManager.shared.notify(
+                        "HARD KILL INVIATO: VERIFICA",
+                        body: "Richiesta accettata, ma non riesco a rileggere il conto: controlla sul sito Alpaca."
+                    )
+                }
+                await refreshPortfolio()
+            }
         } catch {
             statusMessage = "HARD KILL: verifica immediata sul broker"
             log("HARD KILL errore: \(error.localizedDescription)")
@@ -954,6 +989,26 @@ final class QuantSwarmEngine: ObservableObject {
         }
         // Rigenera il report includendo l'esito della liquidazione.
         exportSessionReport(reason: "HARD KILL")
+    }
+
+    /// Rilegge posizioni e ordini dopo la richiesta di chiusura totale: fino a
+    /// quattro letture, una ogni secondo e mezzo, finché non restano posizioni
+    /// senza ordine di chiusura. nil = il conto non si riesce a leggere.
+    private func verifyFlatAfterKill(credentials: AlpacaCredentials) async -> KillCheck? {
+        let service = AlpacaService(credentials: credentials)
+        var last: KillCheck?
+        for attempt in 0..<4 {
+            if attempt > 0 { try? await Task.sleep(nanoseconds: 1_500_000_000) }
+            guard let positions = try? await service.positions(),
+                  let orders = try? await service.openOrders() else { continue }
+            let check = KillCheck.evaluate(
+                positions: positions.map { (symbol: $0.symbol, quantity: $0.quantityValue) },
+                orderSymbols: orders.map(\.symbol)
+            )
+            last = check
+            if check.isFlat { break }
+        }
+        return last
     }
 
     /// HARD KILL riuscito: il broker non ha né ordini né posizioni, quindi via
@@ -973,6 +1028,7 @@ final class QuantSwarmEngine: ObservableObject {
         daily.stops = [:]
         var crypto = crypto
         crypto.positions = []
+        crypto.stopAlerts = nil
         return (night, daily, crypto)
     }
 
@@ -2385,23 +2441,30 @@ extension QuantSwarmEngine {
     /// Giorni di borsa USA dei prossimi 21 giorni dal calendario Alpaca
     /// (GET /v2/calendar). nil se il calendario non risponde o mancano le chiavi:
     /// in quel caso i promemoria restano a ripetizione settimanale, come prima.
-    private func upcomingTradingDays() async -> [String]? {
+    private func upcomingTradingDays() async -> [AlpacaCalendarDay]? {
         guard let credentials else { return nil }
         let now = Date()
-        let days = try? await AlpacaService(credentials: credentials.alpaca)
+        return try? await AlpacaService(credentials: credentials.alpaca)
             .calendar(start: now, end: now.addingTimeInterval(21 * 86_400))
-        return days?.map(\.date)
     }
 
     /// Promemoria nei soli giorni di borsa (calendario Alpaca): niente promemoria
-    /// nei festivi. Senza calendario ripiega sulla ripetizione settimanale.
+    /// nei festivi, e nelle sedute corte l'orario segue la chiusura vera.
+    /// Senza calendario ripiega sulla ripetizione settimanale. Quali promemoria
+    /// servono lo decide ReminderPlan: in PORTAFOGLIO i due della notte
+    /// (prima il confronto era solo con .daily e .night, modalità che la
+    /// migrazione trasforma in .portfolio: non partiva mai nessun promemoria).
     private func rescheduleReminders() async {
         let sanitized = strategyConfig.sanitized
-        let days = await upcomingTradingDays()
-        NotificationManager.shared.scheduleDailyReminder(enabled: sanitized.dailyReminder && sanitized.tradingMode == .daily,
-                                                        tradingDays: days)
-        NotificationManager.shared.scheduleNightReminders(enabled: sanitized.dailyReminder && sanitized.tradingMode == .night,
-                                                          tradingDays: days)
+        let calendar = await upcomingTradingDays()
+        let days = calendar?.map(\.date)
+        var closes: [String: Date] = [:]
+        for day in calendar ?? [] {
+            if let close = day.closeDate { closes[day.date] = close }
+        }
+        let kinds = ReminderPlan.kinds(mode: sanitized.tradingMode, enabled: sanitized.dailyReminder)
+        NotificationManager.shared.scheduleDailyReminder(enabled: kinds.daily, tradingDays: days, closes: closes)
+        NotificationManager.shared.scheduleNightReminders(enabled: kinds.night, tradingDays: days, closes: closes)
     }
 
     fileprivate func startDaily(credentials: StoredCredentials, kimi: KimiService) async {

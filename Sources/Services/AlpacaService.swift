@@ -854,9 +854,17 @@ actor AlpacaService {
         return try JSONDecoder().decode(AlpacaOrder.self, from: data)
     }
 
+    /// Chiusura d'emergenza: annulla tutti gli ordini, poi chiude tutte le
+    /// posizioni. `cancel_orders=true` fa annullare ad Alpaca gli ordini
+    /// aperti PRIMA di liquidare (docs.alpaca.markets/reference/
+    /// deleteallopenpositions-1): l'annullo del primo passo è asincrono e una
+    /// posizione con lo stop ancora "in annullamento" non si chiuderebbe.
+    /// La risposta è un elenco con un esito per posizione: che il conto sia
+    /// davvero piatto lo dice solo la rilettura (KillCheck), non questo "ok".
     func cancelAllAndFlatten() async throws {
         _ = try await send(path: "/v2/orders", method: "DELETE")
-        _ = try await send(path: "/v2/positions", method: "DELETE")
+        _ = try await send(path: "/v2/positions", method: "DELETE",
+                           query: [URLQueryItem(name: "cancel_orders", value: "true")])
     }
 
     private func send(

@@ -5,6 +5,37 @@ Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Sem
 La versione installata si legge in **SISTEMA → VERSIONE** (con il numero di build della CI).
 Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
+## [1.6.9] - 14/11/2026
+
+Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (crypto, HARD KILL, promemoria) e correzione dei difetti trovati, ognuno con il suo test. Nessuna chiamata Kimi.
+
+### Corretto (CRYPTO: la modalità non poteva funzionare su un conto vero)
+
+- **La posizione appena comprata spariva dal registro dopo 60 secondi.** Alpaca scrive la stessa coppia in due modi: `BTC/USD` negli ordini e nei dati, `BTCUSD` (senza barra) nell'elenco delle posizioni. L'app le confrontava così come sono, quindi a ogni controllo la posizione risultava "non più sul broker": veniva tolta dal registro e il suo stop annullato. Risultato: posizione vera sul conto, senza stop e che l'app non seguiva più. Ora il confronto passa da `CryptoSymbol` (stessa chiave per le due scritture). Con i broker finti dei test il difetto non si vedeva: il finto usava la stessa scrittura dappertutto.
+- **Lo stop dopo l'acquisto veniva chiesto troppo presto e della misura sbagliata.** L'ordine a mercato su Alpaca nasce "in attesa" e si esegue un attimo dopo, e la commissione crypto si paga nella moneta comprata (sul conto arriva un po' meno dell'eseguito). L'app metteva lo stop subito e per la quantità ordinata: il broker lo rifiutava. Ora aspetta l'esecuzione (fino a 5 letture dello stato), rilegge la quantità che il conto ha davvero e copre quella; se l'ordine non si esegue, il residuo viene annullato e non resta niente in sospeso.
+- **Nessun doppio acquisto e nessuna doppia vendita se la rete cade a metà.** Ogni ordine ha già un identificativo fisso (`client_order_id`); ora, quando un invio fallisce, l'app cerca quell'identificativo sul broker prima di concludere che l'ordine non c'è. Se c'è lo adotta (anche dopo che l'app è stata chiusa a metà dell'operazione); se non si riesce a sapere, non scrive niente nel registro e ricontrolla al tick successivo. Un no esplicito del broker (saldo, conto sospeso) non viene ritentato sulla stessa barra.
+- **L'uscita fallita non veniva ritentata fino al giorno dopo**, anche se il log diceva "si riprova al prossimo tick": la barra restava segnata come già valutata. Ora torna da valutare e si riprova dopo 60 secondi. Inoltre una vendita accettata dal broker ma con lo stato non leggibile veniva trattata come fallita: ora conta come inviata.
+- **Annullo dello stop confermato prima di vendere o di sostituirlo.** Su Alpaca l'annullo è asincrono: finché lo stop è "in annullamento" la quantità resta impegnata e la vendita (o il nuovo stop) viene rifiutata. Ora l'app aspetta la conferma; se non arriva, lascia lo stop dov'è e riprova al tick dopo.
+- **Stop "mancante" che in realtà c'era.** Prima di rimettere uno stop l'app guarda gli stop vivi sul broker: se ce n'è uno della misura giusta lo adotta; se è della misura sbagliata lo toglie e ne mette uno giusto. Prima ne chiedeva un secondo, rifiutato a ogni ciclo.
+- **Avviso "senza stop" una volta al giorno per coppia**, non ogni 60 secondi (il tentativo di ripristino continua a ogni ciclo).
+- **Acquisto calcolato sul prezzo di adesso**, non sulla chiusura di ieri (l'app può essere aperta ore dopo la barra). Se il prezzo live è già sotto lo stop della barra di rottura l'ingresso salta; se il prezzo live manca non si compra e si riprova. Due ingressi nello stesso controllo non possono più spendere due volte lo stesso contante, e sul contante si tiene un margine del 2% (senza, l'ultima posizione veniva rifiutata per saldo insufficiente).
+- **Chandelier salito ma prezzo già sotto il nuovo livello**: lo stop vecchio non viene più annullato per metterne uno che il broker rifiuterebbe.
+- **Segnale d'ingresso bloccato da un motivo passeggero** (app in background, blocco drawdown): non viene più perso, si rivaluta quando il blocco cade.
+- **ATR uguale a quello dello studio.** L'app usava la media semplice delle ultime 22 barre, lo studio (`tools/backtest_trend_crypto.py`) l'ATR di Wilder. La distanza dello stop era quindi diversa da quella provata nel backtest. Ora la formula è la stessa. Non è un cambio di strategia: è l'app che torna a fare ciò che lo studio ha misurato.
+
+### Corretto (HARD KILL e promemoria)
+
+- **HARD KILL diceva "completato" senza controllare.** Alpaca risponde "ok" alla richiesta di chiudere tutto anche se una singola chiusura non parte, e a mercato chiuso le azioni restano in portafoglio con la vendita in coda. Ora, dopo la richiesta, l'app rilegge posizioni e ordini (fino a 4 volte) e dice che cosa c'è davvero: conto piatto, chiusure in coda fino all'apertura, oppure HARD KILL INCOMPLETO con l'elenco dei simboli ancora aperti (in quel caso i registri non vengono azzerati). La richiesta di chiusura usa `cancel_orders=true`, così gli ordini vengono annullati da Alpaca prima della liquidazione.
+- **In PORTAFOGLIO non partiva nessun promemoria.** L'interruttore accendeva i promemoria solo per le vecchie modalità GIORNALIERA e NOTTE, che l'app trasforma in PORTAFOGLIO: di fatto mai. Ora PORTAFOGLIO riceve i due della notte (8:45 di New York per la vendita, 45 minuti prima della chiusura per l'acquisto e il controllo giornaliero).
+- **Sedute corte** (chiusura alle 13:00 di New York, per esempio venerdì 27/11/2026): il promemoria d'acquisto segue la chiusura vera di quel giorno. Prima sarebbe arrivato a mercato già chiuso.
+
+### Da sapere (non sono difetti, ma differenze dichiarate)
+
+- CRYPTO: lo stop sul broker scatta durante la giornata; lo studio esce solo alla chiusura giornaliera. L'app è quindi più prudente dello studio e i risultati possono differire.
+- CRYPTO: l'app compra quando la apri. Se la apri ore dopo la chiusura della barra, il prezzo d'ingresso non è quello dello studio.
+- La modalità CRYPTO non è ancora stata provata su un conto Alpaca vero: i passi sono in `docs/VERIFICHE.md` (punto 14).
+- Test: **+31** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria).
+
 ## [1.6.8] - 14/11/2026
 
 ### Corretto (statistica della prova in ombra: bootstrap per giorno e disaccordi · 14/11/2026, revisione del proprietario del commit precedente)

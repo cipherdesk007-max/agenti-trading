@@ -2094,10 +2094,10 @@ private struct SystemSettingsView: View {
                 .font(.callout.weight(.semibold))
                 .tint(Theme.accent)
 
-            Toggle("Promemoria 15:30 New York (21:30 Italia)", isOn: $draft.dailyReminder)
+            Toggle("Promemoria per aprire l'app", isOn: $draft.dailyReminder)
                 .font(.callout.weight(.semibold))
                 .tint(Theme.accent)
-            Text("Lun–ven, mezz'ora prima della chiusura USA: ti ricorda di aprire l'app per la modalità giornaliera. iOS non permette di leggere le chiavi protette da Face ID in background, quindi l'app non controlla da sola: ti avvisa.")
+            Text("Nei giorni di borsa USA, in modalità PORTAFOGLIO: alle 8:45 di New York (di solito le 14:45 in Italia) per la vendita della notte, e 45 minuti prima della chiusura (di solito le 21:15 in Italia) per l'acquisto della notte e il controllo giornaliero. iOS non permette di leggere le chiavi protette da Face ID in background, quindi l'app non controlla da sola: ti avvisa.")
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)

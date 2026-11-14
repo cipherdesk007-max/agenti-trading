@@ -93,8 +93,11 @@ final class CryptoStrategyTests: XCTestCase {
 
     func testPositionBudgetIsOneFifthOfTotal() {
         XCTAssertEqual(CryptoStrategy.positionBudget(total: 5_000, cash: 5_000), 1_000, accuracy: 0.0001)
-        // La cassa vince se è minore: mai usare soldi che non ci sono.
-        XCTAssertEqual(CryptoStrategy.positionBudget(total: 5_000, cash: 300), 300, accuracy: 0.0001)
+        // La cassa vince se è minore, meno il margine del 2%: un ordine a
+        // mercato si esegue un po' sopra la quotazione e senza margine il
+        // broker rifiuterebbe l'ultima posizione per saldo insufficiente.
+        XCTAssertEqual(CryptoStrategy.positionBudget(total: 5_000, cash: 300), 294, accuracy: 0.0001)
+        XCTAssertEqual(CryptoStrategy.positionBudget(total: 5_000, cash: -10), 0, accuracy: 0.0001)
         XCTAssertEqual(CryptoStrategy.positionBudget(total: 0, cash: 100), 0, accuracy: 0.0001)
     }
 
@@ -161,5 +164,45 @@ final class CryptoStrategyTests: XCTestCase {
         XCTAssertTrue(CryptoStrategy.priceText(8.118).hasPrefix("8,118") ||
                       CryptoStrategy.priceText(8.118).hasPrefix("8.118"))
         XCTAssertFalse(CryptoStrategy.priceText(1_925.11).contains(","), "niente decimali sopra 1000")
+    }
+
+    // MARK: - ATR come nello studio
+
+    /// L'ATR è quello di Wilder dello studio (ewm alpha=1/22), non la media
+    /// semplice delle ultime 22 barre: dopo 30 barre a escursione doppia la
+    /// media semplice direbbe 4, Wilder è ancora a 3,50.
+    func testATRIsWilderAsInTheStudy() {
+        var bars: [Candle] = []
+        for day in 0..<230 {
+            let range = day < 200 ? 1.0 : 2.0
+            bars.append(Candle(timestamp: Date(timeIntervalSince1970: 1_735_689_600 + Double(day) * 86_400),
+                               open: 100, high: 100 + range, low: 100 - range, close: 100, volume: 1_000))
+        }
+        let expected = 4 - 2 * pow(21.0 / 22.0, 30)
+        XCTAssertEqual(CryptoStrategy.atr22(bars) ?? 0, expected, accuracy: 1e-9)
+        XCTAssertEqual(expected, 3.5046, accuracy: 0.001)
+    }
+
+    func testATRNeedsEnoughBars() {
+        let few = (0..<22).map { day in
+            Candle(timestamp: Date(timeIntervalSince1970: Double(day) * 86_400),
+                   open: 100, high: 101, low: 99, close: 100, volume: 1)
+        }
+        XCTAssertNil(CryptoStrategy.atr22(few))
+    }
+
+    // MARK: - Simboli: "BTC/USD" negli ordini, "BTCUSD" nell'elenco posizioni
+
+    func testPositionIsFoundWhenBrokerWritesThePairWithoutSlash() {
+        let positions: [(symbol: String, quantity: Double)] = [("ETHUSD", 1.5), ("BTCUSD", 0.0123)]
+        XCTAssertEqual(CryptoSymbol.quantity(of: "BTC/USD", in: positions), 0.0123, accuracy: 1e-12)
+        XCTAssertEqual(CryptoSymbol.quantity(of: "ETH/USD", in: positions), 1.5, accuracy: 1e-12)
+        XCTAssertEqual(CryptoSymbol.key("btc/usd"), "BTCUSD")
+    }
+
+    func testAbsentOrSimilarPairIsNotMistaken() {
+        let positions: [(symbol: String, quantity: Double)] = [("BTCUSDT", 2), ("SPY", 10)]
+        XCTAssertEqual(CryptoSymbol.quantity(of: "BTC/USD", in: positions), 0, accuracy: 1e-12)
+        XCTAssertEqual(CryptoSymbol.quantity(of: "SOL/USD", in: []), 0, accuracy: 1e-12)
     }
 }

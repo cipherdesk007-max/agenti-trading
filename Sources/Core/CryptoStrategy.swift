@@ -57,19 +57,23 @@ enum CryptoStrategy {
         let chandelier: Double?
     }
 
+    /// ATR di Wilder a 22 barre, la STESSA formula dello studio
+    /// (tools/backtest_trend_crypto.py: `tr.ewm(alpha=1/22, adjust=False)`),
+    /// calcolata su tutte le barre ricevute: il primo true range è massimo
+    /// meno minimo, poi ogni barra pesa 1/22. Con le ~260 barre che l'app
+    /// scarica il valore coincide con quello dello studio (il peso della
+    /// barra di partenza è sotto lo 0,01%).
     static func atr22(_ bars: [Candle]) -> Double? {
         guard bars.count >= atrPeriod + 1 else { return nil }
-        // ATR wilderizzato come nello studio (ewm alpha=1/n su true range).
-        var atr = 0.0
-        for i in (bars.count - atrPeriod)..<bars.count {
+        let alpha = 1.0 / Double(atrPeriod)
+        var atr = bars[0].high - bars[0].low
+        for i in 1..<bars.count {
             let tr = max(bars[i].high - bars[i].low,
-                          abs(bars[i].high - bars[i - 1].close),
-                          abs(bars[i].low - bars[i - 1].close))
-            atr += tr
+                         abs(bars[i].high - bars[i - 1].close),
+                         abs(bars[i].low - bars[i - 1].close))
+            atr += alpha * (tr - atr)
         }
-        // Approssimazione della ewm su 22 barre: media dei true range delle
-        // ultime 22 barre (leggermente più conservativa della ewm piena).
-        return atr / Double(atrPeriod)
+        return atr
     }
 
     /// SMA200 sulle chiusure delle ultime 200 barre chiuse.
@@ -119,10 +123,16 @@ enum CryptoStrategy {
                       donchianHigh: don, atr22: atr, chandelier: nil)
     }
 
-    /// Budget per coppia: 1/5 del budget crypto (equal-weight, come lo studio).
+    /// Margine tenuto sul contante: un ordine a mercato si esegue un po' sopra
+    /// la quotazione e senza margine l'ultima posizione (quella limitata dal
+    /// contante) verrebbe rifiutata per saldo insufficiente.
+    static let cashBuffer = 0.02
+
+    /// Budget per coppia: 1/5 del budget crypto (equal-weight, come lo studio),
+    /// mai più del contante libero meno il margine.
     static func positionBudget(total: Double, cash: Double) -> Double {
         guard total > 0 else { return 0 }
-        return min(total / Double(pairs.count), cash)
+        return min(total / Double(pairs.count), max(cash, 0) * (1 - cashBuffer))
     }
 
     /// Quantità frazionata: Alpaca crypto accetta fino a 9 decimali, qui 8
@@ -176,6 +186,23 @@ extension CryptoStrategy.Signal {
     }
 }
 
+/// Su Alpaca la stessa coppia ha due scritture: "BTC/USD" negli ordini e nei
+/// dati di mercato, "BTCUSD" (senza barra) nell'elenco delle posizioni
+/// (alpaca.markets/support/symbology-positions-list). Ogni confronto fra le
+/// due passa da qui: confrontarle così come sono dà sempre "non c'è".
+enum CryptoSymbol {
+    /// Chiave di confronto: maiuscolo, senza barra ("BTC/USD" e "btcusd" -> "BTCUSD").
+    static func key(_ symbol: String) -> String {
+        symbol.uppercased().replacingOccurrences(of: "/", with: "")
+    }
+
+    /// Quantità della coppia nell'elenco posizioni del broker (0 = assente).
+    static func quantity(of pair: String, in positions: [(symbol: String, quantity: Double)]) -> Double {
+        let wanted = key(pair)
+        return positions.first { key($0.symbol) == wanted }?.quantity ?? 0
+    }
+}
+
 /// Registro della modalità CRYPTO (posizioni, picco equity, barre già
 /// valutate): Codable leggero in UserDefaults, come DailyBook. Le quantità
 /// sono frazionate (0.000123 BTC), mai azioni intere.
@@ -200,6 +227,10 @@ struct CryptoBook: Codable, Sendable, Equatable {
     var cashPeak: Double?
     /// Barra già valutata per simbolo (ultima barra chiusa processata).
     var evaluatedBars: [String: String] = [:]
+    /// Giorno dell'ultimo avviso "posizione senza stop" per coppia: l'avviso
+    /// parte una volta al giorno, non a ogni ciclo da 60 secondi. Opzionale:
+    /// i registri salvati dalle versioni precedenti non hanno il campo.
+    var stopAlerts: [String: String]?
 
     func position(_ symbol: String) -> Position? {
         positions.first { $0.symbol == symbol }
