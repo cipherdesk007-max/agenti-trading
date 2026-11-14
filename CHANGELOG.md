@@ -42,6 +42,7 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 ### Aggiunto (verifica, nessuna funzione nuova)
 
 - **Test di parità studio ↔ app per la CRYPTO** (proposta 24). Lo studio è in Python, l'app in Swift: due codici che devono applicare la stessa regola. `tools/genera_parita_crypto.py` fa girare il codice dello studio (non una copia) su una serie fissa di 720 barre e scrive che cosa decide barra per barra; `Tests/CryptoParityTests.swift` rifà le stesse barre con il codice dell'app. Devono coincidere stato (dentro o fuori), ATR22, SMA200 e Donchian20 su tutte le 520 barre con decisione (6 ingressi, 6 uscite). Con la formula dell'ATR usata fino alla 1.6.8 il test sarebbe fallito: stato diverso dallo studio in 13 barre su 520 e ATR fino al 20% diverso.
+- **Test di parità anche per la GIORNALIERA.** `tools/genera_parita_giornaliera.py` fa girare la funzione `indicators` dello studio (`tools/backtest_app.py`) su 560 barre fisse; `Tests/DailyParityTests.swift` verifica che l'app calcoli le stesse SMA200, SMA5, RSI2 e ATR14 e riconosca gli stessi segnali (chiusura sopra la SMA200 con RSI2 sotto 10; uscita sopra la SMA5) su 356 barre su 356, con 20 segnali d'ingresso. Qui non c'era nessuna differenza da correggere. Per la NOTTE non c'è un segnale da confrontare (compra sempre i 4 indici a peso uguale): la ripartizione in azioni intere è coperta dai suoi test.
 - **Pulsante "CONTROLLA ORA" su una riga** (andava a capo accanto a STOP) ed etichette dei pulsanti centrate quando sono su due righe.
 - **Test dell'interfaccia**: se il simulatore non fa partire il runner, il flusso aspetta e riprova una volta (nel run 43552818891 nessun test era cominciato).
 
@@ -62,7 +63,7 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 - CRYPTO: lo stop sul broker scatta durante la giornata; lo studio esce solo alla chiusura giornaliera. L'app è quindi più prudente dello studio e i risultati possono differire.
 - CRYPTO: l'app compra quando la apri. Se la apri ore dopo la chiusura della barra, il prezzo d'ingresso non è quello dello studio.
 - CRYPTO: gli ordini (acquisto, stop, annullo, vendita) sono provati sul conto paper; il ciclo completo dell'app con un segnale vero no, perché serve una rottura sopra la media a 200 giorni (`docs/VERIFICHE.md`, punto 14).
-- Test: **+45** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria, 2 sulle chiamate ad Alpaca, 2 sull'uscita della giornaliera, 2 di parità con lo studio, 2 sul riconoscimento del trading sospeso, 6 su MERCATI crypto). Totale 341.
+- Test: **+47** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria, 2 sulle chiamate ad Alpaca, 2 sull'uscita della giornaliera, 2 di parità con lo studio, 2 sul riconoscimento del trading sospeso, 6 su MERCATI crypto, 2 di parità della giornaliera). Totale 343.
 
 ## [1.6.8] - 14/11/2026
 
