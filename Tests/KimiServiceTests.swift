@@ -140,6 +140,39 @@ final class KimiServiceTests: XCTestCase {
         XCTAssertEqual(riletta.promptVersion, KimiService.PromptVersion.dailyDecide)
     }
 
+    func testShadowEntryRulesPickRetrocompatibile() throws {
+        // Prova in ombra proposta 22: le voci di prima non hanno il flag e
+        // restano fuori SOLO dalla pagella dell'ordine a regole.
+        let vecchia = """
+        {"symbol": "SPY", "day": "2026-11-12", "entry": 500, "stop": 480, "outcome": "comprato"}
+        """
+        let entry = try JSONDecoder().decode(ShadowEntry.self, from: Data(vecchia.utf8))
+        XCTAssertNil(entry.rulesPick, "le voci registrate prima della prova in ombra restano leggibili")
+        var conFlag = entry
+        conFlag.rulesPick = true
+        let data = try JSONEncoder().encode(conFlag)
+        let riletta = try JSONDecoder().decode(ShadowEntry.self, from: data)
+        XCTAssertEqual(riletta.rulesPick, true)
+    }
+
+    // MARK: - Proposta 23: default modello kimi-k3.1-pro (metà prezzo, stesso modello)
+
+    func testDefaultModelloKimiESalvataggiPrecedenti() throws {
+        // Il default dell'app cambia (stesso modello di highspeed, metà prezzo:
+        // 2,00/10,00 contro 4,00/20,00 USD per Mtoken, pagina ufficiale
+        // https://www.kimi.ai/it/resources/kimi-k3-1-pro-pricing).
+        XCTAssertEqual(SystemLimits.kimiModel, "kimi-k3.1-pro")
+        // Chi aveva già salvato "kimi-k3.1-pro-highspeed" in SISTEMA lo tiene.
+        let salvata = try JSONDecoder().decode(StrategyConfig.self, from: Data(#"{"kimiModel": "kimi-k3.1-pro-highspeed"}"#.utf8))
+        XCTAssertEqual(salvata.sanitized.kimiModel, "kimi-k3.1-pro-highspeed",
+                       "il valore salvato vince sul default: nessun cambio a chi l'aveva scelto")
+        // Campo vuoto o assente: ricade sul default nuovo.
+        let vuota = try JSONDecoder().decode(StrategyConfig.self, from: Data(#"{"kimiModel": "   "}"#.utf8))
+        XCTAssertEqual(vuota.sanitized.kimiModel, "kimi-k3.1-pro")
+        let assente = try JSONDecoder().decode(StrategyConfig.self, from: Data("{}".utf8))
+        XCTAssertEqual(assente.sanitized.kimiModel, "kimi-k3.1-pro")
+    }
+
     // MARK: - NewsSpecialist: un titolo con un ordine resta solo testo (punto d)
 
     func testTitoloConOrdineIniettatoRestaSoloTesto() {

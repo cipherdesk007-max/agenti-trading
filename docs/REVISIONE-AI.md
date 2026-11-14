@@ -1,3 +1,83 @@
+# Revisione AI · 14/11/2026 (sera) · Decisioni del proprietario applicate: proposta 23 (default kimi-k3.1-pro) + proposta 22 SOLO in ombra
+
+Richiesta: "Ok su tutto" con tre decisioni: (1) proposta 23 SÌ: default
+`kimi-k3.1-pro`, chi aveva salvato highspeed resta com'è, CHANGELOG spiega
+come cambiarlo a mano; (2) proposta 22 SÌ ma SOLO IN OMBRA: accanto a ogni
+decisione della giornaliera si registra che cosa avrebbe scelto l'ordine a
+regole, pagella separata, criterio di attivazione scritto PRIMA in
+AGENTI.md, nessun ordine cambia; (3) costo nell'app: usare le tariffe dello
+script SOLO se l'app mostra un costo stimato, altrimenti scriverlo e non
+aggiungere niente. Un push, build verde, nessuna chiamata Kimi.
+
+| Punto | Commit | Build CI |
+|---|---|---|
+| Default modello + prova in ombra ordine a regole + 7 test | (questo commit) | prima build verde di questo commit su Actions (≥ 216) |
+
+## Cosa è stato fatto (verificato nel codice)
+
+- **Proposta 23 APPLICATA**: `SystemLimits.kimiModel` passa a
+  `kimi-k3.1-pro` (Sources/Models/TradingModels.swift:12) con commento che
+  cita la decisione e i prezzi ufficiali (2,00/10,00 contro 4,00/20,00 USD
+  per Mtoken). Il campo resta modificabile in SISTEMA (TextField +
+  "Modelli disponibili" dall'account Kimi); il placeholder del campo
+  aggiornato. Retrocompatibilità VERIFICATA nel codice: la config salvata
+  si rilegge con `decodeIfPresent ?? SystemLimits.kimiModel`, quindi chi
+  aveva salvato `kimi-k3.1-pro-highspeed` lo mantiene; il campo vuoto ricade
+  sul default nuovo. Test: default, valore salvato che vince, campo vuoto.
+- **Proposta 22 IN OMBRA**: nuovo `RulesOrder` (DailyStrategy.swift):
+  classifica dei candidati per RSI2 crescente, poi correlazione più bassa
+  (massimo valore assoluto verso le posizioni aperte, poi verso gli altri
+  candidati), poi simbolo. Il ciclo giornaliero (DailyCycle.swift)
+  registra in ogni voce del registro ombra il flag `rulesPick`: true se
+  l'ordine a regole, con gli STESSI posti liberi e sullo STESSO elenco che
+  ha visto il Brain, avrebbe comprato quel candidato. Nessun ordine
+  cambia, nessuna chiamata Kimi in più (il flag si calcola in codice,
+  zero crediti).
+- **Pagella separata** (pannello PAGELLA AGENTI, sezione "Ordine a regole ·
+  prova in ombra"): gruppi REGOLE-scelti/REGOLE-scartati, differenza
+  REGOLE − Brain e, da 30 esiti risolti per lato, l'IC 95% bootstrap della
+  differenza REGOLE − BRAIN calcolato IN-APP (`ShadowBootstrap.interval95`:
+  SplitMix64 seed 42, 5000 ricampionamenti, percentili 2,5-97,5, identico
+  al metodo del banco). Le voci vecchie (flag nil, registrate prima) restano
+  fuori SOLO da questa pagella, come già per eventFlag/promptVersion.
+- **Criterio di attivazione scritto PRIMA** in docs/AGENTI.md 6-ter: si
+  decide con l'IC 95% REGOLE-scelti − BRAIN-scelti (tutti i gruppi con ≥30
+  esiti); IC sopra zero → si PROPONE il passaggio a regole + Kimi veto
+  notizie 48h (mai senza il sì del proprietario); contiene zero → si
+  continua in ombra; sotto zero → il Brain resta. Il veto-notizie si valuta
+  a parte con l'EventFilter48h in ombra.
+- **Costo nell'app: VERIFICATO, nessuna modifica** (come richiesto): il
+  report di sessione mostra token e secondi REALI ("CHIAMATA KIMI …") e la
+  spesa del giorno in SISTEMA viene dal saldo REALE Kimi (baseline −
+  saldo). Non esiste NESSUNA stima tariffaria in Sources/ (grep su
+  Sources/: nessun prezzo per Mtoken). Quindi nessuna tabella tariffe è
+  stata aggiunta all'app; la correzione delle tariffe resta solo in
+  tools/replay_agents.py (fatta il 14/11). Scritto in CHANGELOG e STATO.
+- Test: **+7** (ordinamento RSI2/correlazione/simbolo, rispetto dei posti,
+  flag nel ciclo giornaliero con 3 candidati e 2 posti, pagella separata
+  con voci vecchie escluse e soglia 30, algoritmo bootstrap inchiodato a
+  valori attesi calcolati con la stessa procedura, retrocompatibilità del
+  flag, default modello e salvataggi precedenti). I 288 diventano 295.
+
+## FATTO / NON FATTO / DA VERIFICARE (utente)
+
+- FATTO: proposta 23 applicata (default kimi-k3.1-pro, salvataggi rispettati,
+  CHANGELOG con le istruzioni manuali); proposta 22 attiva SOLO in ombra con
+  criterio pre-dichiarato in AGENTI.md 6-ter; 7 test nuovi; AGENTI.md
+  (6-ter), PROPOSTE.md (22/23 decise), STATO.md, VERIFICHE.md (sezione 13),
+  CHANGELOG.md aggiornati. Nessuna chiamata Kimi spesa. Un solo push.
+- NON FATTO: nessun ordine o strategia cambia (il Brain decide ancora);
+  il veto-notizie 48h NON è attivo (si valuta con l'EventFilter48h in
+  ombra); la 1.6.7 NON è pubblicata (apps.json resta 1.6.6 build 211);
+  il replay NON è stato rilanciato.
+- DA VERIFICARE SUL TELEFONO: SISTEMA → "Modello Kimi" (default nuovo SOLO
+  se non avevi mai salvato; highspeed salvato resta lì); dopo la prima
+  decisione della giornaliera, la sezione "Ordine a regole · prova in
+  ombra" nella PAGELLA AGENTI (l'IC arriva dopo ≥30 esiti per lato:
+  settimane). Dettagli in docs/VERIFICHE.md sezione 13.
+
+---
+
 # Revisione AI · 14/11/2026 · STOP replay per costo reale, tariffe corrette, studio Brain chiuso a 110/150 giorni
 
 Richiesta: allargare il banco a 150 giorni uniformi (solo prompt attuale). Le

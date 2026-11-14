@@ -323,3 +323,60 @@ NOTA ribadita: il banco NON ha notizie nel payload, quindi NON può validare
 da solo il veto-notizie; e il risultato riguarda il meccanismo di SCELTA
 della giornaliera, non il ruolo di Kimi in VELOCE/CONSIGLIO né il veto del
 Reviewer.
+
+## 6-ter. PROVA IN OMBRA dell'ordine a regole (proposta 22 APPROVATA dal proprietario il 14/11/2026, SOLO in ombra)
+
+La proposta 22 è approvata SOLO come prova in ombra: si registra, non si
+decide. TUTTO quello che segue è dichiarato PRIMA che arrivino i dati.
+
+**Ordine a regole (definizione esatta, `RulesOrder` in
+Sources/Core/DailyStrategy.swift)**: i candidati si mettono in classifica
+per RSI2 crescente (pullback più profondo primo); a parità, per correlazione
+più bassa verso le posizioni già aperte (massimo valore ASSOLUTO delle
+correlazioni a 60 sedute note); a parità, per correlazione più bassa verso
+gli altri candidati del giorno; a parità, ordine alfabetico del simbolo.
+Funzione pura e deterministica.
+
+**Cosa si registra**: accanto a OGNI voce del registro ombra della
+giornaliera (stesso giorno, stesso elenco di candidati che ha visto il
+Brain, stessi posti liberi) un flag `rulesPick`: true se l'ordine a regole
+avrebbe comprato quel candidato (i primi `slots` della classifica), false
+altrimenti. Nessun ordine cambia, nessuna chiamata Kimi in più. Le voci
+vecchie (flag nil) restano fuori SOLO da questo confronto.
+
+**Pagella separata** (pannello PAGELLA AGENTI, sezione "Ordine a regole ·
+prova in ombra"): gruppo REGOLE-scelti e gruppo REGOLE-scartati (quanti,
+rendimento medio, quota in guadagno), differenza REGOLE − Brain, e dal
+momento in cui entrambi i lati hanno almeno 30 esiti risolti
+(`minimumForVerdict`) l'INTERVALLO DI CONFIENZA al 95% (bootstrap) della
+differenza REGOLE-scelti − BRAIN-scelti, calcolato IN-APP con lo stesso
+metodo del banco: 5000 ricampionamenti con ripetizione, seed fisso 42
+(SplitMix64), percentili 2,5-97,5 (`ShadowBootstrap.interval95`). Un test
+inchioda l'algoritmo a valori attesi calcolati con la stessa procedura.
+
+**CRITERIO DI ATTIVAZIONE (scritto prima, non negoziabile dopo i numeri)**:
+
+- Si decide SOLO con l'IC 95% della differenza REGOLE-scelti − BRAIN-scelti,
+  calcolato quando REGOLE-scelti, REGOLE-scartati e BRAIN-scelti hanno
+  tutti almeno 30 esiti risolti.
+- IC interamente SOPRA zero: l'ordine a regole batte il Brain in modo
+  misurabile. Si PROPONE al proprietario di passare la giornaliera
+  all'ordine a regole con Kimi ridotto a veto sulle notizie 48h
+  (proposta 22 completa). Mai attivato senza il suo sì esplicito.
+- IC che CONTIENE zero: non si cambia niente, la prova continua.
+- IC interamente SOTTO zero: il Brain resta, la prova si chiude.
+- Il veto-notizie si valuta PER CONTO SUO con la prova in ombra
+  dell'EventFilter48h (attiva dal 12/11): la proposta completa si attiva
+  solo se ENTRAMBE le prove sono favorevoli.
+
+**Limiti dichiarati**: gli esiti sono ipotetici con le stesse regole del
+registro ombra (ingresso in chiusura, stop teorico 2,5 ATR, uscita SMA5 o
+10 sedute), come per tutti i conteggi esistenti; il registro tiene al
+massimo 300 voci; la prova vede solo i giorni in cui il Brain è stato
+chiamato (stesso campione per entrambe le pagelle: confronto alla pari, ma
+condizionato a quella che è la catena attuale).
+
+**Stato: ATTIVA in ombra dalla 1.6.7** (flag registrato dal ciclo
+giornaliero, pagella e IC nel pannello PAGELLA AGENTI). Nessun ordine
+cambia. default del modello: proposta 23 APPROVATA e applicata
+(`kimi-k3.1-pro`, vedi docs/PROPOSTE.md).

@@ -539,6 +539,32 @@ struct TerminalDashboardView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            if s.rulesPicked.count + s.rulesNotPicked.count > 0 {
+                Divider().overlay(Color.gray.opacity(0.3))
+                panelHeader("Ordine a regole · prova in ombra (proposta 22)")
+                stackedRow("Che l'ordine a regole avrebbe comprato", group(s.rulesPicked))
+                stackedRow("Che l'ordine a regole avrebbe saltato", group(s.rulesNotPicked))
+                portfolioRow(
+                    "Regole contro Brain",
+                    s.rulesVsBrainEdge.map { String(format: "%+.2f punti", $0 * 100) } ?? "—",
+                    color: (s.rulesVsBrainEdge ?? 0) >= 0 ? Theme.accent : Theme.red
+                )
+                if let interval = s.rulesBrainInterval {
+                    let color: Color = interval.low > 0 ? terminalGreen : (interval.high < 0 ? Theme.red : .gray)
+                    Text(String(
+                        format: "IC 95%% differenza REGOLE − BRAIN: [%.2f%%, %.2f%%] (bootstrap, apparso con almeno 30 esiti per lato).",
+                        interval.low * 100, interval.high * 100
+                    ))
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(color)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text("Prova in ombra attiva: gli ingressi NON cambiano. Con almeno 30 esiti risolti per lato compare qui l'intervallo di confidenza della differenza REGOLE − BRAIN, il numero del criterio di attivazione scritto in docs/AGENTI.md (sezione 6-ter).")
+                        .font(.caption)
+                        .foregroundStyle(Theme.amber)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
             Text(verdict.0)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(verdict.1)
@@ -2021,7 +2047,7 @@ private struct SystemSettingsView: View {
             Text("Modello Kimi")
                 .font(.caption)
                 .foregroundStyle(Theme.textTertiary)
-            TextField("kimi-k3.1-pro-highspeed", text: $draft.kimiModel)
+            TextField("kimi-k3.1-pro", text: $draft.kimiModel)
                 .font(.caption)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()

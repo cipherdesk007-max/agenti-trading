@@ -239,6 +239,13 @@ struct ShadowEntry: Codable, Sendable, Equatable {
     /// candidato (punto a dell'audit: pagelle separabili per versione).
     /// nil sulle voci registrate prima del 1.6.7.
     var promptVersion: String?
+    /// PROVA IN OMBRA dell'ordine a regole (proposta 22, criterio in
+    /// docs/AGENTI.md 6-ter): l'ordine dei candidati a regole (RSI2 più
+    /// basso, poi correlazione più bassa) avrebbe comprato questo
+    /// candidato con gli stessi posti liberi? nil sulle voci registrate
+    /// prima della prova (escluse dai gruppi dell'ordine a regole, mai
+    /// dagli altri conti). Non cambia nessun ordine: è solo registrazione.
+    var rulesPick: Bool?
 
     var resolved: Bool { exitPrice != nil }
     var ret: Double? { exitPrice.map { $0 / entry - 1 } }
@@ -280,6 +287,99 @@ enum EventFilter48h {
             }
         }
     }
+}
+
+/// PROVA IN OMBRA della proposta 22 (criterio di attivazione dichiarato PRIMA
+/// in docs/AGENTI.md 6-ter): l'ordine dei candidati lo darebbero le regole,
+/// senza la scelta del Brain. Chiavi della classifica, in ordine: RSI2 più
+/// basso; poi correlazione più bassa (massimo valore ASSOLUTO verso le
+/// posizioni già aperte, poi verso gli altri candidati del giorno); a parità,
+/// simbolo alfabetico. Funzione pura e deterministica: stesso input, stessa
+/// classifica, in app come nel banco di prova.
+enum RulesOrder {
+    private static func worstCorrelation(_ candidate: DailyStrategy.Candidate, over symbols: Set<String>) -> Double {
+        candidate.correlations
+            .filter { symbols.contains($0.key.uppercased()) }
+            .values.map { abs($0) }
+            .max() ?? 0
+    }
+
+    /// I candidati in ordine a regole: il migliore per primo.
+    static func rank(_ candidates: [DailyStrategy.Candidate], heldSymbols: [String]) -> [DailyStrategy.Candidate] {
+        let heldSet = Set(heldSymbols.map { $0.uppercased() })
+        let allSet = Set(candidates.map { $0.symbol.uppercased() })
+        return candidates.sorted { a, b in
+            if a.snapshot.rsi2 != b.snapshot.rsi2 { return a.snapshot.rsi2 < b.snapshot.rsi2 }
+            let heldA = worstCorrelation(a, over: heldSet), heldB = worstCorrelation(b, over: heldSet)
+            if heldA != heldB { return heldA < heldB }
+            let allA = worstCorrelation(a, over: allSet), allB = worstCorrelation(b, over: allSet)
+            if allA != allB { return allA < allB }
+            return a.symbol < b.symbol
+        }
+    }
+
+    /// I simboli che l'ordine a regole avrebbe comprato oggi: i primi `slots`
+    /// della classifica. Con slots <= 0 nessuno (niente posti liberi).
+    static func picks(_ candidates: [DailyStrategy.Candidate], heldSymbols: [String], slots: Int) -> Set<String> {
+        guard slots > 0 else { return [] }
+        return Set(rank(candidates, heldSymbols: heldSymbols).prefix(slots).map(\.symbol))
+    }
+}
+
+/// Intervallo di confidenza al 95% (bootstrap) della differenza fra due
+/// medie: lo stesso metodo del banco di prova (docs/AGENTI.md 6-bis),
+/// riportato in-app perché la decisione della proposta 22 si possa leggere
+/// dal telefono senza esportare i dati. 5000 ricampionamenti con
+/// ripetizione, seed fisso 42 (SplitMix64), percentili 2,5-97,5.
+/// Deterministico: stesso input, stesso intervallo.
+enum ShadowBootstrap {
+    static let resamples = 5000
+    static let seed: UInt64 = 42
+
+    /// Uniforme in [0, 1): 53 bit dal generatore SplitMix64.
+    private static func nextUnit(_ state: inout UInt64) -> Double {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        z ^= z >> 31
+        return Double(z >> 11) / 9_007_199_254_740_992.0
+    }
+
+    /// IC 95% della differenza media(a) − media(b); nil se un lato è vuoto.
+    static func interval95(_ a: [Double], _ b: [Double]) -> ConfidenceInterval? {
+        guard !a.isEmpty, !b.isEmpty else { return nil }
+        var diffs = [Double]()
+        diffs.reserveCapacity(resamples)
+        var state = seed
+        for _ in 0..<resamples {
+            var sumA = 0.0
+            for _ in 0..<a.count {
+                let index = min(Int(nextUnit(&state) * Double(a.count)), a.count - 1)
+                sumA += a[index]
+            }
+            var sumB = 0.0
+            for _ in 0..<b.count {
+                let index = min(Int(nextUnit(&state) * Double(b.count)), b.count - 1)
+                sumB += b[index]
+            }
+            diffs.append(sumA / Double(a.count) - sumB / Double(b.count))
+        }
+        diffs.sort()
+        let low = diffs[min(Int(Double(resamples - 1) * 0.025), resamples - 1)]
+        let high = diffs[min(Int(Double(resamples - 1) * 0.975), resamples - 1)]
+        return ConfidenceInterval(low: low, high: high)
+    }
+}
+
+/// Un intervallo di confidenza: limite inferiore e superiore.
+struct ConfidenceInterval: Sendable, Equatable {
+    let low: Double
+    let high: Double
+
+    /// True se lo zero è DENTRO l'intervallo: la differenza non è
+    /// distinguibile dal caso.
+    var containsZero: Bool { low <= 0 && high >= 0 }
 }
 
 enum ShadowEvaluator {
@@ -338,11 +438,37 @@ struct ShadowSummary: Sendable, Equatable {
     /// restano fuori da questo confronto, dentro tutti gli altri).
     var eventFlagged = Group()
     var eventClean = Group()
+    /// PROVA IN OMBRA dell'ordine a regole (proposta 22): esiti dei candidati
+    /// che l'ordine a regole avrebbe comprato (RSI2, poi correlazione, stessi
+    /// posti liberi) contro tutti gli altri. Solo voci con rulesPick noto
+    /// (le vecchie nil restano fuori da questo confronto, dentro tutti gli
+    /// altri conti). Pagella SEPARATA: non tocca il giudizio sul Brain.
+    var rulesPicked = Group()
+    var rulesNotPicked = Group()
+    /// IC 95% (bootstrap in ShadowBootstrap) della differenza
+    /// ordine-a-regole − Brain: è il numero del criterio di attivazione in
+    /// docs/AGENTI.md 6-ter. nil finché entrambi i lati non hanno almeno
+    /// `minimumForVerdict` esiti risolti.
+    var rulesBrainInterval: ConfidenceInterval?
+    /// IC 95% della differenza REGOLE-scelti − REGOLE-scartati: quanto
+    /// l'ordinamento a regole separa i buoni dai cattivi. Stessa soglia.
+    var rulesOrderInterval: ConfidenceInterval?
     /// Quanto rendono in meno i candidati con evento: positivo = il filtro
     /// avrebbe protetto; negativo = il filtro avrebbe saltato occasioni buone.
     var eventFilterEdge: Double? {
         guard let flagged = eventFlagged.average, let clean = eventClean.average else { return nil }
         return clean - flagged
+    }
+    /// Quanto l'ordine a regole rende in più delle scelte del Brain sullo
+    /// stesso campione (prova in ombra, proposta 22).
+    var rulesVsBrainEdge: Double? {
+        guard let picked = rulesPicked.average, let brain = chosen.average else { return nil }
+        return picked - brain
+    }
+    /// Quanto l'ordine a regole rende in più dei candidati che scarterebbe.
+    var rulesOrderEdge: Double? {
+        guard let picked = rulesPicked.average, let notPicked = rulesNotPicked.average else { return nil }
+        return picked - notPicked
     }
     /// Valore di Kimi nella metà più vecchia e in quella più recente degli
     /// esiti (scelti meno tutti i segnali): dice se sta migliorando.
@@ -393,6 +519,20 @@ struct ShadowSummary: Sendable, Equatable {
         let cleanReturns = resolved.filter { $0.eventFlag == false }.compactMap(\.ret)
         summary.eventFlagged = Group(flaggedReturns)
         summary.eventClean = Group(cleanReturns)
+        // Prova in ombra dell'ordine a regole (proposta 22): solo le voci
+        // dove il flag è stato registrato (le storiche nil non entrano in
+        // questo confronto). L'intervallo di confidenza compare solo con
+        // abbastanza esiti da entrambi i lati (criterio in AGENTI.md 6-ter).
+        let rulesPickedReturns = resolved.filter { $0.rulesPick == true }.compactMap(\.ret)
+        let rulesNotPickedReturns = resolved.filter { $0.rulesPick == false }.compactMap(\.ret)
+        summary.rulesPicked = Group(rulesPickedReturns)
+        summary.rulesNotPicked = Group(rulesNotPickedReturns)
+        if rulesPickedReturns.count >= Self.minimumForVerdict, rulesNotPickedReturns.count >= Self.minimumForVerdict {
+            summary.rulesOrderInterval = ShadowBootstrap.interval95(rulesPickedReturns, rulesNotPickedReturns)
+        }
+        if rulesPickedReturns.count >= Self.minimumForVerdict, chosen.count >= Self.minimumForVerdict {
+            summary.rulesBrainInterval = ShadowBootstrap.interval95(rulesPickedReturns, chosen)
+        }
         // Tendenza: esiti in ordine di uscita, divisi a metà.
         let ordered = resolved.sorted { ($0.exitDay ?? $0.day, $0.symbol) < ($1.exitDay ?? $1.day, $1.symbol) }
         if ordered.count >= 10 {

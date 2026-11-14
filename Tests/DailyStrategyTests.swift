@@ -174,4 +174,130 @@ final class CorrelationTests: XCTestCase {
         let a = series({ 100 + Double($0) }, count: 15)
         XCTAssertNil(DailyStrategy.correlation(a, a))
     }
+
+    // MARK: - Prova in ombra proposta 22: ordine a regole + IC bootstrap
+
+    /// Candidato finto con RSI2 e correlazioni a piacere: per l'ordinamento
+    /// contano solo quelle chiavi.
+    private func rulesCandidate(_ symbol: String, rsi2: Double, correlations: [String: Double] = [:]) -> DailyStrategy.Candidate {
+        DailyStrategy.Candidate(
+            symbol: symbol,
+            snapshot: DailyStrategy.Snapshot(close: 100, sma200: 90, sma5: 101, rsi2: rsi2, atr14: 2),
+            recentCloses: [],
+            correlations: correlations
+        )
+    }
+
+    func testRulesOrderRanksByRsi2ThenCorrelationThenSymbol() {
+        let deep = rulesCandidate("QQQ", rsi2: 2)
+        let mid = rulesCandidate("IWM", rsi2: 5)
+        let shallow = rulesCandidate("SPY", rsi2: 9)
+        XCTAssertEqual(RulesOrder.rank([shallow, mid, deep], heldSymbols: []).map(\.symbol),
+                       ["QQQ", "IWM", "SPY"],
+                       "RSI2 più basso primo: il pullback più profondo è il migliore")
+
+        // Parità di RSI2: vince la correlazione più bassa verso le posizioni aperte.
+        let twins = [
+            rulesCandidate("TLT", rsi2: 4, correlations: ["SPY": 0.9]),
+            rulesCandidate("GLD", rsi2: 4, correlations: ["SPY": -0.8]),
+        ]
+        XCTAssertEqual(RulesOrder.rank(twins, heldSymbols: ["SPY"]).map(\.symbol),
+                       ["GLD", "TLT"],
+                       "a parità di RSI2 conta il valore assoluto: -0,8 pesa come 0,9")
+
+        // Parità anche lì: correlazione con gli altri candidati, poi simbolo.
+        let equal = [
+            rulesCandidate("QQQ", rsi2: 4, correlations: ["SPY": 0.5, "IWM": 0.9]),
+            rulesCandidate("IWM", rsi2: 4, correlations: ["SPY": 0.5, "QQQ": 0.9]),
+        ]
+        XCTAssertEqual(RulesOrder.rank(equal, heldSymbols: ["SPY"]).map(\.symbol),
+                       ["IWM", "QQQ"],
+                       "parità totale: ordine alfabetico, deterministico")
+    }
+
+    func testRulesOrderPicksRespectSlots() {
+        let list = [rulesCandidate("SPY", rsi2: 9), rulesCandidate("QQQ", rsi2: 2), rulesCandidate("IWM", rsi2: 5)]
+        XCTAssertEqual(RulesOrder.picks(list, heldSymbols: [], slots: 2), Set(["QQQ", "IWM"]))
+        XCTAssertEqual(RulesOrder.picks(list, heldSymbols: [], slots: 5), Set(["QQQ", "IWM", "SPY"]))
+        XCTAssertEqual(RulesOrder.picks(list, heldSymbols: [], slots: 0), Set<String>(),
+                       "senza posti liberi l'ordine a regole non comprerebbe niente")
+    }
+
+    func testBootstrapIntervalIsDeterministicWithFixedSeed() throws {
+        let a: [Double] = [0.010, -0.020, 0.030, 0.005, -0.001, 0.020, -0.005, 0.015, -0.010, 0.002]
+        let b: [Double] = [0.004, -0.001, 0.008, -0.006, 0.002, -0.003, 0.001, 0.006, -0.002, 0.0005]
+        let interval = try XCTUnwrap(ShadowBootstrap.interval95(a, b))
+        // Valori attesi calcolati con la STESSA procedura (SplitMix64, seed 42,
+        // 5000 ricampionamenti, percentili 2,5-97,5): il test inchioda
+        // l'algoritmo in-app a quello usato per il banco di prova.
+        XCTAssertEqual(interval.low, -0.00525, accuracy: 1e-9)
+        XCTAssertEqual(interval.high, 0.01265, accuracy: 1e-9)
+        let second = try XCTUnwrap(ShadowBootstrap.interval95([0.02, -0.01, 0.03, 0.005], [0.001, -0.002, 0.0005]))
+        XCTAssertEqual(second.low, -0.0033333333333333335, accuracy: 1e-12)
+        XCTAssertEqual(second.high, 0.026, accuracy: 1e-12)
+        XCTAssertNil(ShadowBootstrap.interval95([], b), "un lato vuoto non dà intervallo")
+    }
+
+    func testShadowSummaryPagellaOrdineARegole() {
+        var entries: [ShadowEntry] = []
+        // 32 voci che l'ordine a regole avrebbe comprato, +2% ciascuna;
+        // 30 di queste le aveva comprate anche il Brain (esiti "comprato").
+        for index in 0..<32 {
+            var e = ShadowEntry(symbol: "P\(index)", day: "d\(index)", entry: 100, stop: 90,
+                                outcome: index < 30 ? ShadowEntry.bought : ShadowEntry.brainSkip)
+            e.rulesPick = true
+            e.exitPrice = 102
+            e.exitDay = "e\(index)"
+            entries.append(e)
+        }
+        // 31 voci che l'ordine a regole avrebbe saltato, +1% ciascuna.
+        for index in 0..<31 {
+            var e = ShadowEntry(symbol: "N\(index)", day: "d\(index)", entry: 100, stop: 90,
+                                outcome: ShadowEntry.brainSkip)
+            e.rulesPick = false
+            e.exitPrice = 101
+            e.exitDay = "e\(index)"
+            entries.append(e)
+        }
+        // Voce storica senza flag: fuori dalla pagella dell'ordine a regole,
+        // dentro tutti gli altri conti.
+        var old = ShadowEntry(symbol: "OLD", day: "z", entry: 100, stop: 90, outcome: ShadowEntry.brainSkip)
+        old.exitPrice = 150
+        old.exitDay = "z1"
+        entries.append(old)
+
+        let summary = ShadowSummary.from(entries)
+        XCTAssertEqual(summary.rulesPicked.count, 32)
+        XCTAssertEqual(summary.rulesNotPicked.count, 31, "la voce senza flag non entra nella pagella a regole")
+        XCTAssertEqual(summary.rules.count, 64, "ma resta in tutti i segnali delle regole")
+        XCTAssertEqual(summary.rulesOrderEdge ?? 0, 0.01, accuracy: 1e-12)
+        XCTAssertEqual(summary.rulesVsBrainEdge ?? 1, 0, accuracy: 1e-12)
+        // Serie costanti: l'IC della differenza è un punto (0,01 e 0).
+        XCTAssertEqual(summary.rulesOrderInterval?.low ?? -1, 0.01, accuracy: 1e-12)
+        XCTAssertEqual(summary.rulesOrderInterval?.high ?? -1, 0.01, accuracy: 1e-12)
+        XCTAssertEqual(summary.rulesBrainInterval?.low ?? -1, 0, accuracy: 1e-12)
+        XCTAssertEqual(summary.rulesBrainInterval?.high ?? -1, 0, accuracy: 1e-12)
+
+        // Sotto la soglia di 30 esiti per lato: pagella sì, intervallo no.
+        var few: [ShadowEntry] = []
+        for index in 0..<10 {
+            var picked = ShadowEntry(symbol: "p\(index)", day: "d\(index)", entry: 100, stop: 90,
+                                      outcome: ShadowEntry.bought)
+            picked.rulesPick = true
+            picked.exitPrice = 103
+            picked.exitDay = "e"
+            few.append(picked)
+            var skipped = ShadowEntry(symbol: "n\(index)", day: "d\(index)", entry: 100, stop: 90,
+                                      outcome: ShadowEntry.brainSkip)
+            skipped.rulesPick = false
+            skipped.exitPrice = 99
+            skipped.exitDay = "e"
+            few.append(skipped)
+        }
+        let small = ShadowSummary.from(few)
+        XCTAssertEqual(small.rulesPicked.count, 10)
+        XCTAssertEqual(small.rulesNotPicked.count, 10)
+        XCTAssertNil(small.rulesOrderInterval, "senza 30 esiti per lato niente IC: i numeri sono rumore")
+        XCTAssertNil(small.rulesBrainInterval)
+    }
 }

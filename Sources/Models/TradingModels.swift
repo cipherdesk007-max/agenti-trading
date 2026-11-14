@@ -2,7 +2,14 @@ import Foundation
 import SwiftData
 
 enum SystemLimits {
-    static let kimiModel = "kimi-k3.1-pro-highspeed"
+    /// Proposta 23 (docs/PROPOSTE.md), deciso dal proprietario il 14/11/2026:
+    /// kimi-k3.1-pro è lo STESSO modello di kimi-k3.1-pro-highspeed servito
+    /// 2-3 volte più lento, a metà prezzo (2,00/10,00 contro 4,00/20,00 USD
+    /// per Mtoken). La giornaliera decide una volta al giorno: la velocità
+    /// non serve. Chi aveva salvato "kimi-k3.1-pro-highspeed" in SISTEMA lo
+    /// tiene: il campo resta modificabile e il valore salvato vince sul
+    /// default.
+    static let kimiModel = "kimi-k3.1-pro"
     /// Prefisso del client_order_id dello stop d'emergenza del flat-by-close:
     /// lo stop si riconosce da qui, NON dal tipo d'ordine (anche la gamba stop del
     /// bracket è una vendita stop).

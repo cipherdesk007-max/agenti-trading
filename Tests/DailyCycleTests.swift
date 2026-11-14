@@ -303,6 +303,33 @@ final class DailyCycleTests: XCTestCase {
         XCTAssertEqual(clean.book.shadow.first?.eventFlag, false)
     }
 
+    func testShadowRecordsWhatRulesOrderWouldPick() async {
+        // PROVA IN OMBRA proposta 22: tre candidati con pullback di profondità
+        // diversa (QQQ il più profondo = RSI2 più basso, poi IWM, poi SPY).
+        // Con 2 posti liberi l'ordine a regole prenderebbe QQQ e IWM: il
+        // registro ombra lo scrive accanto al verdetto del Brain, senza
+        // toccare gli ordini (il Brain compra comunque i suoi).
+        func series(_ tail: [Double]) -> [Candle] {
+            candles((0..<247).map { 100 + 0.2 * Double($0) } + tail)
+        }
+        let broker = FakeBroker(bars: [
+            "SPY": series([146, 144, 142]),
+            "IWM": series([146, 146, 142]),
+            "QQQ": series([149, 146, 142]),
+        ])
+        let cycle = DailyCycleRunner(broker: broker, brain: FakeBrain(),
+                                     basket: ["SPY", "QQQ", "IWM"], exitFillWaitSeconds: 0)
+        let twoSlots = DailyCycleInput(book: DailyBook(), today: today, riskFraction: 0.01,
+                                       maxOpenPositions: 2, entryBlock: nil)
+        let result = await cycle.run(twoSlots) { _ in }
+        XCTAssertEqual(result.book.shadow.count, 3)
+        let rulesPick = Dictionary(uniqueKeysWithValues: result.book.shadow.map { ($0.symbol, $0.rulesPick ?? false) })
+        XCTAssertEqual(rulesPick["QQQ"], true, "pullback più profondo: primo nell'ordine a regole")
+        XCTAssertEqual(rulesPick["IWM"], true, "secondo nell'ordine a regole")
+        XCTAssertEqual(rulesPick["SPY"], false, "terzo: con 2 posti l'ordine a regole lo salterebbe")
+        XCTAssertEqual(result.orders.count, 2, "il Brain compra i suoi 2: la prova in ombra non tocca gli ordini")
+    }
+
     func testOrphanTakeProfitCancelledBeforeRestoringStop() async {
         let broker = FakeBroker(bars: ["SPY": pullback])
         await broker.set(positions: [position(10)])

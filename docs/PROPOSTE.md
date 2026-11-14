@@ -478,7 +478,7 @@ non 730 giorni, vedi CHANGELOG).
 - **Cosa cambia nel repo**: solo lo strumento di studio (la sezione P2 resta nel passo
   `cryptotrend` per il controllo mensile) e la documentazione. Zero modifiche a Sources/.
 
-## Banca di prova agenti · 14/11/2026 (proposte dal criterio pre-dichiarato, NON implementate)
+## Banca di prova agenti · 14/11/2026 (proposte dal criterio pre-dichiarato; DECISE dal proprietario il 14/11: la 22 solo in ombra, la 23 applicata)
 
 ### 22 · GIORNALIERA senza scelta del Brain: ordine a regole + Kimi solo veto notizie 48h
 
@@ -488,11 +488,18 @@ non 730 giorni, vedi CHANGELOG).
   (−0,30% [−1,02%, +0,39%] e −0,83% [−1,72%, +0,01%]), scelti PEGGIO del casuale a 5 sedute
   e confidence anti-informativa (Brier 0,325 → 0,442 salendo di fascia). Il Brain
   giornaliero, su payload anonimizzato senza notizie, non batte le regole.
-- **Cosa si propone (senza implementare niente)**: (1) l'ordine dei candidati lo danno le
+- **Cosa si propone**: (1) l'ordine dei candidati lo danno le
   REGOLE: RSI2 più basso primo, poi correlazione più bassa; il Brain non sceglie più;
   (2) Kimi resta SOLO come veto sulle notizie delle ultime 48 ore del candidato in cima
   alla lista (il payload notizie ce l'ha solo l'app: il banco non può validare questo
   ruolo, va misurato in ombra in-app).
+- **DECISIONE del proprietario (14/11/2026): SÌ ma SOLO IN OMBRA.** Implementata come
+  prova in ombra dalla 1.6.7: flag `rulesPick` accanto a ogni voce del registro ombra
+  (che cosa avrebbe comprato l'ordine a regole: RSI2 crescente, poi correlazione |max|
+  più bassa verso le posizioni aperte e poi verso gli altri candidati, poi simbolo),
+  pagella SEPARATA nel pannello PAGELLA AGENTI con IC 95% bootstrap in-app (stesso
+  metodo del banco). NESSUN ordine cambia, nessuna chiamata Kimi in più. Criterio di
+  attivazione scritto PRIMA in docs/AGENTI.md 6-ter.
 - **Come si misura prima di adottare**: in OMBRA, senza toccare un ordine: registrare
   accanto a ogni decisione cosa avrebbe scelto l'ordine a regole e cosa ha scelto il Brain,
   pagella separata per le due liste, stesso metodo del banco (criterio scritto prima, IC
@@ -513,6 +520,11 @@ non 730 giorni, vedi CHANGELOG).
   Veloce (ciclo 15 min) e il CONSIGLIO hanno margini ampi. Il replay ha pagato ~7 volte
   la stima proprio perché il default era highspeed.
 - **Proposta**: default dell'app a `kimi-k3.1-pro` (metà prezzo, stesso modello). Il campo
-  resta modificabile in SISTEMA. DECIDE IL PROPRIETARIO: nessun cambio fatto. Nota
-  onesta: highspeed può restare utile se un giorno si vorrà latenza più bassa; è un
-  interruttino, non una strategia.
+  resta modificabile in SISTEMA.
+- **DECISIONE del proprietario (14/11/2026): SÌ, APPLICATA dalla 1.6.7.** Il default di
+  `SystemLimits.kimiModel` è ora `kimi-k3.1-pro`. Chi aveva GIÀ salvato un modello in
+  SISTEMA (per esempio `kimi-k3.1-pro-highspeed`) non vede cambiare niente: il valore
+  salvato vince sul default. Per cambiare modello a mano: SISTEMA → impostazioni →
+  "Modello Kimi", campo libero o lista caricata dall'account. Nota onesta: highspeed può
+  restare utile se un giorno si vorrà latenza più bassa; è un interruttino, non una
+  strategia.

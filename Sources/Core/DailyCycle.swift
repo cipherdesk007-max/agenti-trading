@@ -462,6 +462,12 @@ struct DailyCycleRunner: Sendable {
             verdicts.map { ($0.symbol.uppercased(), $0.promptVersion) },
             uniquingKeysWith: { a, _ in a }
         )
+        // PROVA IN OMBRA della proposta 22 (criterio in docs/AGENTI.md
+        // 6-ter): che cosa avrebbe comprato l'ordine a regole (RSI2 più
+        // basso, poi correlazione più bassa) con gli stessi posti liberi e
+        // sullo stesso elenco che ha visto il Brain. Solo registrazione:
+        // non cambia un ordine, non chiama Kimi una volta in più.
+        let rulesPicks = RulesOrder.picks(fresh, heldSymbols: Array(held.keys), slots: slots)
         func recordShadow(_ book: inout DailyBook) async {
             for candidate in fresh {
                 let s = candidate.snapshot
@@ -476,7 +482,8 @@ struct DailyCycleRunner: Sendable {
                     stop: s.close - DailyStrategy.stopATR * s.atr14,
                     outcome: status[candidate.symbol] ?? ShadowEntry.brainSkip,
                     eventFlag: eventful,
-                    promptVersion: verdictVersions[candidate.symbol.uppercased()] ?? nil
+                    promptVersion: verdictVersions[candidate.symbol.uppercased()] ?? nil,
+                    rulesPick: rulesPicks.contains(candidate.symbol.uppercased())
                 ))
             }
         }
