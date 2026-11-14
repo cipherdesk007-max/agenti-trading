@@ -56,7 +56,7 @@ Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (
 - **Saldo principale come uno strumento**: più grande, stretto, color avorio.
 - **Il consiglio "Saldo piccolo" in CRUSCOTTO è una riga**, non più un riquadro verde pieno che copriva stato e comandi. Toccandola si apre SISTEMA, dove c'è la spiegazione completa.
 - **Percentuale del giorno con la virgola** e tra parentesi ("+3,30 $ oggi (+0,33%)"): prima virgola e punto nella stessa riga.
-- È un primo passo dichiarato: circa 80 punti del codice usano ancora il verde sia per comandi sia per stati; la separazione completa è la fase 2.
+- **Regola unica dei colori su tutte le schermate** (fase 2): riviste una per una le 82 righe che usavano il verde. I comandi sono in avorio (pulsanti, "Usa", "Chiudi", "Traduci", "Passa a…", "Aggiungi sorgente", marchio in alto); il verde resta a stati, interruttori accesi e guadagni; i titoli dei riquadri sono bianchi. Restano da fare: lo stato del motore scritto una volta sola e la virgola nei numeri di MERCATI e DETTAGLI.
 
 ### Da sapere (non sono difetti, ma differenze dichiarate)
 

@@ -79,8 +79,9 @@ enum Layout {
 }
 
 extension Theme {
-    /// Unico colore d'accento dell'app. Verde/rosso restano solo per
-    /// guadagno/perdita e stati; arancione solo per avvisi.
+    /// Spia verde: stato a posto, motore acceso, guadagno, interruttore
+    /// acceso. NON è il colore dei comandi: pulsanti, link e scheda scelta
+    /// usano `ivory` (regola unica dei colori, docs/DESIGN.md).
     static let accent = green
     /// Bordo hairline neutro (niente bordi colorati sulle card).
     static let hairline = Color.white.opacity(0.06)

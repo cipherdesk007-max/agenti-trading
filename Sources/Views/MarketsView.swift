@@ -311,7 +311,7 @@ struct MarketDetailView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Chiudi") { dismiss() }
                         .font(.caption.weight(.bold))
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(Theme.ivory)
                 }
             }
         }
@@ -455,7 +455,7 @@ struct MarketDetailView: View {
                     } label: {
                         Label("Traduci", systemImage: "character.bubble")
                             .font(.caption.weight(.bold))
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.ivory)
                     }
                     .buttonStyle(.plain)
                 }

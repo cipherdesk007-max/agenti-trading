@@ -48,7 +48,8 @@ Tutto allineato a sinistra; i comandi sono larghi quanto la card.
 ## Fasi
 
 - **Fase 1 (fatta in questa versione)**: fondo grafite, comandi in avorio, saldo "strumento", consiglio su una riga, percentuale del giorno con la virgola, "CONTROLLA ORA" su una riga.
-- **Fase 2 (dopo l'ok del proprietario sulle schermate della fase 1)**: separare in tutto il codice il colore dei comandi da quello degli stati (oggi `Theme.accent` è ancora verde in circa 80 punti, alcuni comandi e alcuni stati); stato del motore detto una volta sola; riga di spie (motore, mercato, protezioni, rete); numeri con la virgola ovunque; link "Passa a CRYPTO" non più blu.
+- **Fase 2, colori (fatta il 14/11/2026)**: riviste una per una le 82 righe che usavano `Theme.accent`. `Theme.accent` ora vuol dire solo "spia verde" (stato a posto, interruttore acceso, guadagno); tutti i comandi usano `Theme.ivory`; i titoli dei riquadri sono bianchi; il link "Passa a CRYPTO" non è più blu.
+- **Fase 2, resto (da fare)**: stato del motore detto una volta sola; riga di spie (motore, mercato, protezioni, rete); numeri con la virgola anche in MERCATI e DETTAGLI.
 - **Come si verifica**: screenshot delle 6 schermate prima e dopo, sul ramo `screenshot`; nessun elemento verde che sia un comando.
 
 ---

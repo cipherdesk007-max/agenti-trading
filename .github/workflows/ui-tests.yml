@@ -1,0 +1,68 @@
+name: Test dell'interfaccia (macchina ARM)
+
+# Solo a mano. Sul runner Intel del flusso principale il comando dei test
+# d'interfaccia resta fermo senza far partire nessun test (run 43552818891 e
+# 43556570498): qui gli stessi 5 test girano su una macchina Apple Silicon,
+# senza toccare il flusso che produce l'IPA.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ui-tests
+  cancel-in-progress: true
+
+jobs:
+  ui:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Select Xcode 26
+        run: |
+          ls -d /Applications/Xcode*.app
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          test -n "$XC" || { echo "Xcode 26 non disponibile su questo runner"; exit 1; }
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
+          uname -m
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen generate --spec project.yml
+
+      - name: Test dell'interfaccia
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in data if "iOS" in k), reverse=True)
+          for runtime in ios:
+              for d in data[runtime]:
+                  if d.get("isAvailable") and d["name"].startswith("iPhone"):
+                      print(d["udid"]); sys.exit(0)
+          sys.exit(1)')
+          echo "Simulatore: $UDID"
+          xcrun simctl boot "$UDID" || true
+          xcrun simctl bootstatus "$UDID" -b
+          xcodebuild \
+            -project QuantSwarmAlphaZero.xcodeproj \
+            -scheme QuantSwarmAlphaZero \
+            -destination "id=$UDID" \
+            -derivedDataPath "$PWD/DerivedDataTests" \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing
+          # Tempo massimo 20 minuti: se il comando resta fermo viene chiuso.
+          perl -e 'alarm shift; exec @ARGV' 1200 xcodebuild \
+            -project QuantSwarmAlphaZero.xcodeproj \
+            -scheme QuantSwarmAlphaZero \
+            -destination "id=$UDID" \
+            -derivedDataPath "$PWD/DerivedDataTests" \
+            -only-testing:QuantSwarmUITests \
+            -retry-tests-on-failure -test-iterations 2 \
+            test-without-building

@@ -36,7 +36,7 @@ struct AccountsView: View {
                     } else {
                         Button("Usa") { Task { await use(profile) } }
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.ivory)
                             .disabled(busy || engine.isRunning)
                         Button { Task { await engine.removeAlpacaProfile(id: profile.id) } } label: {
                             Image(systemName: "trash")

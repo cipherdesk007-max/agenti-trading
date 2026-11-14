@@ -20,7 +20,7 @@ struct LoginView: View {
                         HStack(spacing: 6) {
                             Text("QuantSwarm")
                                 .font(.title2.weight(.bold))
-                                .foregroundStyle(Theme.accent)
+                                .foregroundStyle(Theme.ivory)
                             Text("Alpha Zero")
                                 .font(.title2.weight(.medium))
                                 .foregroundStyle(Theme.textSecondary)

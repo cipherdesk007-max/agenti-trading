@@ -193,7 +193,7 @@ struct TerminalDashboardView: View {
                     HStack(spacing: 6) {
                         Text("QuantSwarm")
                             .font(.subheadline.weight(.bold))
-                            .foregroundStyle(Theme.accent)
+                            .foregroundStyle(Theme.ivory)
                         Text("Alpha Zero")
                             .font(.subheadline.weight(.medium))
                             .foregroundStyle(Theme.textSecondary)
@@ -717,7 +717,7 @@ struct TerminalDashboardView: View {
             }
             .foregroundStyle(Theme.background)
             .padding(12)
-            .background(Theme.accent, in: Theme.shape(Theme.smallRadius))
+            .background(Theme.ivory, in: Theme.shape(Theme.smallRadius))
         }
         .buttonStyle(.plain)
     }
@@ -1315,7 +1315,7 @@ struct TerminalDashboardView: View {
             Button("Esporta dataset JSONL") {
                 engine.exportTrainingDataset()
             }
-            .buttonStyle(TerminalButtonStyle(color: Theme.accent))
+            .buttonStyle(TerminalButtonStyle(color: Theme.ivory))
             .disabled(engine.datasetStats.total == 0)
             if let url = engine.datasetExportURL {
                 Text(url.lastPathComponent)
@@ -1347,7 +1347,7 @@ struct TerminalDashboardView: View {
             Button("Esporta trade chiusi CSV") {
                 engine.exportTradesCSV()
             }
-            .buttonStyle(TerminalButtonStyle(color: Theme.accent))
+            .buttonStyle(TerminalButtonStyle(color: Theme.ivory))
             if let url = engine.tradesCSVURL {
                 HStack(spacing: 12) {
                     ShareLink(item: url) {
@@ -1706,7 +1706,7 @@ struct TerminalDashboardView: View {
         HStack {
             Text(title)
                 .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Theme.accent)
+                .foregroundStyle(Theme.textPrimary)
             Spacer()
             Image(systemName: "arrow.up.right.square")
                 .foregroundStyle(Theme.textTertiary)
@@ -1930,6 +1930,7 @@ private struct SystemSettingsView: View {
                         draft.tradingMode = advice.recommended
                     }
                     .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.ivory)
                 }
                 Text("Consiglio automatico in base al saldo: la scelta resta tua, cambia al prossimo START.")
                     .font(.caption2)
@@ -2162,16 +2163,16 @@ private struct SystemSettingsView: View {
                 HStack(spacing: 10) {
                     if let update = engine.availableUpdate, let url = UpdateChecker.installURL(for: update, store: store) {
                         Button("Aggiorna a \(update.version)") { openURL(url) }
-                            .buttonStyle(TerminalButtonStyle(color: Theme.accent))
+                            .buttonStyle(TerminalButtonStyle(color: Theme.ivory))
                     } else {
                         Button("Controlla aggiornamenti") { Task { await engine.checkForUpdates() } }
-                            .buttonStyle(TerminalButtonStyle(color: Theme.accent))
+                            .buttonStyle(TerminalButtonStyle(color: Theme.ivory))
                     }
                 }
                 if store != .download, let source = UpdateChecker.storeSourceURL(for: store) {
                     Button("Aggiungi sorgente a \(store.name)") { openURL(source) }
                         .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(Theme.accent)
+                        .foregroundStyle(Theme.ivory)
                 }
                 Text(store.helpText)
                     .font(.caption)
@@ -2418,7 +2419,7 @@ private func brokerTypeLabel(_ order: AlpacaOrder) -> String {
 private func shareChip(_ title: String) -> some View {
     Text(title)
         .font(.subheadline.weight(.semibold))
-        .foregroundStyle(Theme.accent)
+        .foregroundStyle(Theme.textPrimary)
         .frame(maxWidth: .infinity, minHeight: 44)
         .padding(.horizontal, Layout.paddingM)
         .background(Theme.surfaceHigh, in: Theme.shape())
