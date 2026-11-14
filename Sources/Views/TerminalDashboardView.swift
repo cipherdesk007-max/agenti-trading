@@ -381,13 +381,20 @@ struct TerminalDashboardView: View {
         AppCard {
             VStack(alignment: .leading, spacing: 6) {
             SectionHeader(title: "Come si legge")
-            ForEach([
-                (MarketInsight.State.held, "il bot ha una posizione aperta, con lo stop sul broker"),
-                (.signal, "le regole hanno trovato un ribasso in trend: decide Kimi"),
-                (.trendUp, "sopra la media a 200 giorni, in attesa di un ribasso"),
-                (.trendDown, "sotto la media a 200 giorni: il bot non compra"),
-                (.unaffordable, "il capitale non compra 1 azione entro i limiti")
-            ], id: \.0.rawValue) { state, text in
+            // In CRYPTO le stesse etichette hanno un altro significato (regola
+            // V4: rottura del massimo a 20 giorni sopra la media a 200, niente
+            // Kimi, quantità frazionate): la legenda segue la modalità.
+            let legend: [(MarketInsight.State, String)] = displayedMode == .crypto
+                ? [(.held, "il bot ha una posizione aperta, con lo stop sul broker"),
+                   (.signal, "chiusura sopra il massimo dei 20 giorni: il bot compra"),
+                   (.trendUp, "sopra la media a 200 giorni, in attesa della rottura"),
+                   (.trendDown, "sotto la media a 200 giorni: il bot non compra")]
+                : [(.held, "il bot ha una posizione aperta, con lo stop sul broker"),
+                   (.signal, "le regole hanno trovato un ribasso in trend: decide Kimi"),
+                   (.trendUp, "sopra la media a 200 giorni, in attesa di un ribasso"),
+                   (.trendDown, "sotto la media a 200 giorni: il bot non compra"),
+                   (.unaffordable, "il capitale non compra 1 azione entro i limiti")]
+            ForEach(legend, id: \.0.rawValue) { state, text in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     StatusChip(text: state.rawValue, color: MarketDetailView.color(for: state))
                     Text(text).font(.caption).foregroundStyle(Theme.textSecondary)
