@@ -273,6 +273,19 @@ def studio_crypto():
         righe.append(riga_conto(f"costo {costo:.2%} per lato", eq, v))
     stampa_righe(righe)
 
+    # ---- 2 bis. Quanto mettere su ogni coppia: il rischio che si sceglie
+    # Non è una ricerca del numero migliore: il rendimento sale e scende insieme
+    # al rischio. Serve al proprietario per scegliere la perdita che accetta.
+    print("\n## CRYPTO 2 bis · Quanto mettere su ogni coppia (le 5 coppie, un conto solo, costo 0,25% per lato)\n")
+    print("L'app oggi usa 1/5 del conto per coppia. Lo studio originale aveva provato, senza volerlo, 1/36 del capitale. "
+          "Il blocco dell'app scatta al -10% dal massimo; il criterio B dello studio chiedeva una perdita massima entro -20%.\n")
+    righe = []
+    for divisore in (5, 8, 10, 15, 25):
+        eq, v = conto_unico({t: dfs[t] for t in cinque}, divisore, 0.0025, inizio)
+        investito = min(1.0, len(cinque) / divisore)
+        righe.append(riga_conto(f"1/{divisore} del conto per coppia (al massimo {investito:.0%} del conto investito)", eq, v))
+    stampa_righe(righe)
+
     # ---- 3. Panieri più larghi, a parità di regola di dimensione
     print("\n## CRYPTO 3 · Coppie attuali contro panieri più larghi (un conto solo, ogni coppia 1/N del conto)\n")
     if su_alpaca is not None:
