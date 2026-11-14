@@ -1,4 +1,4 @@
-name: Prova crypto su conto PAPER
+name: Prova ordini su conto PAPER
 
 # Solo a mano, mai da sola. Compra e rivende circa 12 dollari FINTI di BTC sul
 # conto paper delle chiavi salvate nei secrets, per controllare sul broker vero
@@ -8,9 +8,14 @@ on:
   workflow_dispatch:
     inputs:
       conferma:
-        description: "Scrivi PAPER per confermare (circa 12 dollari finti di BTC, comprati e rivenduti)"
+        description: "Scrivi PAPER per confermare (ordini finti sul conto paper, annullati o richiusi a fine prova)"
         required: true
         type: string
+      quale:
+        description: "crypto = compra e rivende 12 dollari finti di BTC; azioni = ordini della giornaliera e della notte"
+        type: choice
+        options: [crypto, azioni]
+        default: crypto
 
 permissions:
   contents: read
@@ -27,4 +32,10 @@ jobs:
         env:
           APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
           APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
-        run: python3 tools/prova_crypto_paper.py | tee -a "$GITHUB_STEP_SUMMARY"
+          QUALE: ${{ github.event.inputs.quale }}
+        run: |
+          if [ "$QUALE" = "azioni" ]; then
+            python3 tools/prova_azioni_paper.py | tee -a "$GITHUB_STEP_SUMMARY"
+          else
+            python3 tools/prova_crypto_paper.py | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
