@@ -1,3 +1,96 @@
+# Revisione AI · 14/11/2026 (notte) · Revisione del proprietario sulla prova in ombra: bootstrap per giorno, disaccordi, IC del Reviewer, versione 1.6.8
+
+Richiesta: revisione del commit della prova in ombra (codice corretto, ordini
+non toccati) con tre correzioni, nessuna chiamata Kimi: (1) la statistica del
+criterio confrontava due gruppi che si SOVRAPPONGONO con un bootstrap su
+campioni indipendenti: non valido; ora si confrontano SOLO i DISACCORDI
+(solo regole contro solo catena Kimi) e si ricampiona PER GIORNO (cluster
+bootstrap); stessa correzione in tools/replay_agents.py e ricalcolo della
+tabella di docs/AGENTI.md 6-bis dai JSON già salvati; (2) aggiungere alla
+pagella il confronto che conta: regole da sole (rulesPick) contro ciò che è
+stato COMPRATO DAVVERO dopo Brain e Reviewer, con il numero di operazioni;
+nel banco la catena Kimi ha tenuto 63 candidati su 205 e quei 63 rendono come
+la scelta casuale: scriverlo in AGENTI.md; (3) il veto del Reviewer NON è
+provato (nessun intervallo, segno opposto nel primo campione da 30 giorni):
+aggiungere l'IC per giorno anche lì. Versione a 1.6.8 (due contenuti diversi
+finivano entrambi sotto [1.6.7] nel CHANGELOG). Un push, build verde.
+
+| Punto | Commit | Build CI |
+|---|---|---|
+| Bootstrap per giorno + disaccordi + IC Reviewer + pagella col comprato davvero + 1.6.8 | (questo commit) | prima build verde di questo commit su Actions (≥ 217) |
+
+## Cosa è stato fatto (verificato nel codice e ricalcolato sui dati già salvati)
+
+- **ShadowBootstrap.interval95 sostituito da interval95ByDay**: bootstrap A
+  GRAPPOLO PER GIORNO (unione dei giorni dei due lati, 5000 ricampionamenti
+  con ripetizione di GIORNI interi, seed 42 SplitMix64, percentili 2,5-97,5
+  sui resample validi, resample con un lato vuoto scartati). Identico in
+  tools/replay_agents.py (`bootstrap_diff_by_day`, flag chosen/approved).
+- **Criterio della proposta 22 riscritto (AGENTI.md 6-ter)**: si decide SOLO
+  con l'IC 95% per giorno della differenza SOLO-REGOLE − SOLO-CATENA sui
+  disaccordi (gruppi DISGIUNTI: rulesPick && !chosen contro !rulesPick &&
+  chosen, dove chosen = comprato DAVVERO), entrambi ≥ 30 esiti risolti.
+  Nuovi gruppi `rulesOnly`/`chainOnly` in ShadowSummary; `rulesBrainInterval`
+  (formula invalida sui gruppi sovrapposti) RIMOSSO prima che qualsiasi IC
+  comparisse in-app: nessun numero sul telefono era calcolato col metodo
+  vecchio (la prova è attiva dal 14/11 e servono 30 esiti per lato).
+- **Pagella (pannello PAGELLA AGENTI)**: riga "Comprato DAVVERO dopo Brain e
+  Reviewer" accanto a quella dell'ordine a regole, differenza "Regole −
+  comprato davvero" (con i conteggi di entrambi: è il confronto che conta);
+  righe dei disaccordi e IC per giorno con la dicitura di attesa ≥ 30 per
+  lato. Nella pagella principale: riga "Approvati dal Reviewer" (nota onesta:
+  include i buy bloccati dal rischio, dove il parere non è distinguibile) e
+  IC 95% per giorno approvati − bocciati con la dicitura "il veto NON è
+  provato finché l'IC non esclude lo zero".
+- **Tabella 6-bis ricalcolata SENZA nuove chiamate** (dataset per-verdetto
+  ricostruito dalle righe REPLAYDAY/REPLAYREV dei log, verificato IDENTICO ai
+  JSON degli artifact 14090537846 + 14091272053: 205 verdetti brain, 79 giorni
+  unici, 132 reviews): scelti −0,27%/+0,17% (n=132), scartati
+  +0,02%/+1,00% (n=73), casuale −0,17%/+0,47%; differenza scelti − scartati
+  −0,30% [IC 95% per giorno: −1,35%, +0,76%] a 5 sedute e −0,83% [−2,11%,
+  +0,43%] a 10: CONTIENE lo zero (conferma la conclusione già scritta, IC
+  più larghi del vecchio metodo perché il clustering per giorno conta la
+  dipendenza). Reviewer: approvati −0,11%/+0,30% (n=63) contro bocciati
+  −0,43%/+0,05% (n=69), differenza +0,32% [−0,46%, +1,12%] e +0,25% [−0,77%,
+  +1,35%]: contiene lo zero, veto NON provato, segno opposto nel primo
+  campione da 30 giorni. Il confronto che conta è in AGENTI.md 6-bis: la
+  catena Kimi ha tenuto 63 candidati su 205 (48% dei 132 buy) e quei 63
+  rendono come la scelta casuale.
+- **tools/replay_agents.py**: giorno (`day`) salvato in ogni riga brain/review
+  dei JSON; `--combine` e le render stampano l'IC per giorno (sui vecchi
+  JSON senza `day` avvisano che non è calcolabile, le medie restano valide);
+  render_reviews stampa la differenza approvati − bocciati per giorno e la
+  dicitura sul veto non provato; smoke test aggiornato.
+- **CHANGELOG**: le decisioni del proprietario del 14/11 escono da [1.6.7]
+  (che resta l'audit del 13/11) ed entrano nella NUOVA [1.6.8] insieme alle
+  correzioni di questo giro e alle correzioni solo-tools (tariffe): niente
+  più due contenuti diversi sotto lo stesso numero di versione. Versione
+  1.6.8 in project.yml (app + widget, due punti).
+- Test: **+1** (disaccordi e Reviewer con IC per giorno su serie costanti
+  per giorno, IC a punto, soglia 30 per lato con 29 esiti nil; il test del
+  bootstrap riscritto per interval95ByDay inchioda l'algoritmo a valori
+  attesi calcolati con la stessa procedura, incluso il caso con un giorno
+  presente solo su un lato e i resample da scartare: attesi −0,00415/0,0115
+  e −0,008/0,0256666667). I 295 diventano 296.
+
+## FATTO / NON FATTO / DA VERIFICARE (utente)
+
+- FATTO: bootstrap per giorno in app e nel tool; criterio della proposta 22
+  sui SOLI disaccordi; pagella con comprato-davvero, conteggi, disaccordi e
+  IC del Reviewer; tabella AGENTI.md 6-bis ricalcolata dai dati già salvati
+  (zero chiamate Kimi); 1.6.8 con CHANGELOG riordinato; un push, build verde
+  richiesta.
+- NON FATTO: nessun ordine o strategia cambia (il Brain decide ancora);
+  veto-notizie 48h NON attivo (EventFilter48h in ombra); replay NON
+  rilanciato; 1.6.8 NON pubblicata (apps.json resta 1.6.6 build 211).
+- DA VERIFICARE SUL TELEFONO: dopo la prima decisione della giornaliera con
+  la build nuova, PAGELLA AGENTI deve mostrare "Comprato DAVVERO dopo Brain
+  e Reviewer", le righe dei disaccordi e "Approvati dal Reviewer"; gli IC
+  compaiono SOLO con ≥ 30 esiti risolti per lato (prima la scritta che i
+  numeri sono rumore); SISTEMA → VERSIONE deve leggere 1.6.8.
+
+---
+
 # Revisione AI · 14/11/2026 (sera) · Decisioni del proprietario applicate: proposta 23 (default kimi-k3.1-pro) + proposta 22 SOLO in ombra
 
 Richiesta: "Ok su tutto" con tre decisioni: (1) proposta 23 SÌ: default

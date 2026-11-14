@@ -509,7 +509,23 @@ struct TerminalDashboardView: View {
             stackedRow("Regole da sole (tutti i segnali)", group(s.rules))
             stackedRow("Scelti da Kimi", group(s.chosen))
             stackedRow("Scartati da Kimi", group(s.skipped))
+            stackedRow("Approvati dal Reviewer", group(s.reviewerApproved))
             stackedRow("Bocciati dal Reviewer", group(s.reviewerRejected))
+            if let interval = s.reviewerInterval {
+                let color: Color = interval.low > 0 ? terminalGreen : (interval.high < 0 ? Theme.red : .gray)
+                Text(String(
+                    format: "IC 95%% approvati − bocciati (per giorno): [%.2f%%, %.2f%%]. Il veto NON è provato finché l'intervallo non esclude lo zero.",
+                    interval.low * 100, interval.high * 100
+                ))
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(color)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Text("Veto del Reviewer NON provato: serve un intervallo di confidenza (almeno 30 esiti risolti per lato) che escluda lo zero, finché non c'è i numeri sono rumore. Nota: \"approvati\" include i buy bloccati dal rischio, dove il parere del Reviewer non è distinguibile.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.amber)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
             portfolioRow("Valore di Kimi", s.kimiEdge.map { String(format: "%+.2f punti", $0 * 100) } ?? "—",
                          color: (s.kimiEdge ?? 0) >= 0 ? Theme.accent : Theme.red)
             if let older = s.olderEdge, let recent = s.recentEdge {
@@ -544,22 +560,25 @@ struct TerminalDashboardView: View {
                 panelHeader("Ordine a regole · prova in ombra (proposta 22)")
                 stackedRow("Che l'ordine a regole avrebbe comprato", group(s.rulesPicked))
                 stackedRow("Che l'ordine a regole avrebbe saltato", group(s.rulesNotPicked))
+                stackedRow("Comprato DAVVERO dopo Brain e Reviewer", group(s.chosen))
                 portfolioRow(
-                    "Regole contro Brain",
+                    "Regole − comprato davvero",
                     s.rulesVsBrainEdge.map { String(format: "%+.2f punti", $0 * 100) } ?? "—",
                     color: (s.rulesVsBrainEdge ?? 0) >= 0 ? Theme.accent : Theme.red
                 )
-                if let interval = s.rulesBrainInterval {
+                stackedRow("Disaccordo: solo regole (catena Kimi no)", group(s.rulesOnly))
+                stackedRow("Disaccordo: solo catena Kimi (regole no)", group(s.chainOnly))
+                if let interval = s.disagreementInterval {
                     let color: Color = interval.low > 0 ? terminalGreen : (interval.high < 0 ? Theme.red : .gray)
                     Text(String(
-                        format: "IC 95%% differenza REGOLE − BRAIN: [%.2f%%, %.2f%%] (bootstrap, apparso con almeno 30 esiti per lato).",
+                        format: "IC 95%% SOLO REGOLE − SOLO CATENA (disaccordi, per giorno): [%.2f%%, %.2f%%].",
                         interval.low * 100, interval.high * 100
                     ))
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(color)
                         .fixedSize(horizontal: false, vertical: true)
                 } else {
-                    Text("Prova in ombra attiva: gli ingressi NON cambiano. Con almeno 30 esiti risolti per lato compare qui l'intervallo di confidenza della differenza REGOLE − BRAIN, il numero del criterio di attivazione scritto in docs/AGENTI.md (sezione 6-ter).")
+                    Text("Prova in ombra attiva: gli ingressi NON cambiano. I gruppi \"a regole\" e \"comprato davvero\" si sovrappongono, quindi il criterio guarda SOLO i disaccordi: con almeno 30 esiti risolti per lato compare qui l'IC 95% PER GIORNO della differenza SOLO REGOLE − SOLO CATENA, il numero del criterio di attivazione scritto in docs/AGENTI.md (sezione 6-ter).")
                         .font(.caption)
                         .foregroundStyle(Theme.amber)
                         .fixedSize(horizontal: false, vertical: true)

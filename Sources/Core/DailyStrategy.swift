@@ -327,11 +327,13 @@ enum RulesOrder {
 }
 
 /// Intervallo di confidenza al 95% (bootstrap) della differenza fra due
-/// medie: lo stesso metodo del banco di prova (docs/AGENTI.md 6-bis),
-/// riportato in-app perché la decisione della proposta 22 si possa leggere
-/// dal telefono senza esportare i dati. 5000 ricampionamenti con
-/// ripetizione, seed fisso 42 (SplitMix64), percentili 2,5-97,5.
-/// Deterministico: stesso input, stesso intervallo.
+/// medie, A GRAPPOLO PER GIORNO: i candidati dello stesso giorno non sono
+/// indipendenti, quindi si ricampionano GIORNI interi (con ripetizione),
+/// mai singoli verdetti. Lo stesso identico metodo del banco di prova
+/// (docs/AGENTI.md 6-bis e 6-ter), riportato in-app perché la decisione
+/// della proposta 22 si possa leggere dal telefono senza esportare i dati.
+/// 5000 ricampionamenti con ripetizione, seed fisso 42 (SplitMix64),
+/// percentili 2,5-97,5. Deterministico: stesso input, stesso intervallo.
 enum ShadowBootstrap {
     static let resamples = 5000
     static let seed: UInt64 = 42
@@ -346,28 +348,52 @@ enum ShadowBootstrap {
         return Double(z >> 11) / 9_007_199_254_740_992.0
     }
 
-    /// IC 95% della differenza media(a) − media(b); nil se un lato è vuoto.
-    static func interval95(_ a: [Double], _ b: [Double]) -> ConfidenceInterval? {
-        guard !a.isEmpty, !b.isEmpty else { return nil }
+    /// Rendimenti risolti raggruppati per giorno di borsa del segnale.
+    static func byDay(_ entries: [ShadowEntry]) -> [String: [Double]] {
+        var out: [String: [Double]] = [:]
+        for entry in entries {
+            guard let ret = entry.ret else { continue }
+            out[entry.day, default: []].append(ret)
+        }
+        return out
+    }
+
+    /// IC 95% della differenza media(a) − media(b) ricampionando GIORNI
+    /// interi: l'unione dei giorni dei due lati, ogni resample pesca
+    /// `days.count` giorni con ripetizione e poola i valori di quel giorno.
+    /// I resample in cui un lato resta senza valori si scartano. nil se un
+    /// lato è vuoto o nessun resample è valido.
+    static func interval95ByDay(_ aByDay: [String: [Double]], _ bByDay: [String: [Double]]) -> ConfidenceInterval? {
+        guard !aByDay.isEmpty, !bByDay.isEmpty else { return nil }
+        let days = Array(Set(aByDay.keys).union(bByDay.keys)).sorted()
+        guard !days.isEmpty else { return nil }
         var diffs = [Double]()
         diffs.reserveCapacity(resamples)
         var state = seed
         for _ in 0..<resamples {
             var sumA = 0.0
-            for _ in 0..<a.count {
-                let index = min(Int(nextUnit(&state) * Double(a.count)), a.count - 1)
-                sumA += a[index]
-            }
+            var countA = 0
             var sumB = 0.0
-            for _ in 0..<b.count {
-                let index = min(Int(nextUnit(&state) * Double(b.count)), b.count - 1)
-                sumB += b[index]
+            var countB = 0
+            for _ in 0..<days.count {
+                let index = min(Int(nextUnit(&state) * Double(days.count)), days.count - 1)
+                let day = days[index]
+                for value in aByDay[day] ?? [] {
+                    sumA += value
+                    countA += 1
+                }
+                for value in bByDay[day] ?? [] {
+                    sumB += value
+                    countB += 1
+                }
             }
-            diffs.append(sumA / Double(a.count) - sumB / Double(b.count))
+            if countA == 0 || countB == 0 { continue }
+            diffs.append(sumA / Double(countA) - sumB / Double(countB))
         }
+        guard !diffs.isEmpty else { return nil }
         diffs.sort()
-        let low = diffs[min(Int(Double(resamples - 1) * 0.025), resamples - 1)]
-        let high = diffs[min(Int(Double(resamples - 1) * 0.975), resamples - 1)]
+        let low = diffs[min(Int(Double(diffs.count - 1) * 0.025), diffs.count - 1)]
+        let high = diffs[min(Int(Double(diffs.count - 1) * 0.975), diffs.count - 1)]
         return ConfidenceInterval(low: low, high: high)
     }
 }
@@ -445,22 +471,41 @@ struct ShadowSummary: Sendable, Equatable {
     /// altri conti). Pagella SEPARATA: non tocca il giudizio sul Brain.
     var rulesPicked = Group()
     var rulesNotPicked = Group()
-    /// IC 95% (bootstrap in ShadowBootstrap) della differenza
-    /// ordine-a-regole − Brain: è il numero del criterio di attivazione in
-    /// docs/AGENTI.md 6-ter. nil finché entrambi i lati non hanno almeno
-    /// `minimumForVerdict` esiti risolti.
-    var rulesBrainInterval: ConfidenceInterval?
-    /// IC 95% della differenza REGOLE-scelti − REGOLE-scartati: quanto
-    /// l'ordinamento a regole separa i buoni dai cattivi. Stessa soglia.
+    /// DISACCORDI (criterio della proposta 22): le regole avrebbero comprato
+    /// ma la catena Kimi (Brain + Reviewer + rischio) no. I due gruppi
+    /// "scelti dalle regole" e "comprati dalla catena" si SOVRAPPONGONO:
+    /// il confronto valido è solo sui disaccordi, che sono disgiunti.
+    var rulesOnly = Group()
+    /// DISACCORDI speculare: la catena Kimi ha comprato ma le regole no
+    /// (`chosen` = comprato DAVVERO: ordine inviato dopo Brain, Reviewer e
+    /// rischio, non solo il parere del Brain).
+    var chainOnly = Group()
+    /// Buy del Brain NON bocciati dal Reviewer: "comprato" più "bloccato dal
+    /// rischio". NOTA onesta: "bloccato" comprende anche i casi con revisore
+    /// non raggiungibile, che l'app non può separare dagli approvati: questo
+    /// gruppo è quindi "non bocciati", non "approvati certi".
+    var reviewerApproved = Group()
+    /// IC 95% (bootstrap per giorno, `ShadowBootstrap.interval95ByDay`) della
+    /// differenza SOLO-REGOLE − SOLO-CATENA sui disaccordi: è il numero del
+    /// criterio di attivazione in docs/AGENTI.md 6-ter. nil finché entrambi
+    /// i lati non hanno almeno `minimumForVerdict` esiti risolti.
+    var disagreementInterval: ConfidenceInterval?
+    /// IC 95% per giorno della differenza REGOLE-scelti − REGOLE-scartati:
+    /// quanto l'ordinamento a regole separa i buoni dai cattivi. Stessa soglia.
     var rulesOrderInterval: ConfidenceInterval?
+    /// IC 95% per giorno della differenza NON-BOCCIATI − BOCCIATI del
+    /// Reviewer: il veto è provato utile solo se esclude lo zero. Stessa soglia.
+    var reviewerInterval: ConfidenceInterval?
     /// Quanto rendono in meno i candidati con evento: positivo = il filtro
     /// avrebbe protetto; negativo = il filtro avrebbe saltato occasioni buone.
     var eventFilterEdge: Double? {
         guard let flagged = eventFlagged.average, let clean = eventClean.average else { return nil }
         return clean - flagged
     }
-    /// Quanto l'ordine a regole rende in più delle scelte del Brain sullo
-    /// stesso campione (prova in ombra, proposta 22).
+    /// Quanto l'ordine a regole rende in più di ciò che è stato comprato
+    /// DAVVERO dopo Brain, Reviewer e rischio (stesso campione, prova in
+    /// ombra della proposta 22): è il confronto che conta, con i conteggi
+    /// di entrambi i gruppi accanto nella pagella.
     var rulesVsBrainEdge: Double? {
         guard let picked = rulesPicked.average, let brain = chosen.average else { return nil }
         return picked - brain
@@ -521,17 +566,38 @@ struct ShadowSummary: Sendable, Equatable {
         summary.eventClean = Group(cleanReturns)
         // Prova in ombra dell'ordine a regole (proposta 22): solo le voci
         // dove il flag è stato registrato (le storiche nil non entrano in
-        // questo confronto). L'intervallo di confidenza compare solo con
-        // abbastanza esiti da entrambi i lati (criterio in AGENTI.md 6-ter).
-        let rulesPickedReturns = resolved.filter { $0.rulesPick == true }.compactMap(\.ret)
-        let rulesNotPickedReturns = resolved.filter { $0.rulesPick == false }.compactMap(\.ret)
-        summary.rulesPicked = Group(rulesPickedReturns)
-        summary.rulesNotPicked = Group(rulesNotPickedReturns)
-        if rulesPickedReturns.count >= Self.minimumForVerdict, rulesNotPickedReturns.count >= Self.minimumForVerdict {
-            summary.rulesOrderInterval = ShadowBootstrap.interval95(rulesPickedReturns, rulesNotPickedReturns)
+        // questo confronto). Gli intervalli di confidenza sono A GRAPPOLO
+        // PER GIORNO (ShadowBootstrap.interval95ByDay) e compaiono solo con
+        // almeno `minimumForVerdict` esiti risolti per lato (criterio in
+        // docs/AGENTI.md 6-ter).
+        let rulesPickedEntries = resolved.filter { $0.rulesPick == true }
+        let rulesNotPickedEntries = resolved.filter { $0.rulesPick == false }
+        summary.rulesPicked = Group(rulesPickedEntries.compactMap(\.ret))
+        summary.rulesNotPicked = Group(rulesNotPickedEntries.compactMap(\.ret))
+        if summary.rulesPicked.count >= Self.minimumForVerdict, summary.rulesNotPicked.count >= Self.minimumForVerdict {
+            summary.rulesOrderInterval = ShadowBootstrap.interval95ByDay(
+                ShadowBootstrap.byDay(rulesPickedEntries), ShadowBootstrap.byDay(rulesNotPickedEntries))
         }
-        if rulesPickedReturns.count >= Self.minimumForVerdict, chosen.count >= Self.minimumForVerdict {
-            summary.rulesBrainInterval = ShadowBootstrap.interval95(rulesPickedReturns, chosen)
+        // Disaccordi: i gruppi picked/catena si sovrappongono, il confronto
+        // valido è SOLO su chi avrebbe comprato uno e non l'altro.
+        let rulesOnlyEntries = rulesPickedEntries.filter { !$0.chosen }
+        let chainOnlyEntries = rulesNotPickedEntries.filter { $0.chosen }
+        summary.rulesOnly = Group(rulesOnlyEntries.compactMap(\.ret))
+        summary.chainOnly = Group(chainOnlyEntries.compactMap(\.ret))
+        if summary.rulesOnly.count >= Self.minimumForVerdict, summary.chainOnly.count >= Self.minimumForVerdict {
+            summary.disagreementInterval = ShadowBootstrap.interval95ByDay(
+                ShadowBootstrap.byDay(rulesOnlyEntries), ShadowBootstrap.byDay(chainOnlyEntries))
+        }
+        // Reviewer: non bocciati (comprati davvero o bloccati, vedi la nota
+        // onesta su `reviewerApproved`) contro bocciati, per giorno.
+        let reviewerApprovedEntries = resolved.filter {
+            $0.outcome == ShadowEntry.bought || $0.outcome == ShadowEntry.blocked
+        }
+        summary.reviewerApproved = Group(reviewerApprovedEntries.compactMap(\.ret))
+        if summary.reviewerApproved.count >= Self.minimumForVerdict, summary.reviewerRejected.count >= Self.minimumForVerdict {
+            summary.reviewerInterval = ShadowBootstrap.interval95ByDay(
+                ShadowBootstrap.byDay(reviewerApprovedEntries),
+                ShadowBootstrap.byDay(resolved.filter { $0.outcome == ShadowEntry.reviewerReject }))
         }
         // Tendenza: esiti in ordine di uscita, divisi a metà.
         let ordered = resolved.sorted { ($0.exitDay ?? $0.day, $0.symbol) < ($1.exitDay ?? $1.day, $1.symbol) }

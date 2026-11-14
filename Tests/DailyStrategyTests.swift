@@ -226,16 +226,24 @@ final class CorrelationTests: XCTestCase {
     func testBootstrapIntervalIsDeterministicWithFixedSeed() throws {
         let a: [Double] = [0.010, -0.020, 0.030, 0.005, -0.001, 0.020, -0.005, 0.015, -0.010, 0.002]
         let b: [Double] = [0.004, -0.001, 0.008, -0.006, 0.002, -0.003, 0.001, 0.006, -0.002, 0.0005]
-        let interval = try XCTUnwrap(ShadowBootstrap.interval95(a, b))
+        var aByDay: [String: [Double]] = [:]
+        var bByDay: [String: [Double]] = [:]
+        for (index, value) in a.enumerated() { aByDay["d\(index)"] = [value] }
+        for (index, value) in b.enumerated() { bByDay["d\(index)"] = [value] }
+        let interval = try XCTUnwrap(ShadowBootstrap.interval95ByDay(aByDay, bByDay))
         // Valori attesi calcolati con la STESSA procedura (SplitMix64, seed 42,
-        // 5000 ricampionamenti, percentili 2,5-97,5): il test inchioda
-        // l'algoritmo in-app a quello usato per il banco di prova.
-        XCTAssertEqual(interval.low, -0.00525, accuracy: 1e-9)
-        XCTAssertEqual(interval.high, 0.01265, accuracy: 1e-9)
-        let second = try XCTUnwrap(ShadowBootstrap.interval95([0.02, -0.01, 0.03, 0.005], [0.001, -0.002, 0.0005]))
-        XCTAssertEqual(second.low, -0.0033333333333333335, accuracy: 1e-12)
-        XCTAssertEqual(second.high, 0.026, accuracy: 1e-12)
-        XCTAssertNil(ShadowBootstrap.interval95([], b), "un lato vuoto non dà intervallo")
+        // 5000 ricampionamenti di GIORNI interi, percentili 2,5-97,5): il test
+        // inchioda l'algoritmo in-app a quello usato per il banco di prova.
+        XCTAssertEqual(interval.low, -0.00415, accuracy: 1e-9)
+        XCTAssertEqual(interval.high, 0.0115, accuracy: 1e-9)
+        // Un giorno presente solo su un lato: i resample che restano senza
+        // valori per un lato si scartano (187 su 5000), l'intervallo resta
+        // calcolabile e i percentili si prendono sui resample VALIDI.
+        let second = try XCTUnwrap(ShadowBootstrap.interval95ByDay(
+            ["d0": [0.02], "d1": [-0.01], "d2": [0.03]], ["d0": [0.001], "d1": [-0.002]]))
+        XCTAssertEqual(second.low, -0.008, accuracy: 1e-9)
+        XCTAssertEqual(second.high, 0.0256666667, accuracy: 1e-9)
+        XCTAssertNil(ShadowBootstrap.interval95ByDay([:], bByDay), "un lato vuoto non dà intervallo")
     }
 
     func testShadowSummaryPagellaOrdineARegole() {
@@ -272,11 +280,19 @@ final class CorrelationTests: XCTestCase {
         XCTAssertEqual(summary.rules.count, 64, "ma resta in tutti i segnali delle regole")
         XCTAssertEqual(summary.rulesOrderEdge ?? 0, 0.01, accuracy: 1e-12)
         XCTAssertEqual(summary.rulesVsBrainEdge ?? 1, 0, accuracy: 1e-12)
-        // Serie costanti: l'IC della differenza è un punto (0,01 e 0).
+        // Serie costanti: l'IC della differenza è un punto (0,01).
         XCTAssertEqual(summary.rulesOrderInterval?.low ?? -1, 0.01, accuracy: 1e-12)
         XCTAssertEqual(summary.rulesOrderInterval?.high ?? -1, 0.01, accuracy: 1e-12)
-        XCTAssertEqual(summary.rulesBrainInterval?.low ?? -1, 0, accuracy: 1e-12)
-        XCTAssertEqual(summary.rulesBrainInterval?.high ?? -1, 0, accuracy: 1e-12)
+        // Disaccordi: le 2 voci picked non comprate sono "solo regole",
+        // nessuna "solo catena": sotto la soglia di 30 per lato, niente IC.
+        XCTAssertEqual(summary.rulesOnly.count, 2)
+        XCTAssertEqual(summary.chainOnly.count, 0)
+        XCTAssertNil(summary.disagreementInterval, "sotto la soglia di 30 per lato niente IC")
+        // Reviewer: i 30 comprati sono i "non bocciati", ma nessun bocciato:
+        // l'IC del veto resta nil finché entrambi i lati non hanno 30 esiti.
+        XCTAssertEqual(summary.reviewerApproved.count, 30)
+        XCTAssertEqual(summary.reviewerRejected.count, 0)
+        XCTAssertNil(summary.reviewerInterval)
 
         // Sotto la soglia di 30 esiti per lato: pagella sì, intervallo no.
         var few: [ShadowEntry] = []
@@ -298,6 +314,67 @@ final class CorrelationTests: XCTestCase {
         XCTAssertEqual(small.rulesPicked.count, 10)
         XCTAssertEqual(small.rulesNotPicked.count, 10)
         XCTAssertNil(small.rulesOrderInterval, "senza 30 esiti per lato niente IC: i numeri sono rumore")
-        XCTAssertNil(small.rulesBrainInterval)
+        XCTAssertNil(small.disagreementInterval)
+        XCTAssertNil(small.reviewerInterval)
+    }
+
+    func testShadowSummaryDisaccordiRegoleCatenaEReviewer() {
+        var entries: [ShadowEntry] = []
+        // 30 giorni: in ognuno le regole avrebbero comprato ma la catena Kimi
+        // no (+2%), la catena ha comprato ma le regole no (+0,5%), e il
+        // Reviewer ha bocciato una terza voce (+0,1%, senza flag: fuori dai
+        // gruppi dell'ordine a regole, dentro quelli del Reviewer).
+        for index in 0..<30 {
+            var rulesOnly = ShadowEntry(symbol: "R\(index)", day: "dd\(index)", entry: 100, stop: 90,
+                                         outcome: ShadowEntry.brainSkip)
+            rulesOnly.rulesPick = true
+            rulesOnly.exitPrice = 102
+            rulesOnly.exitDay = "x"
+            entries.append(rulesOnly)
+            var chainOnly = ShadowEntry(symbol: "C\(index)", day: "dd\(index)", entry: 100, stop: 90,
+                                        outcome: ShadowEntry.bought)
+            chainOnly.rulesPick = false
+            chainOnly.exitPrice = 100.5
+            chainOnly.exitDay = "x"
+            entries.append(chainOnly)
+            var rejected = ShadowEntry(symbol: "V\(index)", day: "dd\(index)", entry: 100, stop: 90,
+                                       outcome: ShadowEntry.reviewerReject)
+            rejected.exitPrice = 100.1
+            rejected.exitDay = "x"
+            entries.append(rejected)
+        }
+        let summary = ShadowSummary.from(entries)
+        XCTAssertEqual(summary.rulesOnly.count, 30)
+        XCTAssertEqual(summary.chainOnly.count, 30)
+        XCTAssertEqual(summary.reviewerApproved.count, 30, "i comprati davvero sono i buy non bocciati dal Reviewer")
+        XCTAssertEqual(summary.reviewerRejected.count, 30)
+        XCTAssertEqual(summary.rulesVsBrainEdge ?? 0, 0.015, accuracy: 1e-12)
+        // Serie costanti per giorno: ogni IC della differenza è un punto
+        // (0,02 − 0,005 = 0,015 per i disaccordi, 0,005 − 0,001 = 0,004
+        // per il Reviewer).
+        XCTAssertEqual(summary.disagreementInterval?.low ?? -1, 0.015, accuracy: 1e-12)
+        XCTAssertEqual(summary.disagreementInterval?.high ?? -1, 0.015, accuracy: 1e-12)
+        XCTAssertEqual(summary.reviewerInterval?.low ?? -1, 0.004, accuracy: 1e-12)
+        XCTAssertEqual(summary.reviewerInterval?.high ?? -1, 0.004, accuracy: 1e-12)
+        // Sotto la soglia (29 per lato): pagella sì, IC no.
+        var fewer: [ShadowEntry] = []
+        for index in 0..<29 {
+            var rulesOnly = ShadowEntry(symbol: "R\(index)", day: "dd\(index)", entry: 100, stop: 90,
+                                         outcome: ShadowEntry.brainSkip)
+            rulesOnly.rulesPick = true
+            rulesOnly.exitPrice = 102
+            rulesOnly.exitDay = "x"
+            fewer.append(rulesOnly)
+            var chainOnly = ShadowEntry(symbol: "C\(index)", day: "dd\(index)", entry: 100, stop: 90,
+                                        outcome: ShadowEntry.bought)
+            chainOnly.rulesPick = false
+            chainOnly.exitPrice = 100.5
+            chainOnly.exitDay = "x"
+            fewer.append(chainOnly)
+        }
+        let almost = ShadowSummary.from(fewer)
+        XCTAssertEqual(almost.rulesOnly.count, 29)
+        XCTAssertEqual(almost.chainOnly.count, 29)
+        XCTAssertNil(almost.disagreementInterval, "con 29 esiti per lato l'IC non compare: servono 30")
     }
 }

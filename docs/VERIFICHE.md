@@ -93,15 +93,17 @@ nel Keychain protetto da Face ID.
 - **Se è diverso**: manca la riga CHIAMATA KIMI con una chiamata comunque avvenuta (contatore a posto) → il drain del log non è arrivato al report: da segnalare. Token a zero con risposta ricevuta → l'API non ha restituito usage: guardare il modello in uso.
 - **Nota costo**: la tariffa stimata non è nell'app (solo token reali); il saldo speso reale resta quello di SISTEMA (baseline saldo Kimi).
 
-## 13 · Decisioni del 14/11: default modello kimi-k3.1-pro e prova in ombra ordine a regole (build ≥ 216, non ancora pubblicata)
+## 13 · Decisioni del 14/11: default modello kimi-k3.1-pro e prova in ombra ordine a regole (build ≥ 217, versione 1.6.8, non ancora pubblicata)
 
 - **Modello di default (proposta 23)**: apri SISTEMA → impostazioni → "Modello Kimi".
 - **Atteso**: se NON avevi mai salvato un modello, il campo mostra `kimi-k3.1-pro` (stesso modello di highspeed a metà prezzo: 2,00/10,00 contro 4,00/20,00 USD per Mtoken). Se avevi salvato `kimi-k3.1-pro-highspeed`, devi vederlo ANCORA: il valore salvato vince sul default, nessuno te lo cambia. Per cambiare a mano: campo libero o lista "Modelli disponibili" (caricata dall'account Kimi con le tue chiavi).
 - **Se è diverso**: il campo vuoto dopo un salvataggio ripristina il default (kimi-k3.1-pro): è il comportamento voluto; un valore salvato che sparisce da solo sarebbe un bug da segnalare.
+- **Versione**: SISTEMA → VERSIONE deve leggere 1.6.8 (con numero di build della CI).
 - **Prova in ombra ordine a regole (proposta 22)**: avvia la GIORNALIERA e lascia correre una sessione con almeno un candidato; poi guarda DETTAGLI → PAGELLA AGENTI.
-- **Atteso**: compare la sezione "Ordine a regole · prova in ombra (proposta 22)" con "Che l'ordine a regole avrebbe comprato" e "avrebbe saltato" e la differenza "Regole contro Brain". GLI ORDINI NON CAMBIANO: quello che compra resta deciso dal Brain come sempre. L'IC 95% "REGOLE − BRAIN" compare SOLO quando entrambi i lati hanno almeno 30 esiti risolti (con 1-2 candidati al giorno servono settimane: prima di allora i numeri sono rumore, lo dice anche l'app).
+- **Atteso**: compare la sezione "Ordine a regole · prova in ombra (proposta 22)" con "Che l'ordine a regole avrebbe comprato" e "avrebbe saltato", la riga "Comprato DAVVERO dopo Brain e Reviewer" (stessi conteggi in stile "quanti · rendimento medio · quota in guadagno") e la differenza "Regole − comprato davvero"; più sotto le due righe dei DISACCORDI ("solo regole" e "solo catena Kimi"). Nella pagella principale compare anche "Approvati dal Reviewer" accanto a "Bocciati dal Reviewer". GLI ORDINI NON CAMBIANO: quello che compra resta deciso dal Brain come sempre.
+- **IC in-app**: gli intervalli compaiono SOLO quando entrambi i lati hanno almeno 30 esiti risolti (l'IC dei disaccordi e quello del Reviewer sono PER GIORNO: con 1-2 candidati al giorno servono settimane; prima di allora l'app scrive che i numeri sono rumore). Nota onesta dichiarata in-app: "approvati" del Reviewer include i buy bloccati dal rischio, dove il parere del revisore non è distinguibile.
 - **Se è diverso**: sezione assente dopo una sessione con candidati → il flag non è stato registrato: da segnalare col report di sessione. IC presente con meno di 30 esiti per lato → bug.
-- **Criterio scritto prima** (docs/AGENTI.md 6-ter): si passa all'ordine a regole SOLO se l'IC 95% REGOLE − BRAIN risulta interamente sopra zero, e mai senza il tuo via esplicito.
+- **Criterio scritto prima** (docs/AGENTI.md 6-ter, corretto il 14/11): si passa all'ordine a regole SOLO se l'IC 95% per giorno della differenza SOLO REGOLE − SOLO CATENA (i disaccordi) risulta interamente sopra zero, e mai senza il tuo via esplicito. Il veto del Reviewer NON è provato: si attiva qualcosa solo se il suo IC esclude lo zero.
 
 ## Come riportare un problema
 

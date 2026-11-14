@@ -242,11 +242,17 @@ finale di ogni finestra resta come artifact del run.
 
 **Misure (le stesse della sezione 6, più una nuova)**: scelti vs scartati vs
 casuale a 5 e 10 sedute, Brier per fasce, valore del veto del Reviewer. NUOVA:
-intervallo di confidenza al 95% (bootstrap, 5000 ricampionamenti con
-ripetizione, seed fisso 42, scelti e scartati ricampionati separatamente,
-percentili 2,5-97,5) della differenza media scelti − scartati a 5 e 10 sedute,
-calcolata sull'UNIONE delle 4 finestre (`--combine`). L'unione non duplica
-niente: ogni giorno appartiene a una sola finestra.
+intervallo di confidenza al 95% della differenza media scelti − scartati a 5 e
+10 sedute, calcolata sull'UNIONE delle finestre (`--combine`). CORREZIONE del
+14/11/2026 (revisione del proprietario): il metodo originale ricampionava
+SINGOLI VERDETTI come se fossero indipendenti, ma i candidati dello stesso
+giorno non lo sono. Il metodo corretto è il bootstrap A GRAPPOLO PER GIORNO:
+5000 ricampionamenti con ripetizione di GIORNI INTERI (l'unione dei giorni dei
+due lati), seed fisso 42 (SplitMix64), percentili 2,5-97,5 sui resample validi.
+Da allora lo stesso identico algoritmo vive in-app
+(`ShadowBootstrap.interval95ByDay`, 1.6.8) e in `bootstrap_diff_by_day` di
+tools/replay_agents.py. L'unione non duplica niente: ogni giorno appartiene a
+una sola finestra.
 
 **CRITERIO DI GIUDIZIO (dichiarato prima, non negoziabile dopo i numeri)**:
 
@@ -293,14 +299,25 @@ chiamate, righe per singolo verdetto dagli artifact, --combine)**:
 | scelti (media, n=132) | −0,27% | +0,17% |
 | scartati (media, n=73) | +0,02% | +1,00% |
 | tutti i candidati = casuale | −0,17% | +0,47% |
-| **differenza scelti − scartati [IC 95% bootstrap]** | **−0,30% [−1,02%, +0,39%] → contiene lo zero** | **−0,83% [−1,72%, +0,01%] → contiene lo zero** |
+| **differenza scelti − scartati [IC 95% per giorno]** | **−0,30% [−1,35%, +0,76%] → contiene lo zero** | **−0,83% [−2,11%, +0,43%] → contiene lo zero** |
+
+**Il confronto che conta (aggiunto il 14/11, revisione del proprietario)**: le
+regole da sole contro ciò che la catena Kimi (Brain + Reviewer + rischio) ha
+COMPRATO DAVVERO. Nel banco la catena ha tenuto 63 candidati su 205 (~31% dei
+verdetti, il 48% dei 132 buy) e quei 63 rendono COME LA SCELTA CASUALE:
+−0,11%/+0,30% contro −0,17%/+0,47% del candidato medio. Il confronto è
+proporzionato per conto (63 operazioni contro 205) ma questo non lo cambia:
+ciò che passa tutta la catena non rende più del pescare a caso fra i candidati.
 
 Brier per fasce (win = 5 sedute > 0): 0,50-0,65: 0,229 (n=9, sotto il minimo);
 0,65-0,80: 0,325 (n=156); 0,80-1,00: 0,442 (n=40): PEGGIORE della moneta e
 peggiore salendo la confidence dichiarata. Reviewer (unione): approvati
-−0,11%/+0,30% (n=63) vs bocciati −0,43%/+0,05% (n=69): qui il veto tiene i
-peggiori fuori a entrambi gli orizzonti (nel primo banco a 10 sedute era il
-contrario: il campione è ancora piccolo anche per il veto).
+−0,11%/+0,30% (n=63) contro bocciati −0,43%/+0,05% (n=69). **Il veto NON è
+provato**: nessun intervallo esclude lo zero (IC 95% PER GIORNO della
+differenza approvati − bocciati: +0,32% [−0,46%, +1,12%] a 5 sedute e
++0,25% [−0,77%, +1,35%] a 10) e nel primo campione da 30 giorni il segno era
+l'OPPOSTO (a 10 sedute i bocciati rendevano meglio degli approvati): il
+campione è ancora piccolo anche per il veto.
 
 **Finestra recent 30 giorni (run 43529907464)**: entra nella lettura SOLO
 come aggregato (eseguita prima della registrazione per-verdetto, niente
@@ -309,20 +326,20 @@ righe nel JSON, quindi non può entrare nel bootstrap): scelti −0,22%/−0,70%
 direzione dell'unione. Sommando tutto: 110 giorni con verdetti, 270 verdetti.
 
 **CONCLUSIONE (secondo il criterio dichiarato PRIMA, qui sopra)**: l'IC 95%
-della differenza scelti − scartati CONTIENE lo zero a 5 sedute e a 10 sedute
-(stima puntuale −0,83%, limite superiore +0,01%). Quindi **il Brain
-giornaliero, su questo banco, NON seleziona meglio delle regole: la sua
-scelta non è distinguibile dal caso** (anzi gli scelti rendono meno del
-candidato medio a 5 sedute e la confidence è anti-informativa: Brier
-peggiore al salire di fascia). Si attiva quindi la PROPOSTA pre-dichiarata
-(vedi docs/PROPOSTE.md proposta 22, NON implementata): (1) ordine dei
-candidati a regole (RSI2 più basso, poi correlazione più bassa) al posto
-della scelta del Brain; (2) Kimi ridotto a veto sulle notizie delle ultime
-48 ore. Entrambe da MISURARE IN OMBRA prima di qualsiasi cambio nell'app.
-NOTA ribadita: il banco NON ha notizie nel payload, quindi NON può validare
-da solo il veto-notizie; e il risultato riguarda il meccanismo di SCELTA
-della giornaliera, non il ruolo di Kimi in VELOCE/CONSIGLIO né il veto del
-Reviewer.
+PER GIORNO della differenza scelti − scartati CONTIENE lo zero a 5 sedute e a
+10 sedute (stime puntuali −0,30% e −0,83%; IC [−1,35%, +0,76%] e
+[−2,11%, +0,43%]). Quindi **il Brain giornaliero, su questo banco, NON
+seleziona meglio delle regole: la sua scelta non è distinguibile dal caso**
+(gli scelti rendono meno del candidato medio a 5 sedute e la confidence è
+anti-informativa: Brier peggiore al salire di fascia). Si attiva quindi la
+PROPOSTA pre-dichiarata (vedi docs/PROPOSTE.md proposta 22, NON implementata):
+(1) ordine dei candidati a regole (RSI2 più basso, poi correlazione più bassa)
+al posto della scelta del Brain; (2) Kimi ridotto a veto sulle notizie delle
+ultime 48 ore. Entrambe da MISURARE IN OMBRA prima di qualsiasi cambio
+nell'app. NOTA ribadita: il banco NON ha notizie nel payload, quindi NON può
+validare da solo il veto-notizie; e il risultato riguarda il meccanismo di
+SCELTA della giornaliera, non il ruolo di Kimi in VELOCE/CONSIGLIO né il veto
+del Reviewer.
 
 ## 6-ter. PROVA IN OMBRA dell'ordine a regole (proposta 22 APPROVATA dal proprietario il 14/11/2026, SOLO in ombra)
 
@@ -346,25 +363,43 @@ vecchie (flag nil) restano fuori SOLO da questo confronto.
 
 **Pagella separata** (pannello PAGELLA AGENTI, sezione "Ordine a regole ·
 prova in ombra"): gruppo REGOLE-scelti e gruppo REGOLE-scartati (quanti,
-rendimento medio, quota in guadagno), differenza REGOLE − Brain, e dal
-momento in cui entrambi i lati hanno almeno 30 esiti risolti
-(`minimumForVerdict`) l'INTERVALLO DI CONFIENZA al 95% (bootstrap) della
-differenza REGOLE-scelti − BRAIN-scelti, calcolato IN-APP con lo stesso
-metodo del banco: 5000 ricampionamenti con ripetizione, seed fisso 42
-(SplitMix64), percentili 2,5-97,5 (`ShadowBootstrap.interval95`). Un test
+rendimento medio, quota in guadagno), il gruppo di ciò che è stato COMPRATO
+DAVVERO dopo Brain, Reviewer e rischio (con i conteggi: è il confronto che
+conta, differenza "Regole − comprato davvero"), i due gruppi dei DISACCORDI
+(solo regole: regole sì e catena Kimi no; solo catena: catena sì e regole no),
+e dal momento in cui entrambi i lati di un confronto hanno almeno 30 esiti
+risolti (`minimumForVerdict`) il suo INTERVALLO DI CONFIENZA al 95%,
+calcolato IN-APP con lo stesso metodo del banco: bootstrap A GRAPPOLO PER
+GIORNO, 5000 ricampionamenti con ripetizione di giorni interi, seed fisso 42
+(SplitMix64), percentili 2,5-97,5 (`ShadowBootstrap.interval95ByDay`). Un test
 inchioda l'algoritmo a valori attesi calcolati con la stessa procedura.
 
-**CRITERIO DI ATTIVAZIONE (scritto prima, non negoziabile dopo i numeri)**:
+**CORREZIONE del 14/11/2026 (revisione del proprietario, prima che qualsiasi
+IC comparisse in-app)**: la prima versione della pagella confrontava
+REGOLE-scelti contro BRAIN-scelti con un bootstrap su due campioni
+INDIPENDENTI. Era SBAGLIATO per due motivi: (1) i due gruppi si SOVRAPPONGONO
+(i candidati comprati da entrambi entrano nei due lati), quindi un bootstrap
+che li tratta come campioni separati non è valido; (2) i verdetti dello stesso
+giorno non sono indipendenti. Il criterio corretto guarda SOLO i DISACCORDI
+(gruppi disgiunti) e ricampiona GIORNI interi. Nessun IC è mai apparso in-app
+con la formula vecchia: servono 30 esiti per lato e la prova è attiva dal
+14/11, quindi nessun numero letto sul telefono è stato calcolato col metodo
+sbagliato.
 
-- Si decide SOLO con l'IC 95% della differenza REGOLE-scelti − BRAIN-scelti,
-  calcolato quando REGOLE-scelti, REGOLE-scartati e BRAIN-scelti hanno
-  tutti almeno 30 esiti risolti.
-- IC interamente SOPRA zero: l'ordine a regole batte il Brain in modo
+**CRITERIO DI ATTIVAZIONE (riscritto col metodo corretto, non negoziabile
+dopo i numeri)**:
+
+- Si decide SOLO con l'IC 95% PER GIORNO della differenza SOLO-REGOLE −
+  SOLO-CATENA sui disaccordi (le regole avrebbero comprato ma la catena Kimi
+  no, contro la catena ha comprato ma le regole no), calcolato quando
+  ENTRAMBI i gruppi di disaccordo hanno almeno 30 esiti risolti
+  (`minimumForVerdict`).
+- IC interamente SOPRA zero: l'ordine a regole batte la catena Kimi in modo
   misurabile. Si PROPONE al proprietario di passare la giornaliera
   all'ordine a regole con Kimi ridotto a veto sulle notizie 48h
   (proposta 22 completa). Mai attivato senza il suo sì esplicito.
 - IC che CONTIENE zero: non si cambia niente, la prova continua.
-- IC interamente SOTTO zero: il Brain resta, la prova si chiude.
+- IC interamente SOTTO zero: la catena Kimi resta, la prova si chiude.
 - Il veto-notizie si valuta PER CONTO SUO con la prova in ombra
   dell'EventFilter48h (attiva dal 12/11): la proposta completa si attiva
   solo se ENTRAMBE le prove sono favorevoli.
@@ -376,7 +411,7 @@ massimo 300 voci; la prova vede solo i giorni in cui il Brain è stato
 chiamato (stesso campione per entrambe le pagelle: confronto alla pari, ma
 condizionato a quella che è la catena attuale).
 
-**Stato: ATTIVA in ombra dalla 1.6.7** (flag registrato dal ciclo
+**Stato: ATTIVA in ombra dalla 1.6.8** (flag registrato dal ciclo
 giornaliero, pagella e IC nel pannello PAGELLA AGENTI). Nessun ordine
 cambia. default del modello: proposta 23 APPROVATA e applicata
 (`kimi-k3.1-pro`, vedi docs/PROPOSTE.md).

@@ -485,29 +485,37 @@ non 730 giorni, vedi CHANGELOG).
 - **Da dove esce**: dal criterio scritto PRIMA in docs/AGENTI.md 6-bis. Il banco di prova
   (110 giorni con verdetti, 270 verdetti totali; unione uniforme: 205 verdetti, 79 giorni)
   ha dato differenza scelti − scartati NON distinguibile da zero a 5 E 10 sedute
-  (−0,30% [−1,02%, +0,39%] e −0,83% [−1,72%, +0,01%]), scelti PEGGIO del casuale a 5 sedute
-  e confidence anti-informativa (Brier 0,325 → 0,442 salendo di fascia). Il Brain
-  giornaliero, su payload anonimizzato senza notizie, non batte le regole.
+  (−0,30% [−1,35%, +0,76%] e −0,83% [−2,11%, +0,43%], IC 95% per giorno), scelti
+  PEGGIO del casuale a 5 sedute e confidence anti-informativa (Brier 0,325 → 0,442
+  salendo di fascia). In più il confronto che conta: la catena Kimi ha tenuto 63
+  candidati su 205 (48% dei buy) e quei 63 rendono come la scelta casuale
+  (−0,11%/+0,30% contro −0,17%/+0,47%). Il Brain giornaliero, su payload
+  anonimizzato senza notizie, non batte le regole.
 - **Cosa si propone**: (1) l'ordine dei candidati lo danno le
   REGOLE: RSI2 più basso primo, poi correlazione più bassa; il Brain non sceglie più;
   (2) Kimi resta SOLO come veto sulle notizie delle ultime 48 ore del candidato in cima
   alla lista (il payload notizie ce l'ha solo l'app: il banco non può validare questo
   ruolo, va misurato in ombra in-app).
 - **DECISIONE del proprietario (14/11/2026): SÌ ma SOLO IN OMBRA.** Implementata come
-  prova in ombra dalla 1.6.7: flag `rulesPick` accanto a ogni voce del registro ombra
+  prova in ombra: flag `rulesPick` accanto a ogni voce del registro ombra
   (che cosa avrebbe comprato l'ordine a regole: RSI2 crescente, poi correlazione |max|
   più bassa verso le posizioni aperte e poi verso gli altri candidati, poi simbolo),
-  pagella SEPARATA nel pannello PAGELLA AGENTI con IC 95% bootstrap in-app (stesso
-  metodo del banco). NESSUN ordine cambia, nessuna chiamata Kimi in più. Criterio di
-  attivazione scritto PRIMA in docs/AGENTI.md 6-ter.
+  pagella SEPARATA nel pannello PAGELLA AGENTI con IC 95% bootstrap PER GIORNO
+  in-app (stesso metodo del banco, corretto il 14/11: si confrontano SOLO i
+  DISACCORDI fra regole e catena Kimi, perché i gruppi scelti si sovrappongono;
+  si ricampionano giorni interi, mai singoli verdetti). NESSUN ordine cambia,
+  nessuna chiamata Kimi in più. Criterio di attivazione scritto PRIMA in
+  docs/AGENTI.md 6-ter.
 - **Come si misura prima di adottare**: in OMBRA, senza toccare un ordine: registrare
-  accanto a ogni decisione cosa avrebbe scelto l'ordine a regole e cosa ha scelto il Brain,
-  pagella separata per le due liste, stesso metodo del banco (criterio scritto prima, IC
-  bootstrap, via del proprietario). Serve anche la pagella del veto-notizie (già
-  l'EventFilter48h in ombra dal 12/11 è il guscio giusto).
+  accanto a ogni decisione cosa avrebbe scelto l'ordine a regole e cosa ha comprato
+  davvero la catena, pagella separata con il confronto che conta (regole da sole contro
+  comprato davvero, con i conteggi), stesso metodo del banco (criterio scritto prima,
+  IC bootstrap per giorno sui disaccordi, via del proprietario). Serve anche la pagella
+  del veto-notizie (già l'EventFilter48h in ombra dal 12/11 è il guscio giusto).
 - **Cosa NON cambia**: VELOCE e CONSIGLIO non sono toccati da questi numeri; il Reviewer
-  resta (nel banco l'unione il veto ha separato: bocciati −0,43%/+0,05% contro approvati
-  −0,11%/+0,30%, ma il campione del veto è ancora piccolo).
+  resta, ma il suo veto NON è provato (IC 95% per giorno approvati − bocciati:
+  +0,32% [−0,46%, +1,12%] a 5 sedute e +0,25% [−0,77%, +1,35%] a 10: contiene lo
+  zero, e nel primo campione da 30 giorni il segno era l'opposto).
 
 ### 23 · Modello Kimi default: kimi-k3.1-pro invece di kimi-k3.1-pro-highspeed
 
@@ -521,7 +529,7 @@ non 730 giorni, vedi CHANGELOG).
   la stima proprio perché il default era highspeed.
 - **Proposta**: default dell'app a `kimi-k3.1-pro` (metà prezzo, stesso modello). Il campo
   resta modificabile in SISTEMA.
-- **DECISIONE del proprietario (14/11/2026): SÌ, APPLICATA dalla 1.6.7.** Il default di
+- **DECISIONE del proprietario (14/11/2026): SÌ, APPLICATA dalla 1.6.8.** Il default di
   `SystemLimits.kimiModel` è ora `kimi-k3.1-pro`. Chi aveva GIÀ salvato un modello in
   SISTEMA (per esempio `kimi-k3.1-pro-highspeed`) non vede cambiare niente: il valore
   salvato vince sul default. Per cambiare modello a mano: SISTEMA → impostazioni →

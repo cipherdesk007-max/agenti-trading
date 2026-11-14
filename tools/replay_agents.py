@@ -68,7 +68,6 @@ valida SENZA rete (test locale della struttura, senza pandas/yfinance).
 """
 import json
 import os
-import random
 import sys
 import time
 import urllib.error
@@ -526,26 +525,64 @@ def brier_rows(samples):
     return rows
 
 
-def bootstrap_diff(rows, key, n_boot=5000, seed=42, level=0.95):
-    """Differenza media scelti - scartati con IC bootstrap (ricampionamento
-    con ripetizione, scelti e scartati separati, seed fisso: riproducibile).
-    Metodo dichiarato PRIMA in docs/AGENTI.md 6-bis."""
-    a = [r[key] for r in rows if r["chosen"] and r[key] is not None]
-    b = [r[key] for r in rows if not r["chosen"] and r[key] is not None]
-    if len(a) < 2 or len(b) < 2:
+def bootstrap_diff_by_day(rows, key, flag="chosen", n_boot=5000, seed=42, level=0.95):
+    """Differenza media fra i due gruppi (flag True contro flag False) con IC
+    bootstrap A GRAPPOLO PER GIORNO: i verdetti dello stesso giorno non sono
+    indipendenti, quindi si ricampionano GIORNI interi (con ripetizione),
+    mai singoli verdetti. SplitMix64 seed fisso 42, 5000 ricampionamenti,
+    percentili 2,5-97,5 sui resample validi: lo stesso identico metodo
+    in-app (ShadowBootstrap.interval95ByDay, 1.6.8). Serve il campo `day`
+    nelle righe (presente nei JSON dal 14/11/2026): senza di lui non si può
+    calcolare e la funzione torna None. Metodo dichiarato PRIMA in
+    docs/AGENTI.md 6-bis."""
+    if not rows or any("day" not in r for r in rows):
         return None
-    rng = random.Random(seed)
-    ma, mb = sum(a) / len(a), sum(b) / len(b)
+    a, b = {}, {}
+    for r in rows:
+        if r.get(key) is None:
+            continue
+        (a if r[flag] else b).setdefault(r["day"], []).append(r[key])
+    if not a or not b:
+        return None
+    days = sorted(set(a) | set(b))
+    mask = (1 << 64) - 1
+    state = seed
+
+    def unit():
+        nonlocal state
+        state = (state + 0x9E3779B97F4A7C15) & mask
+        z = state
+        z = ((z ^ (z >> 30)) * 0xBF58476D1CE4E5B9) & mask
+        z = ((z ^ (z >> 27)) * 0x94D049BB133111EB) & mask
+        z = z ^ (z >> 31)
+        return (z >> 11) / 9007199254740992.0
+
+    na = sum(len(v) for v in a.values())
+    nb = sum(len(v) for v in b.values())
+    ma = sum(v for vs in a.values() for v in vs) / na
+    mb = sum(v for vs in b.values() for v in vs) / nb
     diffs = []
     for _ in range(n_boot):
-        sa = sum(a[rng.randrange(len(a))] for _ in a) / len(a)
-        sb = sum(b[rng.randrange(len(b))] for _ in b) / len(b)
-        diffs.append(sa - sb)
+        sa = ca = sb = cb = 0
+        for _ in range(len(days)):
+            i = min(int(unit() * len(days)), len(days) - 1)
+            d = days[i]
+            for v in a.get(d, ()):
+                sa += v
+                ca += 1
+            for v in b.get(d, ()):
+                sb += v
+                cb += 1
+        if ca == 0 or cb == 0:
+            continue
+        diffs.append(sa / ca - sb / cb)
+    if not diffs:
+        return None
     diffs.sort()
-    lo = diffs[max(0, int((1 - level) / 2 * n_boot) - 1)]
-    hi = diffs[min(n_boot - 1, int((1 + level) / 2 * n_boot))]
+    lo = diffs[int((len(diffs) - 1) * (1 - level) / 2)]
+    hi = diffs[min(int((len(diffs) - 1) * (1 + level) / 2), len(diffs) - 1)]
     return {"diff": ma - mb, "lo": lo, "hi": hi,
-            "n_chosen": len(a), "n_skipped": len(b)}
+            "n_chosen": na, "n_skipped": nb, "days": len(days)}
 
 
 def validate_verdicts(decisions, allowed):
@@ -579,14 +616,19 @@ def render_verdicts(rows, label, days):
     print("Brier per fasce di confidence (win = 5 sedute > 0; minimo 20 esiti per giudicare):")
     for lab, n, score in brier_rows(samples):
         print(f"- {lab}: n={n} brier={'n/d' if score is None else f'{score:.3f}'}")
-    print("Differenza scelti - scartati (bootstrap 95%: contiene lo zero = non distinguibile):")
+    print("Differenza scelti - scartati (bootstrap 95% A GRAPPOLO PER GIORNO: contiene lo zero = non distinguibile):")
+    has_days = rows and all("day" in r for r in rows)
     for key, lab in (("ret5", "5 sedute"), ("ret10", "10 sedute")):
-        b = bootstrap_diff(rows, key)
+        b = bootstrap_diff_by_day(rows, key)
         if b is None:
-            print(f"- {lab}: troppo pochi esiti (servono almeno 2 per lato)")
+            if not has_days:
+                print(f"- {lab}: IC per giorno NON calcolabile da questo JSON: manca il campo day "
+                      "(salvato solo nei dump dal 14/11/2026; le medie restano valide)")
+            else:
+                print(f"- {lab}: troppo pochi esiti per un lato")
         else:
             print(f"- {lab}: {pct(b['diff'])} [IC 95%: {pct(b['lo'])}, {pct(b['hi'])}] "
-                  f"(n scelti {b['n_chosen']}, scartati {b['n_skipped']})")
+                  f"(n scelti {b['n_chosen']}, scartati {b['n_skipped']}, {b['days']} giorni)")
 
 
 def render_reviews(rows, label):
@@ -600,6 +642,21 @@ def render_reviews(rows, label):
     print(f"| bocciati (n={len(rej)}) | {pct(mean([r['ret5'] for r in rej]))} | "
           f"{pct(mean([r['ret10'] for r in rej]))} |")
     print("Veto utile se i bocciati rendono peggio degli approvati.")
+    has_days = rows and all("day" in r for r in rows)
+    print("Differenza approvati - bocciati (bootstrap 95% a grappolo per giorno):")
+    for key, lab in (("ret5", "5 sedute"), ("ret10", "10 sedute")):
+        b = bootstrap_diff_by_day(rows, key, flag="approved")
+        if b is None:
+            if not has_days:
+                print(f"- {lab}: IC per giorno NON calcolabile da questo JSON: manca il campo day "
+                      "(salvato solo nei dump dal 14/11/2026; le medie restano valide)")
+            else:
+                print(f"- {lab}: troppo pochi esiti per un lato")
+        else:
+            print(f"- {lab}: {pct(b['diff'])} [IC 95%: {pct(b['lo'])}, {pct(b['hi'])}] "
+                  f"(n approvati {b['n_chosen']}, bocciati {b['n_skipped']}, {b['days']} giorni)")
+    print("Il veto NON è provato finché l'IC non esclude lo zero "
+          "(nel primo campione da 30 giorni il segno era l'opposto).")
 
 
 def run_replay():
@@ -672,7 +729,7 @@ def run_replay():
                     t = meta[v["symbol"]]["ticker"]
                     row = {"ticker": t, "chosen": v["action"] == "buy",
                            "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10),
-                           "conf": v["confidence"]}
+                           "conf": v["confidence"], "day": dstr}
                     brain_rows["base"].append(row)
                     day_base.append(row)
                 buys = sorted([v for v in verdicts if v["action"] == "buy"],
@@ -682,7 +739,8 @@ def run_replay():
                                     REVIEW_SCHEMA, "daily_review")
                     t = meta[v["symbol"]]["ticker"]
                     row = {"ticker": t, "approved": rev.get("verdict") == "approve",
-                           "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10)}
+                           "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10),
+                           "day": dstr}
                     review_rows["base"].append(row)
                     day_rev.append(row)
                 if "b" in variants:
@@ -692,7 +750,7 @@ def run_replay():
                         t = meta[v["symbol"]]["ticker"]
                         row = {"ticker": t, "chosen": v["action"] == "buy",
                                "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10),
-                               "conf": v["confidence"]}
+                               "conf": v["confidence"], "day": dstr}
                         brain_rows["b"].append(row)
                         day_b.append(row)
                 if "c" in variants:
@@ -702,7 +760,8 @@ def run_replay():
                                        REVIEW_SCHEMA, "daily_review")
                         t = meta[v["symbol"]]["ticker"]
                         row = {"ticker": t, "approved": rev.get("verdict") == "approve",
-                               "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10)}
+                               "ret5": fwd(data, idx, t, 5), "ret10": fwd(data, idx, t, 10),
+                               "day": dstr}
                         review_rows["c"].append(row)
                         day_rev.append(row)
             except BudgetExceeded:
@@ -920,13 +979,19 @@ def smoke():
     assert len(uniform_indices(2000, 150)) == 150, "150 su 2000 devono essere 150"
     assert uniform_indices(2000, 150)[0] == 0 and uniform_indices(2000, 150)[-1] == 1999, \
         "primo e ultimo giorno esclusi"
-    rows = ([{"chosen": True, "ret5": 0.01, "ret10": 0.02},
-             {"chosen": False, "ret5": -0.01, "ret10": -0.02}] * 5)
-    b1, b2 = bootstrap_diff(rows, "ret5"), bootstrap_diff(rows, "ret5")
+    rows = []
+    for i in range(5):
+        rows.append({"chosen": True, "ret5": 0.01, "ret10": 0.02, "day": f"d{i}"})
+        rows.append({"chosen": False, "ret5": -0.01, "ret10": -0.02, "day": f"d{i}"})
+    b1 = bootstrap_diff_by_day(rows, "ret5")
+    b2 = bootstrap_diff_by_day(rows, "ret5")
     assert b1["lo"] == b2["lo"] and b1["hi"] == b2["hi"], "bootstrap non riproducibile"
     assert b1["lo"] > 0 and b1["hi"] > 0, "IC di una differenza nettamente positiva"
-    assert bootstrap_diff([{"chosen": False, "ret5": 0.0}] * 3, "ret5") is None, \
-        "bootstrap senza scelti deve dare None"
+    assert b1["days"] == 5, "i giorni del grappolo sono l'unione dei due lati"
+    assert bootstrap_diff_by_day([{"chosen": False, "ret5": 0.0, "day": "d"}] * 3,
+                                 "ret5") is None, "bootstrap senza scelti deve dare None"
+    assert bootstrap_diff_by_day([{"chosen": False, "ret5": 0.0}] * 3,
+                                 "ret5") is None, "senza campo day niente IC per giorno"
     print("SMOKE OK: payload conforme a dailyDecide/dailyReview, anonimizzato,")
     print("normalizzazione a base 100, review cieco senza rationale, fail-closed attivo,")
     print("selezione uniforme e bootstrap riproducibili")
