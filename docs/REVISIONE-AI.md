@@ -12,7 +12,7 @@ dell'interfaccia girano e passano; (4) tutte le schermate seguono una sola regol
 |---|---|
 | Parità con lo studio | crypto e giornaliera fatte; la notte non ha un segnale da confrontare |
 | Ordini sul conto paper | crypto 12 su 12; azioni 8 su 8 a mercato chiuso; manca il giro completo a borsa aperta |
-| Test dell'interfaccia | girano su macchina ARM (`ui-tests.yml`): 5 su 5 |
+| Test dell'interfaccia | girano nel flusso principale, ora su macchina Apple Silicon: 5 su 5 (run 43565035430, con 343 test unitari) |
 | Regola unica dei colori | applicata (docs/DESIGN.md) |
 
 ---

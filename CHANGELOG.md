@@ -7,66 +7,38 @@ Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
 ## [1.6.9] - 14/11/2026
 
-Nessuna funzione nuova: revisione riga per riga dei percorsi che toccano soldi (crypto, HARD KILL, promemoria) e correzione dei difetti trovati, ognuno con il suo test. Nessuna chiamata Kimi.
+Nessuna funzione nuova: completato e verificato ciò che c'era. Nessuna chiamata Kimi, nessun cambio di strategia, nessuna release pubblicata.
 
-### Corretto (CRYPTO: la modalità non poteva funzionare su un conto vero)
+### Verificato
 
-- **La posizione appena comprata spariva dal registro dopo 60 secondi.** Alpaca scrive la stessa coppia in due modi: `BTC/USD` negli ordini e nei dati, `BTCUSD` (senza barra) nell'elenco delle posizioni. L'app le confrontava così come sono, quindi a ogni controllo la posizione risultava "non più sul broker": veniva tolta dal registro e il suo stop annullato. Risultato: posizione vera sul conto, senza stop e che l'app non seguiva più. Ora il confronto passa da `CryptoSymbol` (stessa chiave per le due scritture). Con i broker finti dei test il difetto non si vedeva: il finto usava la stessa scrittura dappertutto.
-- **Lo stop dopo l'acquisto veniva chiesto troppo presto e della misura sbagliata.** L'ordine a mercato su Alpaca nasce "in attesa" e si esegue un attimo dopo, e la commissione crypto si paga nella moneta comprata (sul conto arriva un po' meno dell'eseguito). L'app metteva lo stop subito e per la quantità ordinata: il broker lo rifiutava. Ora aspetta l'esecuzione (fino a 5 letture dello stato), rilegge la quantità che il conto ha davvero e copre quella; se l'ordine non si esegue, il residuo viene annullato e non resta niente in sospeso.
-- **Nessun doppio acquisto e nessuna doppia vendita se la rete cade a metà.** Ogni ordine ha già un identificativo fisso (`client_order_id`); ora, quando un invio fallisce, l'app cerca quell'identificativo sul broker prima di concludere che l'ordine non c'è. Se c'è lo adotta (anche dopo che l'app è stata chiusa a metà dell'operazione); se non si riesce a sapere, non scrive niente nel registro e ricontrolla al tick successivo. Un no esplicito del broker (saldo, conto sospeso) non viene ritentato sulla stessa barra.
-- **L'uscita fallita non veniva ritentata fino al giorno dopo**, anche se il log diceva "si riprova al prossimo tick": la barra restava segnata come già valutata. Ora torna da valutare e si riprova dopo 60 secondi. Inoltre una vendita accettata dal broker ma con lo stato non leggibile veniva trattata come fallita: ora conta come inviata.
-- **Annullo dello stop confermato prima di vendere o di sostituirlo.** Su Alpaca l'annullo è asincrono: finché lo stop è "in annullamento" la quantità resta impegnata e la vendita (o il nuovo stop) viene rifiutata. Ora l'app aspetta la conferma; se non arriva, lascia lo stop dov'è e riprova al tick dopo.
-- **Stop "mancante" che in realtà c'era.** Prima di rimettere uno stop l'app guarda gli stop vivi sul broker: se ce n'è uno della misura giusta lo adotta; se è della misura sbagliata lo toglie e ne mette uno giusto. Prima ne chiedeva un secondo, rifiutato a ogni ciclo.
-- **Quantità degli ordini crypto con 9 decimali** (il massimo che Alpaca accetta) invece di 8: una posizione al netto della commissione ha 9 decimali, e con 8 l'arrotondamento poteva chiedere di vendere o coprire un soffio più di quanto c'è sul conto (ordine rifiutato).
-- **Avviso "senza stop" una volta al giorno per coppia**, non ogni 60 secondi (il tentativo di ripristino continua a ogni ciclo).
-- **Acquisto calcolato sul prezzo di adesso**, non sulla chiusura di ieri (l'app può essere aperta ore dopo la barra). Se il prezzo live è già sotto lo stop della barra di rottura l'ingresso salta; se il prezzo live manca non si compra e si riprova. Due ingressi nello stesso controllo non possono più spendere due volte lo stesso contante, e sul contante si tiene un margine del 2% (senza, l'ultima posizione veniva rifiutata per saldo insufficiente).
-- **Chandelier salito ma prezzo già sotto il nuovo livello**: lo stop vecchio non viene più annullato per metterne uno che il broker rifiuterebbe.
-- **Segnale d'ingresso bloccato da un motivo passeggero** (app in background, blocco drawdown): non viene più perso, si rivaluta quando il blocco cade.
-- **ATR uguale a quello dello studio.** L'app usava la media semplice delle ultime 22 barre, lo studio (`tools/backtest_trend_crypto.py`) l'ATR di Wilder. La distanza dello stop era quindi diversa da quella provata nel backtest. Ora la formula è la stessa. Non è un cambio di strategia: è l'app che torna a fare ciò che lo studio ha misurato.
+- **Regole uguali agli studi (test di parità).** Gli script `tools/genera_parita_crypto.py` e `tools/genera_parita_giornaliera.py` fanno girare il codice degli studi su serie fisse; i test Swift rifanno le stesse barre con il codice dell'app. CRYPTO: stesso stato, ATR22, SMA200 e Donchian20 su 520 barre su 520. GIORNALIERA: stesse SMA200, SMA5, RSI2, ATR14 e stessi segnali su 356 barre su 356. La NOTTE non ha un segnale da confrontare (compra sempre i 4 indici a peso uguale).
+- **Ordini provati sul conto paper** (flusso "Prova ordini su conto PAPER"). Crypto: 12 controlli su 12 (acquisto, stop, annullo, vendita, doppioni rifiutati). Azioni a mercato chiuso: 8 su 8 (limite GTC con stop agganciato e stop GTC, bracket, aste di chiusura e apertura). Manca il giro completo delle azioni a borsa aperta.
+- **Test**: 343 unitari e 5 d'interfaccia, tutti passati (run 43565035430). I test d'interfaccia prima non partivano: il flusso ora gira su macchina Apple Silicon.
 
-### Corretto (GIORNALIERA: uscita rifiutata e rimandata di un ciclo)
+### Corretto
 
-- **L'uscita chiudeva la posizione un istante dopo aver annullato stop e target.** Su Alpaca l'annullo è asincrono e la chiusura non annulla gli ordini aperti: finché lo stop è "in annullamento" le azioni restano impegnate e la vendita viene rifiutata per quantità non disponibile. In quel caso l'app rimetteva lo stop (posizione sempre protetta) ma l'uscita slittava al ciclo successivo, 15 minuti dopo, o al giorno dopo se nel frattempo il mercato chiudeva. Ora, dopo l'annullo, aspetta che gli ordini spariscano dagli aperti (al massimo 2 secondi) e poi chiude. Stessa attesa quando toglie un target rimasto senza il suo stop prima di rimettere lo stop.
+- **CRYPTO non poteva funzionare su un conto vero.** Alpaca scrive la coppia `BTC/USD` negli ordini e `BTCUSD` nell'elenco posizioni: l'app le confrontava così com'erano e 60 secondi dopo l'acquisto toglieva la posizione dal registro e annullava lo stop. Corretto insieme a: stop messo dopo l'esecuzione e sulla quantità che il conto ha davvero (la commissione si paga in moneta), quantità a 9 decimali, ordini cercati per identificativo prima di rinviarli (niente doppi acquisti o doppie vendite se cade la rete), annullo dello stop confermato prima di vendere, uscita fallita ritentata dopo 60 secondi invece che il giorno dopo, stop già presente adottato invece di chiederne un secondo, avviso "senza stop" una volta al giorno, acquisto calcolato sul prezzo di adesso con margine sul contante.
+- **ATR della crypto uguale a quello dello studio.** L'app usava una media semplice, lo studio l'ATR di Wilder: sulla serie di prova lo stato era diverso in 13 barre su 520 e lo stop fino al 20% più largo o più stretto.
+- **"TRADING SOSPESO" compariva anche per un saldo insufficiente**: Alpaca usa lo stesso codice per i due casi, ora l'app legge il messaggio.
+- **HARD KILL diceva "completato" senza controllare.** Ora rilegge il conto e dice se è piatto, se le chiusure sono in coda (mercato chiuso) o che cosa è rimasto aperto.
+- **Promemoria: in PORTAFOGLIO non ne partiva nessuno.** Ora due al giorno (prima dell'apertura e 45 minuti prima della chiusura), con l'orario che segue le sedute corte.
+- **GIORNALIERA: l'uscita poteva essere rifiutata e slittare di un ciclo.** Ora aspetta che stop e target annullati liberino le azioni prima di chiudere.
+- **Etichetta "Notizie 48h" sulle posizioni aperte: non compariva mai** (il caricamento delle notizie non partiva). Trovato dai test d'interfaccia.
 
-### Verificato sul conto PAPER (14/11/2026, run 43557460572) e corretto di conseguenza
+### Completato
 
-- **Prova sul broker vero, con circa 12 dollari finti di BTC comprati e rivenduti: 12 ipotesi su 12 confermate.** La posizione è scritta `BTCUSD` (ordini `BTC/USD`); l'acquisto nasce "pending_new" e si esegue in 0,15 s; la commissione si paga in moneta (0,25%: eseguito 0,000179890, in portafoglio 0,00017944); l'ordine si ritrova per `client_order_id` e un doppione viene rifiutato; lo stop `stop_limit` GTC è accettato con quantità a 9 decimali e prezzi a 2; un secondo stop viene rifiutato; la vendita dopo l'annullo passa; nessun residuo. Con il codice della 1.6.8 le prime tre cose avrebbero fatto perdere la posizione dal registro e rifiutare lo stop.
-- **"TRADING SOSPESO" compariva anche per un saldo insufficiente.** La prova ha mostrato che Alpaca usa lo stesso codice 40310000 per ogni rifiuto 403. L'app guardava il codice: un ordine rifiutato per saldo faceva comparire l'avviso "il broker rifiuta TUTTI i nuovi ordini" e il pulsante RIATTIVA TRADING. Ora conta solo il messaggio di Alpaca ("new orders are rejected by user request").
+- **MERCATI in modalità CRYPTO**: le 5 coppie con prezzo, variazione e stato della regola; grafico a candele su 1G, 1H, 15M e 5M con media a 200, spiegazione, ingresso e stop; legenda e notizie adatte alle crypto. Prima la schermata mostrava solo gli ETF.
+- **DETTAGLI in CRYPTO**: niente confronto con SPY e niente frasi su Kimi, che in CRYPTO non viene chiamato.
 
-### Corretto (HARD KILL e promemoria)
+### Cambiato (design)
 
-- **HARD KILL diceva "completato" senza controllare.** Alpaca risponde "ok" alla richiesta di chiudere tutto anche se una singola chiusura non parte, e a mercato chiuso le azioni restano in portafoglio con la vendita in coda. Ora, dopo la richiesta, l'app rilegge posizioni e ordini (fino a 4 volte) e dice che cosa c'è davvero: conto piatto, chiusure in coda fino all'apertura, oppure HARD KILL INCOMPLETO con l'elenco dei simboli ancora aperti (in quel caso i registri non vengono azzerati). La richiesta di chiusura usa `cancel_orders=true`, così gli ordini vengono annullati da Alpaca prima della liquidazione.
-- **In PORTAFOGLIO non partiva nessun promemoria.** L'interruttore accendeva i promemoria solo per le vecchie modalità GIORNALIERA e NOTTE, che l'app trasforma in PORTAFOGLIO: di fatto mai. Ora PORTAFOGLIO riceve i due della notte (8:45 di New York per la vendita, 45 minuti prima della chiusura per l'acquisto e il controllo giornaliero).
-- **Sedute corte** (chiusura alle 13:00 di New York, per esempio venerdì 27/11/2026): il promemoria d'acquisto segue la chiusura vera di quel giorno. Prima sarebbe arrivato a mercato già chiuso.
+- **Una sola regola di colori** (docs/DESIGN.md): fondo grafite; comandi e saldo in avorio; verde solo per guadagno e stato a posto; ambra per attenzione; rosso per perdita e pericolo. Riviste le 82 righe che usavano il verde.
+- Il consiglio "Saldo piccolo" in CRUSCOTTO è una riga, non un riquadro pieno; "CONTROLLA ORA" sta su una riga; il prossimo controllo è scritto una volta sola; i numeri hanno la virgola in tutte le schermate.
 
-### Aggiunto (verifica, nessuna funzione nuova)
+### Da sapere
 
-- **Test di parità studio ↔ app per la CRYPTO** (proposta 24). Lo studio è in Python, l'app in Swift: due codici che devono applicare la stessa regola. `tools/genera_parita_crypto.py` fa girare il codice dello studio (non una copia) su una serie fissa di 720 barre e scrive che cosa decide barra per barra; `Tests/CryptoParityTests.swift` rifà le stesse barre con il codice dell'app. Devono coincidere stato (dentro o fuori), ATR22, SMA200 e Donchian20 su tutte le 520 barre con decisione (6 ingressi, 6 uscite). Con la formula dell'ATR usata fino alla 1.6.8 il test sarebbe fallito: stato diverso dallo studio in 13 barre su 520 e ATR fino al 20% diverso.
-- **Test di parità anche per la GIORNALIERA.** `tools/genera_parita_giornaliera.py` fa girare la funzione `indicators` dello studio (`tools/backtest_app.py`) su 560 barre fisse; `Tests/DailyParityTests.swift` verifica che l'app calcoli le stesse SMA200, SMA5, RSI2 e ATR14 e riconosca gli stessi segnali (chiusura sopra la SMA200 con RSI2 sotto 10; uscita sopra la SMA5) su 356 barre su 356, con 20 segnali d'ingresso. Qui non c'era nessuna differenza da correggere. Per la NOTTE non c'è un segnale da confrontare (compra sempre i 4 indici a peso uguale): la ripartizione in azioni intere è coperta dai suoi test.
-- **Pulsante "CONTROLLA ORA" su una riga** (andava a capo accanto a STOP) ed etichette dei pulsanti centrate quando sono su due righe.
-- **Test dell'interfaccia**: se il simulatore non fa partire il runner, il flusso aspetta e riprova una volta (nel run 43552818891 nessun test era cominciato).
-
-### Completato (funzioni che c'erano già ma erano a metà)
-
-- **MERCATI in modalità CRYPTO.** La schermata mostrava solo i 15 ETF; in CRYPTO restava ferma sulla scritta "i grafici compaiono dopo il primo controllo", che per le crypto non arrivava mai. Ora mostra le 5 coppie (BTC, ETH, SOL, AVAX, LINK) con prezzo, variazione dalla chiusura di ieri e stato della regola con le stesse parole degli ETF (in posizione, segnale, trend su = sopra la media a 200 in attesa della rottura, trend giù = sotto la media, la regola non compra). Toccando una coppia si apre il grafico a candele su 1G, 1H, 15M e 5M con la media a 200, la spiegazione della regola e, se c'è una posizione, le linee di ingresso e stop. Le candele arrivano dallo stesso servizio dati del ciclo crypto: nessuna API nuova.
-
-- **Etichetta "Notizie 48h" sulle posizioni aperte: non compariva mai.** Era costruita in modo che il caricamento delle notizie non partisse (un contenitore vuoto a cui era agganciato l'avvio). L'ha scoperto il test d'interfaccia `testNewsBadgeOnOpenPosition` la prima volta che è riuscito a girare (macchina ARM, run 43562698344: 4 test passati, questo fallito). Corretto.
-- **Test dell'interfaccia su macchina ARM** (`ui-tests.yml`, solo a mano): sul runner Intel del flusso principale restavano fermi senza partire; su Apple Silicon i 5 test girano in poco più di 2 minuti.
-
-### Cambiato (design, fase 1 della direzione "quadro strumenti" · docs/DESIGN.md)
-
-- **Fondo grafite e comandi color avorio.** Il verde resta solo per ciò che significa qualcosa: guadagno, motore acceso, stato a posto. I pulsanti pieni (START, CONTROLLA ORA), la scheda scelta nella barra in basso e le azioni di sezione sono in avorio. Il verde è anche meno acceso.
-- **Saldo principale come uno strumento**: più grande, stretto, color avorio.
-- **Il consiglio "Saldo piccolo" in CRUSCOTTO è una riga**, non più un riquadro verde pieno che copriva stato e comandi. Toccandola si apre SISTEMA, dove c'è la spiegazione completa.
-- **Percentuale del giorno con la virgola** e tra parentesi ("+3,30 $ oggi (+0,33%)"): prima virgola e punto nella stessa riga.
-- **Regola unica dei colori su tutte le schermate** (fase 2): riviste una per una le 82 righe che usavano il verde. I comandi sono in avorio (pulsanti, "Usa", "Chiudi", "Traduci", "Passa a…", "Aggiungi sorgente", marchio in alto); il verde resta a stati, interruttori accesi e guadagni; i titoli dei riquadri sono bianchi. In più: virgola decimale anche nei numeri di MERCATI, del grafico e di DETTAGLI; nel riquadro del motore "In attesa: prossimo controllo alle…" e il conto alla rovescia non si ripetono più (resta una riga sola con ora e tempo mancante).
-
-### Da sapere (non sono difetti, ma differenze dichiarate)
-
-- CRYPTO: lo stop sul broker scatta durante la giornata; lo studio esce solo alla chiusura giornaliera. L'app è quindi più prudente dello studio e i risultati possono differire.
-- CRYPTO: l'app compra quando la apri. Se la apri ore dopo la chiusura della barra, il prezzo d'ingresso non è quello dello studio.
-- CRYPTO: gli ordini (acquisto, stop, annullo, vendita) sono provati sul conto paper; il ciclo completo dell'app con un segnale vero no, perché serve una rottura sopra la media a 200 giorni (`docs/VERIFICHE.md`, punto 14).
-- Test: **+47** (17 sul ciclo crypto, 4 sulla strategia, 5 sul controllo dopo HARD KILL, 5 sui promemoria, 2 sulle chiamate ad Alpaca, 2 sull'uscita della giornaliera, 2 di parità con lo studio, 2 sul riconoscimento del trading sospeso, 6 su MERCATI crypto, 2 di parità della giornaliera). Totale 343.
+- CRYPTO: lo stop sul broker scatta durante la giornata, lo studio esce alla chiusura giornaliera; l'app compra quando la apri, non alla chiusura della barra. Un ciclo completo con un segnale vero non si è ancora visto: serve una chiusura sopra la media a 200 giorni.
+- Controlli da fare a mano: `docs/VERIFICHE.md`, punti 14-17.
 
 ## [1.6.8] - 14/11/2026
 
