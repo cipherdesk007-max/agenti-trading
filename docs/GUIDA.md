@@ -77,6 +77,12 @@ futuri.**
 - Serve aprire l'app **due volte al giorno** per la parte notte: mattina entro le
   15:28 e pomeriggio entro le 21:50 (ora italiana). Gli stop della giornaliera
   restano sul broker anche ad app chiusa.
+- Con **"Promemoria per aprire l'app"** acceso (SISTEMA) arrivano due notifiche nei
+  giorni di borsa: alle 14:45 (vendita della notte) e alle 21:15 (acquisto della
+  notte e controllo giornaliero), ora italiana abituale. Nelle sedute corte, quando
+  la borsa USA chiude tre ore prima, la seconda arriva tre ore prima. Per qualche
+  settimana l'anno (cambio dell'ora in date diverse) gli orari italiani slittano
+  di un'ora: fa fede l'ora di New York (8:45 e 45 minuti prima della chiusura).
 
 ### Veloce (sperimentale — sconsigliata con soldi veri)
 - Decide ogni pochi minuti con Kimi su candele da 1–15 minuti; chiude tutto prima
@@ -108,7 +114,11 @@ futuri.**
 - **Drawdown**: se perdi oltre il 10% dal picco del capitale bot, il motore si
   blocca finché non sblocchi manualmente (con avvertenza).
 - **HARD KILL** (pulsante rosso in CRUSCOTTO): cancella tutti gli ordini e chiude
-  tutte le posizioni a mercato. Da usare solo in emergenza, con conferma.
+  tutte le posizioni a mercato. Da usare solo in emergenza, con conferma. Dopo la
+  richiesta l'app rilegge il conto e dice com'è andata davvero: **completato**
+  (nessuna posizione, nessun ordine), **chiusure in coda** (a mercato chiuso le
+  azioni si vendono alla prossima apertura) oppure **INCOMPLETO** con l'elenco di
+  ciò che è rimasto aperto: in quel caso ripremi o chiudi dal sito Alpaca.
 - **Pause automatiche**: niente ordini se la rete manca o la batteria è sotto il 20%.
 
 ## 7. Conti multipli e passaggio a LIVE

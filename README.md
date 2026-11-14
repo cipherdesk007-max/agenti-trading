@@ -60,7 +60,7 @@ xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -d
 
 1. Inserisci la chiave Kimi (`https://api.moonshot.ai/v1`) e le chiavi Alpaca, prima in **paper**. Il passaggio al live richiede di scrivere `LIVE`, e ogni START in live chiede conferma.
 2. Modalità PORTAFOGLIO: premi START. L'app controlla i 15 ETF della parte giornaliera (Kimi solo se c'è un segnale, ordine limite + stop GTC sul broker) e gestisce la parte notte alle aste (MOC in chiusura, OPG all'apertura). Poi puoi chiuderla: riaprendola parte subito un controllo (o usa CONTROLLA ORA). Per la notte bastano due aperture al giorno: mattina entro le 15:28 (ora italiana) e pomeriggio entro le 21:50; i promemoria arrivano alle 14:45 e alle 21:15. Se rigeneri il conto paper, usa "Ricalibra equity" in SISTEMA.
-3. `STOP` ferma il motore senza toccare le posizioni. `HARD KILL SWITCH` annulla tutti gli ordini e chiude tutte le posizioni del conto.
+3. `STOP` ferma il motore senza toccare le posizioni. `HARD KILL SWITCH` annulla tutti gli ordini e chiude tutte le posizioni del conto, poi rilegge il conto e dice se è davvero piatto, se le chiusure sono in coda (mercato chiuso) o se qualcosa è rimasto aperto.
 
 ## Protezioni (in codice)
 
@@ -80,10 +80,10 @@ xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -d
 - **Registro ombra** (DETTAGLI → "Kimi · scelti vs scartati"): esito ipotetico, con le stesse regole, dei candidati comprati e di quelli scartati da Brain/Reviewer. Dopo almeno 10 esiti dice se Kimi aggiunge valore; l'esito passato viene anche dato al Brain.
 - **Ordini eseguiti**: inviati, mai eseguiti, eseguiti in parte.
 - **Take-profit +2 ATR sul broker** (bracket con lo stop): nel backtest non cambia il risultato ma fa uscire anche ad app chiusa.
-- **Promemoria** lun–ven 15:30 New York (21:30 in Italia) per aprire l'app. Un controllo automatico in background non è possibile senza togliere la protezione Face ID alle chiavi.
+- **Promemoria** nei giorni di borsa per aprire l'app: in PORTAFOGLIO alle 8:45 di New York (vendita della notte) e 45 minuti prima della chiusura (acquisto della notte e controllo giornaliero), con l'orario che segue le sedute corte. Un controllo automatico in background non è possibile senza togliere la protezione Face ID alle chiavi.
 - **Crash e blocchi** raccolti con MetricKit e riportati nel report di sessione.
 - **CSV dei trade chiusi** (DETTAGLI), per il commercialista e il confronto con l'estratto conto.
-- **Test**: 153 unitari (rischio, strategia, cicli con broker/Kimi finti, HTTP Alpaca con mock, parametrici per taglie di conto) e 5 di interfaccia (conferma live, HARD KILL, START/STOP, prezzo su ogni intervallo, badge notizie). Vedi [docs/CONTROLLO-FINALE.md](docs/CONTROLLO-FINALE.md).
+- **Test**: 331 unitari al 14/11/2026 (rischio, strategia, cicli con broker/Kimi finti, HTTP Alpaca con mock, parametrici per taglie di conto) e 5 di interfaccia (conferma live, HARD KILL, START/STOP, prezzo su ogni intervallo, badge notizie). Vedi [docs/CONTROLLO-FINALE.md](docs/CONTROLLO-FINALE.md).
 
 ## Sicurezza e privacy
 
