@@ -100,8 +100,12 @@ jobs:
         if: github.event_name == 'workflow_dispatch' && inputs.uitest
         continue-on-error: true
         run: |
+          # Ogni tentativo ha un tempo massimo di 8 minuti: nel run
+          # 43556570498 xcodebuild è rimasto fermo 21 minuti senza far partire
+          # nessun test e stava per consumare il tempo dell'intero job (niente
+          # IPA). perl fa da timer: allo scadere il comando viene chiuso.
           run_ui() {
-            xcodebuild \
+            perl -e 'alarm shift; exec @ARGV' 480 xcodebuild \
               -project QuantSwarmAlphaZero.xcodeproj \
               -scheme QuantSwarmAlphaZero \
               -destination "id=$SIM_UDID" \

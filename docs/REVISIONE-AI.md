@@ -17,6 +17,21 @@ release pubblicata, nessun ordine sul conto.
 | Giornaliera: l'uscita aspetta l'annullo di stop e target | `ad172f1` | run completo 43552818891 (test, test d'interfaccia, screenshot, IPA): esito in fondo a questa sezione |
 | Strumento di prova sul conto PAPER (non lanciato) | `43158bd` | solo tools e un flusso manuale, niente build |
 
+## Secondo giro della mattina (dopo le risposte del proprietario: "sì", "lancia", "rifai il design")
+
+| Punto | Commit | Esito |
+|---|---|---|
+| Test di parità studio ↔ app (crypto), CONTROLLA ORA su una riga, secondo tentativo dei test d'interfaccia | `502784a` | run 43556570498: 333 test unitari, 0 falliti (parità compresa). Run annullato a mano: i test d'interfaccia erano fermi da 21 minuti |
+| Prova sul conto PAPER | strumento in `43158bd` | run 43557460572: 12 ipotesi su 12 confermate, conto lasciato pulito |
+| Design fase 1 "quadro strumenti" | `f7cbb38` | schermate nel ramo `screenshot` dopo il run finale |
+| "Trading sospeso" riconosciuto dal messaggio (difetto scoperto dalla prova paper) | `9f21087` | run finale 43559202966 |
+
+- **Parità**: su 720 barre fisse, l'app e lo studio decidono allo stesso modo in 520 barre su 520 (6 ingressi, 6 uscite), con ATR22, SMA200 e Donchian20 uguali. Con l'ATR della 1.6.8 lo stato sarebbe stato diverso in 13 barre e l'ATR fino al 20% diverso: fino a ieri la crypto non applicava la regola misurata nello studio.
+- **Prova paper**: confermati simbolo `BTCUSD` nelle posizioni, esecuzione in 0,15 s, commissione dello 0,25% pagata in BTC, ricerca per `client_order_id`, doppione rifiutato (422), stop `stop_limit` GTC accettato con prezzi a 2 decimali, secondo stop rifiutato, vendita dopo l'annullo, nessun residuo. Le chiavi paper le ha messe il proprietario nei secrets del repository.
+- **Test d'interfaccia: ancora NON eseguiti.** Sul runner Intel con Xcode 26.3 il comando dei test resta fermo senza far partire nessun test (prima volta errore "AX loaded", seconda volta 21 minuti di silenzio). È un problema della macchina di CI, non dell'app, ma finché non è risolto i 5 test d'interfaccia non danno nessuna garanzia. Ora ogni tentativo ha un tempo massimo di 8 minuti, così non può più far perdere l'IPA. Strade da provare: runner ARM (`macos-15`), un altro modello di simulatore.
+- **Design**: fatta solo la fase 1 (docs/DESIGN.md). La fase 2 parte dopo che il proprietario ha visto le schermate.
+- **Non fatto in questo giro**: parità per giornaliera e notte; fase 2 del design; ciclo completo della crypto con un segnale vero.
+
 ## Come è stato trovato il difetto principale
 
 La CRYPTO passava tutti i test, ma i test usano un broker finto scritto da
@@ -56,11 +71,11 @@ totale che è un elenco di esiti. L'elenco completo è in STATO.md
 
 ## FATTO / NON FATTO / DA VERIFICARE (utente)
 
-- FATTO: correzioni elencate sopra con +35 test (331 totali); versione 1.6.9
+- FATTO: correzioni elencate sopra con +39 test (335 totali); prova paper 12 su 12; parità crypto 520 su 520; design fase 1; versione 1.6.9
   per app e widget; CHANGELOG, STATO, VERIFICHE (punti 14-17), GUIDA e README
   aggiornati; IPA 1.6.9 mandato in chat al proprietario.
 - NON FATTO: nessuna funzione nuova; nessuna release pubblicata (apps.json
-  resta alla versione precedente); prova sul conto paper NON lanciata;
+  resta alla versione precedente); test d'interfaccia non eseguiti (CI);
   nessuna modifica a strategie, limiti di rischio o prompt.
 - DA VERIFICARE SU TELEFONO E CONTO: VERIFICHE.md punto 14 (crypto: prova
   rapida paper o primo ingresso vero), 15 (HARD KILL a mercato aperto e

@@ -83,7 +83,7 @@ xcodebuild -project QuantSwarmAlphaZero.xcodeproj -scheme QuantSwarmAlphaZero -d
 - **Promemoria** nei giorni di borsa per aprire l'app: in PORTAFOGLIO alle 8:45 di New York (vendita della notte) e 45 minuti prima della chiusura (acquisto della notte e controllo giornaliero), con l'orario che segue le sedute corte. Un controllo automatico in background non è possibile senza togliere la protezione Face ID alle chiavi.
 - **Crash e blocchi** raccolti con MetricKit e riportati nel report di sessione.
 - **CSV dei trade chiusi** (DETTAGLI), per il commercialista e il confronto con l'estratto conto.
-- **Test**: 331 unitari al 14/11/2026 (rischio, strategia, cicli con broker/Kimi finti, HTTP Alpaca con mock, parametrici per taglie di conto) e 5 di interfaccia (conferma live, HARD KILL, START/STOP, prezzo su ogni intervallo, badge notizie). Vedi [docs/CONTROLLO-FINALE.md](docs/CONTROLLO-FINALE.md).
+- **Test**: 335 unitari al 14/11/2026 (rischio, strategia, cicli con broker/Kimi finti, HTTP Alpaca con mock, parametrici per taglie di conto) e 5 di interfaccia (conferma live, HARD KILL, START/STOP, prezzo su ogni intervallo, badge notizie). Vedi [docs/CONTROLLO-FINALE.md](docs/CONTROLLO-FINALE.md).
 
 ## Sicurezza e privacy
 
