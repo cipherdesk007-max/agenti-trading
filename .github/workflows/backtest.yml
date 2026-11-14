@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       quale:
-        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza | portafoglio | crypto | cryptotrend | replay"
+        description: "tutti | intraday15 | giornaliero | veloce5m | app | piccolo | momentum | overnight | segnali | oggi | studi | robustezza | portafoglio | crypto | cryptotrend | universo | replay"
         default: "tutti"
       # Replay agenti (FASE 2-3): campionamento e finestre dichiarati in docs/AGENTI.md
       max_days:
@@ -110,6 +110,15 @@ jobs:
         working-directory: tools
         run: python backtest_portfolio.py | tee -a ../backtest.md
       # STUDIO crypto 24/7 (solo analisi, non cambia l'app): RSI2<EMA100 + stop/TP ATR su 1D/4H/1H
+      # STUDIO panieri allargati (richiesta del proprietario, 14/11/2026): liste e
+      # criteri scritti prima nello script. Solo analisi: non cambia l'app.
+      - name: Studio panieri allargati ETF e crypto (solo analisi)
+        if: env.Q == 'universo'
+        working-directory: tools
+        env:
+          APCA_API_KEY_ID: ${{ secrets.APCA_API_KEY_ID }}
+          APCA_API_SECRET_KEY: ${{ secrets.APCA_API_SECRET_KEY }}
+        run: python studio_universo.py | tee -a ../backtest.md
       - name: Studio crypto mean-reversion (solo analisi)
         if: env.Q == 'tutti' || env.Q == 'studi' || env.Q == 'crypto'
         working-directory: tools
