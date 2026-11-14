@@ -5,6 +5,13 @@ Formato: [Keep a Changelog](https://keepachangelog.com/it/1.1.0/), versioni [Sem
 La versione installata si legge in **SISTEMA → VERSIONE** (con il numero di build della CI).
 Le versioni precedenti alla 1.1.0 sono ricostruite dalla storia dei commit.
 
+## [Non rilasciato]
+
+### Corretto (solo tools, nessun cambio app · 14/11/2026)
+
+- **Replay agenti: tariffe reali e tetto in dollari.** `tools/replay_agents.py` stimava i costi a 0,60/2,50 USD per Mtoken: sbagliato per kimi-k3.1-pro-highspeed (4,00/20,00, doppio del modello standard 2,00/10,00). Il replay dei 110 giorni ha speso 9,38 USD reali contro 1,39 stimati. Ora le tariffe sono PER MODELLO dalla pagina prezzi ufficiale Moonshot/Kimi (https://www.kimi.ai/it/resources/kimi-k3-1-pro-pricing), con il tetto REPLAY_MAX_USD (default 1 USD, input max_usd del workflow) oltre al tetto chiamate, stima per eccesso (cache hit non scontata) e i risultati parziali salvati a ogni giorno (già presenti). L'app non mostrava nessuna stima tariffaria (token reali nel report, spesa dal saldo Kimi): nessuna modifica a Sources/.
+- **Studio del Brain giornaliero chiuso a 110/150 giorni** (docs/AGENTI.md 6-bis): la differenza scelti − scartati non è distinguibile da zero a 5 e 10 sedute; proposte 22 (ordine candidati a regole + Kimi veto notizie 48h in ombra) e 23 (default kimi-k3.1-pro) in docs/PROPOSTE.md, non implementate.
+
 ## [1.6.7] - 13/11/2026
 
 ### Aggiunto (agenti AI più robusti: audit e banco di prova · 13/11/2026, docs/AGENTI.md)

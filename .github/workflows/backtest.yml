@@ -32,6 +32,9 @@ on:
       budget:
         description: "Replay: tetto chiamate Kimi per run"
         default: "400"
+      max_usd:
+        description: "Replay: tetto costo stimato in USD (tariffe pagina prezzi ufficiale Kimi)"
+        default: "1"
 
 # pipefail: se uno script va in errore il passo FALLISCE anche se il tee ha scritto
 # l'output (prima "| tee" nascondeva l'errore e le tabelle restavano vuote).
@@ -137,6 +140,7 @@ jobs:
           REPLAY_OFFSET: ${{ github.event.inputs.offset || '0' }}
           REPLAY_WINDOW: ${{ github.event.inputs.window || '0' }}
           REPLAY_BUDGET: ${{ github.event.inputs.budget || '400' }}
+          REPLAY_MAX_USD: ${{ github.event.inputs.max_usd || '1' }}
         run: python tools/replay_agents.py | tee -a backtest.md
       # I risultati restano scaricabili anche se il run viene tagliato.
       - name: Risultati replay come artifact

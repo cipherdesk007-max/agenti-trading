@@ -477,3 +477,42 @@ non 730 giorni, vedi CHANGELOG).
   restano esattamente quelle che sono.**
 - **Cosa cambia nel repo**: solo lo strumento di studio (la sezione P2 resta nel passo
   `cryptotrend` per il controllo mensile) e la documentazione. Zero modifiche a Sources/.
+
+## Banca di prova agenti · 14/11/2026 (proposte dal criterio pre-dichiarato, NON implementate)
+
+### 22 · GIORNALIERA senza scelta del Brain: ordine a regole + Kimi solo veto notizie 48h
+
+- **Da dove esce**: dal criterio scritto PRIMA in docs/AGENTI.md 6-bis. Il banco di prova
+  (110 giorni con verdetti, 270 verdetti totali; unione uniforme: 205 verdetti, 79 giorni)
+  ha dato differenza scelti − scartati NON distinguibile da zero a 5 E 10 sedute
+  (−0,30% [−1,02%, +0,39%] e −0,83% [−1,72%, +0,01%]), scelti PEGGIO del casuale a 5 sedute
+  e confidence anti-informativa (Brier 0,325 → 0,442 salendo di fascia). Il Brain
+  giornaliero, su payload anonimizzato senza notizie, non batte le regole.
+- **Cosa si propone (senza implementare niente)**: (1) l'ordine dei candidati lo danno le
+  REGOLE: RSI2 più basso primo, poi correlazione più bassa; il Brain non sceglie più;
+  (2) Kimi resta SOLO come veto sulle notizie delle ultime 48 ore del candidato in cima
+  alla lista (il payload notizie ce l'ha solo l'app: il banco non può validare questo
+  ruolo, va misurato in ombra in-app).
+- **Come si misura prima di adottare**: in OMBRA, senza toccare un ordine: registrare
+  accanto a ogni decisione cosa avrebbe scelto l'ordine a regole e cosa ha scelto il Brain,
+  pagella separata per le due liste, stesso metodo del banco (criterio scritto prima, IC
+  bootstrap, via del proprietario). Serve anche la pagella del veto-notizie (già
+  l'EventFilter48h in ombra dal 12/11 è il guscio giusto).
+- **Cosa NON cambia**: VELOCE e CONSIGLIO non sono toccati da questi numeri; il Reviewer
+  resta (nel banco l'unione il veto ha separato: bocciati −0,43%/+0,05% contro approvati
+  −0,11%/+0,30%, ma il campione del veto è ancora piccolo).
+
+### 23 · Modello Kimi default: kimi-k3.1-pro invece di kimi-k3.1-pro-highspeed
+
+- **Dato di prezzo** (pagina ufficiale https://www.kimi.ai/it/resources/kimi-k3-1-pro-pricing,
+  14/11/2026): kimi-k3.1-pro-highspeed è lo STESSO modello di kimi-k3.1-pro servito 2-3
+  volte più veloce, al DOPPIO del prezzo: 4,00 USD/Mtoken input e 20,00 output, contro
+  2,00 e 10,00 del modello standard (cache hit 0,20 per entrambi).
+- **Perché highspeed non serve alla GIORNALIERA**: decide una volta al giorno, fuori
+  dall'orologio di mercato stretto; qualche secondo in più non cambia niente. Anche la
+  Veloce (ciclo 15 min) e il CONSIGLIO hanno margini ampi. Il replay ha pagato ~7 volte
+  la stima proprio perché il default era highspeed.
+- **Proposta**: default dell'app a `kimi-k3.1-pro` (metà prezzo, stesso modello). Il campo
+  resta modificabile in SISTEMA. DECIDE IL PROPRIETARIO: nessun cambio fatto. Nota
+  onesta: highspeed può restare utile se un giorno si vorrà latenza più bassa; è un
+  interruttino, non una strategia.

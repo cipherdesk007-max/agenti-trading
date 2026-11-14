@@ -1,3 +1,62 @@
+# Revisione AI · 14/11/2026 · STOP replay per costo reale, tariffe corrette, studio Brain chiuso a 110/150 giorni
+
+Richiesta: allargare il banco a 150 giorni uniformi (solo prompt attuale). Le
+prime finestre hanno consumato 9,38 USD reali contro 1,39 stimati: le tariffe
+dello script (0,60/2,50 USD/Mtoken) erano sbagliate per kimi-k3.1-pro-highspeed.
+Il proprietario ha fermato tutto. Nessuna chiamata Kimi in questo giro.
+
+| Punto | Commit | Build CI |
+|---|---|---|
+| Replay 30 recent + 2 finestre uniformi 40+40 (terza cancellata) | 3ff9ca35 (script/finestre) | nessuna build (tools, [skip ci]) |
+| Tariffe ufficiali + REPLAY_MAX_USD + chiusura studio + proposte 22/23 | (questo commit) | nessuna build (tools/docs, [skip ci]) |
+
+## Cosa è successo (verificato sui log e sugli artifact)
+
+- Eseguiti: 30 giorni recent (run 43529907464, 190 chiamate), finestra uniforme
+  1 (run 43535655350, 111 chiamate), finestra 2 (run 43538262998, 101
+  chiamate); finestra 3 cancellata dal proprietario. Fermi a 110 giorni su
+  150 per il costo.
+- **Tariffe corrette** dalla pagina ufficiale
+  https://www.kimi.ai/it/resources/kimi-k3-1-pro-pricing: kimi-k3.1-pro-highspeed
+  4,00/20,00 USD per Mtoken (doppio del modello standard 2,00/10,00, stesso
+  modello 2-3 volte più lento; cache hit 0,20). Tetto REPLAY_MAX_USD (default
+  1 USD) oltre al tetto chiamate; stima per eccesso (cache non scontata).
+- **L'app NON è stata toccata e non aveva il bug**: il report di sessione
+  mostra token reali e secondi, non tariffe; la spesa del giorno in SISTEMA
+  viene dal saldo REALE dell'account Kimi (baseline − saldo). La stima
+  sbagliata (~7 volte per difetto) esisteva solo nel tool di replay. Chiarito
+  al proprietario, che aveva chiesto la correzione "ovunque l'app mostri il
+  costo": nell'app non c'è nessuna stima tariffaria da correggere.
+
+## Chiusura dello studio del Brain (criterio pre-dichiarato in AGENTI.md 6-bis)
+
+- Unione delle due finestre uniformi (205 verdetti, 79 giorni unici, 0 giorni
+  in comune verificati sulle date REPLAYDAY): differenza scelti − scartati
+  −0,30% [IC 95%: −1,02%, +0,39%] a 5 sedute e −0,83% [−1,72%, +0,01%] a 10
+  sedute: ENTRAMBI contengono lo zero. Scelti peggio del casuale a 5 sedute
+  (−0,27% vs −0,17%); Brier 0,325 (n=156) e 0,442 (n=40) peggio della moneta.
+- Finestra recent 30 giorni: solo aggregati (eseguita prima del logging per
+  verdetto), stessa direzione (differenza −0,15%/−0,09%). Totale letto: 110
+  giorni, 270 verdetti.
+- **Conclusione**: il Brain giornaliero su questo banco NON seleziona meglio
+  delle regole. Attivate le PROPOSTE pre-dichiarate, NON implementate:
+  proposta 22 (ordine candidati a regole RSI2/correlazione + Kimi solo veto
+  notizie 48h, da misurare in ombra) e proposta 23 (default modello
+  kimi-k3.1-pro, metà prezzo stesso modello: decide il proprietario).
+
+## FATTO / NON FATTO / DA VERIFICARE (utente)
+
+- FATTO: tariffe per modello con link ufficiale + tetto USD nello script e
+  nel workflow; studio chiuso e scritto in AGENTI.md 6-bis; proposte 22/23;
+  nessuna chiamata Kimi spesa in questo giro.
+- NON FATTO: nessuna modifica all'app (non ce n'era bisogno: vedi sopra);
+  le proposte 22/23 restano proposte; il replay NON è stato rilanciato.
+- DA VERIFICARE: niente sul telefono (nessun cambio app). Da decidere col
+  proprietario: default modello (proposta 23) e se procedere con la prova in
+  ombra della 22.
+
+---
+
 # Revisione AI · 13/11/2026 (sera) · Miglioramento agenti AI (FASE 1/2/3, docs/AGENTI.md)
 
 Richiesta: migliorare Brain/Chief, Reviewer/Contrarian, Analyst e i 5 specialisti

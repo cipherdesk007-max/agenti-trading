@@ -28,9 +28,20 @@ Varianti FASE 3 (confrontate SOLO su questo banco, mai attivate senza numeri):
 - c: reviewer cieco (stessa chiamata daily_review SENZA rationale e confidence
   della proposta).
 
-Costi: tetto REPLAY_BUDGET chiamate (default 400). Tariffe stimate (env):
-KIMI_PRICE_IN / KIMI_PRICE_OUT USD per milione di token (default 0,60 / 2,50:
-ASSUNZIONE DICHIARATA, verificare le tariffe correnti di Moonshot).
+Costi: DUE tetti. REPLAY_BUDGET chiamate (default 400) e REPLAY_MAX_USD dollari
+stimati (default 1): superato uno dei due il replay si ferma e i risultati
+parziali restano nel JSON. Tariffe PER MODELLO dalla pagina prezzi ufficiale
+Moonshot/Kimi (https://www.kimi.ai/it/resources/kimi-k3-1-pro-pricing,
+consultata il 14/11/2026, USD per milione di token):
+- kimi-k3.1-pro-highspeed: input 4,00 / output 20,00 (cache hit 0,20);
+- kimi-k3.1-pro: input 2,00 / output 10,00 (cache hit 0,20);
+- kimi-k3: input 3,00 / output 15,00 (cache hit 0,30).
+Il modello si sceglie con KIMI_MODEL (default kimi-k3.1-pro-highspeed, quello
+dell'app). Le tariffe si possono forzare con KIMI_PRICE_IN / KIMI_PRICE_OUT.
+STIMA PRUDENTE: non distingue cache hit (0,20): se il prompt condiviso viene
+servito dalla cache il costo reale e' PIU' BASSO di quello stimato. Con un
+modello non in tabella stampa un avviso e usa le tariffe highspeed (errore
+per eccesso, non per difetto: il tetto USD ferma prima).
 
 Selezione dei giorni e finestre (dichiarate PRIMA in docs/AGENTI.md 6-bis):
 - REPLAY_SAMPLE=recent (default): gli ultimi REPLAY_MAX_DAYS giorni con
@@ -71,6 +82,29 @@ REASON_CODES = ["trend_intatto", "rsi_estremo", "correlazione_alta",
                 "quadro_mercato_debole", "pullback_poco_profondo",
                 "diversificazione", "volatilita_alta", "altro"]
 CONF_BUCKETS = [(0.50, 0.65), (0.65, 0.80), (0.80, 1.01)]
+
+# Tariffe USD per milione di token (input, output) dalla pagina prezzi
+# ufficiale Moonshot/Kimi, consultata il 14/11/2026:
+# https://www.kimi.ai/it/resources/kimi-k3-1-pro-pricing
+# La cache hit costa meno (0,20 standard/highspeed, 0,30 kimi-k3): la stima
+# qui non la distingue, quindi sbaglia per ECCESSO, mai per difetto.
+KIMI_PRICES = {
+    "kimi-k3.1-pro-highspeed": (4.00, 20.00),
+    "kimi-k3.1-pro": (2.00, 10.00),
+    "kimi-k3": (3.00, 15.00),
+}
+
+
+def prices_for(model):
+    """Tariffe (input, output) del modello; alto e' prudente per il tetto USD."""
+    for name, prices in KIMI_PRICES.items():
+        if model.strip().lower().startswith(name):
+            return prices
+    print(f"AVVISO: tariffe di '{model}' non in tabella "
+          f"(pagina prezzi ufficiale: https://www.kimi.ai/it/resources/"
+          f"kimi-k3-1-pro-pricing): uso le tariffe highspeed 4,00/20,00 per "
+          f"prudenza (stima per eccesso).")
+    return KIMI_PRICES["kimi-k3.1-pro-highspeed"]
 
 # Prompt IDENTICI a Sources/Services/KimiService.swift dailyDecide (BRAIN_PROMPT)
 # e dailyReview (REVIEWER_PROMPT), v1.6.6. Nel replay non ci sono notizie nel
@@ -328,15 +362,33 @@ class Kimi:
     Due tentativi totali su errori transitori (come sendWithRetry dell'app),
     attesa 5 s fra un tentativo e l'altro."""
 
-    def __init__(self, key, model, budget):
+    def __init__(self, key, model, budget, price_in, price_out, max_usd):
         self.key, self.model, self.budget = key, model, budget
+        self.price_in, self.price_out = price_in, price_out
+        self.max_usd = max_usd
         self.calls = 0
         self.retries = 0
         self.tokens_in = self.tokens_out = 0
 
+    def cost(self):
+        """Costo stimato dei token gia' consumati (tariffe per modello)."""
+        return (self.tokens_in / 1e6 * self.price_in
+                + self.tokens_out / 1e6 * self.price_out)
+
+    def _projected(self):
+        """Costo stimato dopo la prossima chiamata: media a chiamata finora
+        (prudenza x1,5), 0,05 USD di partenza se non c'e' ancora storia."""
+        per_call = (self.cost() / self.calls * 1.5) if self.calls else 0.05
+        return self.cost() + per_call
+
     def chat(self, prompt, payload, schema, name):
         if self.calls >= self.budget:
             raise BudgetExceeded(f"budget di {self.budget} chiamate esaurito")
+        if self._projected() > self.max_usd:
+            raise BudgetExceeded(
+                f"tetto REPLAY_MAX_USD raggiunto: {self.max_usd:.2f} USD "
+                f"(spesi {self.cost():.2f} stimati, tariffa "
+                f"{self.price_in}/{self.price_out} USD/Mtoken, modello {self.model})")
         body = {
             "model": self.model,
             "messages": [
@@ -566,9 +618,14 @@ def run_replay():
                 if v.strip()]
     stability_on = os.environ.get("REPLAY_STABILITY", "yes").lower() not in ("no", "0", "false")
     budget = int(os.environ.get("REPLAY_BUDGET", "400"))
-    kimi = Kimi(key, os.environ.get("KIMI_MODEL", "kimi-k3.1-pro-highspeed"), budget)
-    price_in = float(os.environ.get("KIMI_PRICE_IN", "0.60"))
-    price_out = float(os.environ.get("KIMI_PRICE_OUT", "2.50"))
+    max_usd = float(os.environ.get("REPLAY_MAX_USD", "1"))
+    model = os.environ.get("KIMI_MODEL", "kimi-k3.1-pro-highspeed")
+    price_in, price_out = prices_for(model)
+    if os.environ.get("KIMI_PRICE_IN"):
+        price_in = float(os.environ["KIMI_PRICE_IN"])
+    if os.environ.get("KIMI_PRICE_OUT"):
+        price_out = float(os.environ["KIMI_PRICE_OUT"])
+    kimi = Kimi(key, model, budget, price_in, price_out, max_usd)
 
     data = load_data()
     all_days = find_days(data, 0)
@@ -578,7 +635,8 @@ def run_replay():
           f"{len(all_days)} giorni con candidati dal 2006), finestra offset {offset} "
           f"+ {window if window else 'tutti'} -> {len(days)} giorni di questa run, "
           f"varianti {variants}, stabilita' {'si' if stability_on else 'no'}, "
-          f"tetto {budget} chiamate")
+          f"tetto {budget} chiamate, tetto {max_usd:.2f} USD stimati, modello "
+          f"{model} (tariffe {price_in}/{price_out} USD/Mtoken)")
     anon = anon_map()
     brain_rows = {"base": [], "b": []}
     review_rows = {"base": [], "c": []}
@@ -588,7 +646,7 @@ def run_replay():
     stop_reason = None
 
     def dump(stop=None):
-        c = kimi.tokens_in / 1e6 * price_in + kimi.tokens_out / 1e6 * price_out
+        c = kimi.cost()
         with open("replay_agents_risultati.json", "w") as f:
             json.dump({"sample": sample, "selected": len(selected), "offset": offset,
                        "window": window, "days": len(days), "calls": kimi.calls,
@@ -686,10 +744,11 @@ def run_replay():
     except RuntimeError as e:
         stop_reason = str(e)
 
-    cost = kimi.tokens_in / 1e6 * price_in + kimi.tokens_out / 1e6 * price_out
+    cost = kimi.cost()
     print(f"\nChiamate: {kimi.calls} | token in {kimi.tokens_in} out {kimi.tokens_out} | "
-          f"costo stimato {cost:.2f} USD "
-          f"(tariffe dichiarate {price_in}/{price_out} USD per Mtoken)")
+          f"costo stimato {cost:.2f} USD (modello {model}, tariffe "
+          f"{price_in}/{price_out} USD per Mtoken, cache hit non scontata: "
+          f"stima per eccesso)")
     if stop_reason:
         print(f"STOP anticipato: {stop_reason} (risultati parziali)")
 

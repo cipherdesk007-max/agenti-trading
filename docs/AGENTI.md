@@ -118,9 +118,13 @@ default 30, tetto 400 chiamate in tutto)**:
 4. Stabilità: due esecuzioni identiche (stessi giorni) e accordo buy/skip per
    candidato (cohen kappa o % accordo, minimo 30 decisioni per leggerlo).
 
-Costo: uso token stampato da `usage` della risposta e costo stimato con le tariffe
-dichiarate nello script; tetto 400 chiamate. Senza il secret MOONSHOT_API_KEY lo
-script esce con un messaggio chiaro e codice 0 (non è un errore del run).
+Costo: uso token stampato da `usage` della risposta e costo stimato con le
+tariffe PER MODELLO della pagina prezzi ufficiale Moonshot/Kimi
+(https://www.kimi.ai/it/resources/kimi-k3-1-pro-pricing); DUE tetti:
+chiamate (REPLAY_BUDGET) e dollari stimati (REPLAY_MAX_USD, default 1).
+Stima per eccesso: la cache hit (0,20 USD/Mtoken) non viene scontata.
+Senza il secret MOONSHOT_API_KEY lo script esce con un messaggio chiaro e
+codice 0 (non è un errore del run).
 
 ## 5. FASE 3 · Miglioramenti (max 3 varianti, dichiarate prima)
 
@@ -263,5 +267,59 @@ niente: ogni giorno appartiene a una sola finestra.
   notizie né date), non su Kimi in generale: il veto-notizie e il ruolo in
   VELOCE/CONSIGLIO non sono messi in discussione da questo numero.
 
-**Stato: DA ESEGUIRE** (i risultati dell'unione si scrivono qui sotto dopo
-le 4 run, senza toccare il criterio sopra).
+**Stato: ESEGUITO IN PARTE e CHIUSO per costo.** Pianificati 150 giorni
+uniformi in 4 finestre; fermati a 110 su 150 (30 recent + 40 + 40 uniform,
+terza finestra cancellata dal proprietario) perché la spesa REALE era ~7 volte
+la stima: 9,38 USD contro 1,39 stimati (le tariffe 0,60/2,50 USD/Mtoken erano
+sbagliate per kimi-k3.1-pro-highspeed: quelle vere della pagina ufficiale
+https://www.kimi.ai/it/resources/kimi-k3-1-pro-pricing sono 4,00 input /
+20,00 output). Corretto nello script: tariffe per modello + tetto
+`REPLAY_MAX_USD` (default 1 USD) oltre al tetto chiamate.
+
+**Run eseguite** (tutte su commit 3ff9ca35 o precedente, variante base,
+stabilità no): 30 giorni recent (run 43529907464), finestra uniforme 1
+offset 0 (run 43535655350: 111 chiamate), finestra 2 offset 40 (run
+43538262998: 101 chiamate); finestra 3 (offset 80) cancellata. Nota di
+ondata dei dati: le due finestre hanno visto un totale leggermente diverso
+di giorni con candidati (1.825 vs 1.757: dati che driftano tra le run), ma
+il controllo sulle date REPLAYDAY dei log mostra 0 giorni in comune fra le
+due finestre: l'unione non duplica niente (79 giorni unici, 1 saltato).
+
+**Unione delle due finestre uniformi (205 verdetti su 79 giorni, 212
+chiamate, righe per singolo verdetto dagli artifact, --combine)**:
+
+| misura | 5 sedute | 10 sedute |
+|---|---|---|
+| scelti (media, n=132) | −0,27% | +0,17% |
+| scartati (media, n=73) | +0,02% | +1,00% |
+| tutti i candidati = casuale | −0,17% | +0,47% |
+| **differenza scelti − scartati [IC 95% bootstrap]** | **−0,30% [−1,02%, +0,39%] → contiene lo zero** | **−0,83% [−1,72%, +0,01%] → contiene lo zero** |
+
+Brier per fasce (win = 5 sedute > 0): 0,50-0,65: 0,229 (n=9, sotto il minimo);
+0,65-0,80: 0,325 (n=156); 0,80-1,00: 0,442 (n=40): PEGGIORE della moneta e
+peggiore salendo la confidence dichiarata. Reviewer (unione): approvati
+−0,11%/+0,30% (n=63) vs bocciati −0,43%/+0,05% (n=69): qui il veto tiene i
+peggiori fuori a entrambi gli orizzonti (nel primo banco a 10 sedute era il
+contrario: il campione è ancora piccolo anche per il veto).
+
+**Finestra recent 30 giorni (run 43529907464)**: entra nella lettura SOLO
+come aggregato (eseguita prima della registrazione per-verdetto, niente
+righe nel JSON, quindi non può entrare nel bootstrap): scelti −0,22%/−0,70%
+(n=50) vs scartati −0,07%/−0,61% (n=15): differenza −0,15%/−0,09%, stessa
+direzione dell'unione. Sommando tutto: 110 giorni con verdetti, 270 verdetti.
+
+**CONCLUSIONE (secondo il criterio dichiarato PRIMA, qui sopra)**: l'IC 95%
+della differenza scelti − scartati CONTIENE lo zero a 5 sedute e a 10 sedute
+(stima puntuale −0,83%, limite superiore +0,01%). Quindi **il Brain
+giornaliero, su questo banco, NON seleziona meglio delle regole: la sua
+scelta non è distinguibile dal caso** (anzi gli scelti rendono meno del
+candidato medio a 5 sedute e la confidence è anti-informativa: Brier
+peggiore al salire di fascia). Si attiva quindi la PROPOSTA pre-dichiarata
+(vedi docs/PROPOSTE.md proposta 22, NON implementata): (1) ordine dei
+candidati a regole (RSI2 più basso, poi correlazione più bassa) al posto
+della scelta del Brain; (2) Kimi ridotto a veto sulle notizie delle ultime
+48 ore. Entrambe da MISURARE IN OMBRA prima di qualsiasi cambio nell'app.
+NOTA ribadita: il banco NON ha notizie nel payload, quindi NON può validare
+da solo il veto-notizie; e il risultato riguarda il meccanismo di SCELTA
+della giornaliera, non il ruolo di Kimi in VELOCE/CONSIGLIO né il veto del
+Reviewer.
