@@ -547,3 +547,4 @@ Freqtrade, Nautilus Trader, Jesse, FinRL, Hummingbot e TradingAgents sono strume
 | 25 | ETF frazionati | sconsigliati: su Alpaca il frazionato vale solo per ordini che scadono a fine giornata, quindi niente stop GTC ad app chiusa |
 | 26 | Machine learning, reinforcement learning, market making | non ora: servono un server e una prova sui nostri dati che oggi non c'è |
 | 27 | Prova degli ordini sul conto paper (`tools/prova_crypto_paper.py`, `tools/prova_azioni_paper.py`) | fatta per crypto e per le azioni a mercato chiuso |
+| 28 | Paniere più largo: ETF da 15 a 23 o 30, crypto da 5 a 8 o 11 coppie (`tools/studio_universo.py`, liste e criterio scritti prima, run 43568807869) | **respinta dai numeri**. ETF: rendimento annuo da +2,3% a +0,9%, perdita massima da -9% a -20/-22%, Sharpe da 0,43 a 0,18/0,16, segnali (chiamate a Kimi) +48% e +84%. Crypto, stessa finestra dal 10/2020: da +5,2% a +1,6% e +0,5% l'anno, Sharpe da 0,75 a 0,41 e 0,19 |

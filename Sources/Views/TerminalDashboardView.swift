@@ -1974,11 +1974,41 @@ private struct SystemSettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
+            // Tutto ciò che riguarda il conto sul broker sta qui (prima era in
+            // fondo, dentro "Stato"): stato del trading e riallineamento.
             AppCard {
                 VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Strategia", actionLabel: "Carica modelli") {
-                Task { await engine.loadAvailableKimiModels() }
+                SectionHeader(title: "Broker")
+                settingRow("Trading Alpaca", engine.accountTradingSuspended == nil
+                    ? "verifica al primo controllo"
+                    : (engine.accountTradingSuspended! ? "SOSPESO: il broker rifiuta tutti i nuovi ordini" : "attivo: il broker accetta gli ordini"))
+                if engine.accountTradingSuspended == true {
+                    Button(engine.resumingTrading ? "Riattivo…" : "Riattiva trading sul conto Alpaca") {
+                        Task { await engine.resumeAlpacaTrading() }
+                    }
+                    .buttonStyle(TerminalButtonStyle(color: .red))
+                    .disabled(engine.resumingTrading)
+                    Text("La voce \"trades suspended\" del conto Alpaca (errore 40310000) si può togliere direttamente da qui: è la stessa impostazione del pannello app.alpaca.markets, senza uscire dall'app.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.textTertiary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .explanation()
+                }
+                Button("Ricalibra equity") {
+                    engine.recalibrateEquityBaseline()
+                }
+                .secondaryButton()
+                Text("Se il conto paper è stato rigenerato o c'è un prelievo, riallinea il picco del drawdown all'equity corrente: il calo fittizio non deve fermare il bot.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.textTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .explanation()
+                }
             }
+
+            AppCard {
+                VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "Strategia")
 
             Picker("Modalità", selection: $draft.tradingMode) {
                 ForEach(TradingMode.selectableModes, id: \.self) { mode in
@@ -2090,7 +2120,9 @@ private struct SystemSettingsView: View {
 
             AppCard {
                 VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "Kimi")
+            SectionHeader(title: "Kimi", actionLabel: "Carica modelli") {
+                Task { await engine.loadAvailableKimiModels() }
+            }
 
             Toggle("Limite crediti giornaliero", isOn: $draft.creditLimitEnabled)
                 .font(.callout.weight(.semibold))
@@ -2129,6 +2161,12 @@ private struct SystemSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.red)
             }
+                }
+            }
+
+            AppCard {
+                VStack(alignment: .leading, spacing: 12) {
+            SectionHeader(title: "App")
 
             Toggle("Riprendi sessione al riavvio", isOn: $draft.autoResumeOnLaunch)
                 .font(.callout.weight(.semibold))
@@ -2142,12 +2180,6 @@ private struct SystemSettingsView: View {
                 .foregroundStyle(Theme.textTertiary)
                 .fixedSize(horizontal: false, vertical: true)
                 .explanation()
-                }
-            }
-
-            AppCard {
-                VStack(alignment: .leading, spacing: 12) {
-            SectionHeader(title: "App")
 
             Toggle("Nascondi saldo", isOn: $draft.hideAmounts)
                 .font(.callout.weight(.semibold))
@@ -2249,30 +2281,6 @@ private struct SystemSettingsView: View {
                     settingRow("Foreground", "motore solo ad app aperta: in background nessun ordine")
                 }
                 settingRow("Pause automatiche", "rete assente o batteria < 20%")
-                settingRow("Trading Alpaca", engine.accountTradingSuspended == nil
-                    ? "verifica al primo controllo"
-                    : (engine.accountTradingSuspended! ? "SOSPESO: il broker rifiuta tutti i nuovi ordini" : "attivo: il broker accetta gli ordini"))
-                if engine.accountTradingSuspended == true {
-                    Button(engine.resumingTrading ? "Riattivo…" : "Riattiva trading sul conto Alpaca") {
-                        Task { await engine.resumeAlpacaTrading() }
-                    }
-                    .buttonStyle(TerminalButtonStyle(color: .red))
-                    .disabled(engine.resumingTrading)
-                    Text("La voce \"trades suspended\" del conto Alpaca (errore 40310000) si può togliere direttamente da qui: è la stessa impostazione del pannello app.alpaca.markets, senza uscire dall'app.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.textTertiary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .explanation()
-                }
-                Button("Ricalibra equity") {
-                    engine.recalibrateEquityBaseline()
-                }
-                .secondaryButton()
-                Text("Se il conto paper è stato rigenerato o c'è un prelievo, riallinea il picco del drawdown all'equity corrente: il calo fittizio non deve fermare il bot.")
-                    .font(.caption)
-                    .foregroundStyle(Theme.textTertiary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .explanation()
             Text(engine.strategyConfig.tradingMode.runsOnSchedule
                  ? "Nessuna app iOS resta attiva 24/7: per questo la giornaliera mette stop e target sul broker, attivi anche ad app chiusa. Basta aprirla una volta al giorno a mercato aperto."
                  : "Nessuna app iOS resta attiva 24/7: la veloce lavora solo ad app aperta con lo schermo acceso; in background nessun nuovo ordine, le posizioni restano protette dalle gambe stop/target sul broker.")

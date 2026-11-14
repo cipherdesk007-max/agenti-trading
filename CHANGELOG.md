@@ -33,7 +33,12 @@ Nessuna funzione nuova: completato e verificato ciò che c'era. Nessuna chiamata
 ### Cambiato (design)
 
 - **Una sola regola di colori** (docs/DESIGN.md): fondo grafite; comandi e saldo in avorio; verde solo per guadagno e stato a posto; ambra per attenzione; rosso per perdita e pericolo. Riviste le 82 righe che usavano il verde.
+- **Impostazioni riordinate per argomento**: nuovo riquadro Broker (stato del trading su Alpaca, "Riattiva trading", "Ricalibra equity", prima in fondo dentro Stato); "Carica modelli" sta nel riquadro Kimi e non più in Strategia; "Riprendi sessione" e "Promemoria" stanno in App e non più sotto Kimi.
 - Il consiglio "Saldo piccolo" in CRUSCOTTO è una riga, non un riquadro pieno; "CONTROLLA ORA" sta su una riga; il prossimo controllo è scritto una volta sola; i numeri hanno la virgola in tutte le schermate.
+
+### Studiato e respinto
+
+- **Paniere più largo (più ETF, più coppie crypto).** Provato con le stesse regole dell'app, liste e criterio scritti prima (`tools/studio_universo.py`, run 43568807869). ETF da 15 a 23 e a 30: il rendimento annuo scende da +2,3% a +0,9%, la perdita massima passa da -9% a -20% e -22%, i segnali (cioè le chiamate a Kimi) salgono del 48% e dell'84%. Crypto da 5 a 8 e a 11 coppie, sulla stessa finestra: da +5,2% l'anno a +1,6% e +0,5%. Il paniere resta quello di oggi.
 
 ### Da sapere
 
