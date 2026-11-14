@@ -33,7 +33,15 @@ blocchi, un push per blocco, build verde prima del blocco successivo.
   sedute, valore del veto, Brier per fasce, accordo fra 2 esecuzioni.
   Tetto 400 chiamate, token e costo stampati; senza MOONSHOT_API_KEY esce 0.
   Smoke test locale (--smoke) superato; passo `replay` in backtest.yml.
-- NON eseguito: manca il secret MOONSHOT_API_KEY (lo aggiunge l'utente).
+- ESEGUITO il 13/11 (secret aggiunto dal proprietario): dispatch backtest.yml
+  quale=replay, run 43529907464 VERDE. 190 chiamate Kimi, 65 verdetti su 30
+  giorni, 560.273 token, costo stimato 0,63 USD. Risultati completi e lettura
+  onesta in docs/AGENTI.md sezione 6: variante b e variante c SCARTATE
+  (nessuna batte il prompt attuale); il Brain attuale in quella finestra
+  anonimizzata non ha battuto la scelta casuale (−0,22% vs −0,19% a 5 sedute)
+  e la confidence non discrimina (Brier 0,345 nella fascia principale, peggiore
+  della moneta); limiti dichiarati: 30 giorni, 65 verdetti, finestra ribassista,
+  no notizie. Nessun cambio di regole: si continua a misurare in-app.
 
 ## FASE 3 · Miglioramenti (a/d/e/f attivi, b/c in ombra)
 
@@ -56,8 +64,8 @@ blocchi, un push per blocco, build verde prima del blocco successivo.
 - FATTO: audit AGENTI.md, banco replay_agents.py + workflow, 1.6.7 con
   a/d/e/f, 13 nuovi test (288 totali), build verde (run 43527879386, build
   215: 288 test, 0 failure, zero warning Swift), docs aggiornate.
-- NON FATTO: il replay NON è ancora stato lanciato (manca il secret); le
-  varianti b/c NON sono state misurate né attivate; nessuna pubblicazione
+- NON FATTO: le varianti b/c NON entrano nell'app (misurate e SCARTATE con
+  i numeri del banco); nessuna pubblicazione
   della 1.6.7 (AGENTS.md: serve richiesta esplicita). Warning residuo NON
   toccato: deprecazione kSecUseOperationPrompt in KeychainManager.swift:49
   (prompt biometrico del keychain: cambiarla senza provare su telefono

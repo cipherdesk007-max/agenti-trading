@@ -165,23 +165,45 @@ misurabili, harder da ingannare e il costo osservabile. Le varianti b e c
 restano IN OMBRA nel banco di prova finché non ci sono i numeri della
 sezione 6 e il via dell'utente.
 
-## 6. Risultati del banco (tabella da riempire dopo il replay)
+## 6. Risultati del banco (ESEGUITO: run backtest 43529907464, 13/11/2026, max_days=30)
 
-Stato: **NON ESEGUITO**. Serve il secret GitHub `MOONSHOT_API_KEY` (lo aggiunge
-l'utente su Settings → Secrets and variables → Actions del repository), poi
-dispatch di backtest.yml con `quale=replay`.
+Replay reale contro Kimi (kimi-latest, JSON): **190 chiamate, 65 verdetti su
+30 giorni con candidati**, 406.972 token in entrata e 153.301 in uscita, costo
+stimato 0,63 USD (tariffe dichiarate 0,6/2,5 USD per Mtoken). Payload
+anonimizzato (ETF_A.., prezzi base 100, no date, no notizie: Kimi non riceve
+il contesto completo che ha in-app: limite dichiarato). Finestra di mercato
+tutta in discesa: tutte le medie sono negative.
 
 | Misure | Prompt attuale (in-app 1.6.7) | Variante b (uscita strutturata) | Variante c (reviewer cieco) |
 |---|---|---|---|
-| Giorni con candidati / chiamate / token / costo | da eseguire | da eseguire | da eseguire |
-| Scelti a 5 sedute vs scartati | da eseguire | da eseguire | n.d. |
-| Scelti a 10 sedute vs scartati | da eseguire | da eseguire | n.d. |
-| Approvati vs bocciati (valore veto) | da eseguire | n.d. | da eseguire |
-| Brier per fasce di confidence | da eseguire | da eseguire | n.d. |
-| Accordo fra 2 esecuzioni identiche | da eseguire | da eseguire | da eseguire |
-| Esito (attiva / ombra / scarta) | attiva in 1.6.7 (non cambia come si decide) | in ombra: da decidere coi numeri | in ombra: da decidere coi numeri |
+| Giorni con candidati / chiamate / token / costo | 30 giorni / 190 chiamate totali / 560.273 token / 0,63 USD (tutte le colonne) | idem (stessa sessione) | idem (stessa sessione) |
+| Scelti a 5 sedute vs scartati | scelti −0,22% (n=50) vs scartati −0,07% (n=15) vs casuale −0,19% | scelti −0,20% (n=50) vs scartati −0,14% (n=15) | n.d. |
+| Scelti a 10 sedute vs scartati | scelti −0,70% vs scartati −0,61% vs casuale −0,68% | scelti −0,69% vs scartati −0,62% | n.d. |
+| Approvati vs bocciati (valore veto) | approvati −0,10%/−0,93% (n=31) vs bocciati −0,43%/−0,31% (n=19): veto utile a 5 sedute, controproducente a 10 | n.d. | approvati −0,20%/−0,93% (n=30) vs bocciati −0,27%/−0,34% (n=20): veto più debole del Reviewer attuale a 5 sedute, simile a 10 |
+| Brier per fasce di confidence | 0,50-0,65: 0,215 (n=11, sotto il minimo di 20); 0,65-0,80: 0,345 (n=50); 0,80-1,00: 0,348 (n=4, sotto il minimo) | 0,65-0,80: 0,331 (n=47); 0,80-1,00: 0,558 (n=5) | n.d. |
+| Accordo fra 2 esecuzioni identiche | 93,8% su 65 verdetti ripetuti | incluso nel 93,8% | incluso nel 93,8% |
+| Esito (attiva / ombra / scarta) | attiva in 1.6.7 (non cambia come si decide) | **SCARTATA**: identica al prompt attuale (−0,20% vs −0,22% a 5, −0,69% vs −0,70% a 10), Brier non migliore, fascia alta peggio (0,558 vs 0,348) | **SCARTATA**: il veto cieco separa meno di quello attuale a 5 sedute (−0,07% di scarto vs −0,33%) e uguale a 10 |
 | Prompt a/d/e/f in-app | ATTIVO (v1.6.7, commit 469f2120, 288 test) | n.d. | n.d. |
 
-Regola di lettura (dichiarata prima): nessuna variante b/c diventa attiva senza
-battere il prompt attuale su queste misure E il via dell'utente. I fallimenti si
-scrivono qui con gli stessi numeri.
+Lettura onesta (regola dichiarata prima: nessuna variante b/c diventa attiva
+senza battere il prompt attuale E il via dell'utente):
+
+- **Variante b e variante c SCARTATE con i numeri**: nessuna delle due batte il
+  prompt attuale su nessuna misura. Non entrano nell'app.
+- **Il Brain attuale non ha mostrato vantaggio in questa finestra**: i suoi
+  scelti (−0,22%) rendono leggermente PEGGIO della scelta casuale (−0,19%) e
+  degli scartati (−0,07%) a 5 sedute; a 10 sedute è sotto il casuale di 2
+  basis point (−0,70% vs −0,68%). Il Brier nella fascia principale (0,345)
+  è PEGGIORE del lancio della moneta (0,25): la confidence di Kimi non
+  distingue i vincenti dai perdenti, qui.
+- **Limiti del banco (dichiarati prima)**: 30 giorni soltanto, 65 verdetti,
+  finestra tutta ribassista (i segnali long in un mercato che scende perdono
+  quasi tutti), payload senza notizie né date, 15 soli scartati e 19-20
+  bocciati per il confronto del veto. Questo NON è un verdetto definitivo su
+  Kimi né una ragione per toglierlo: è la fotografia di un mese anomimizzato.
+  La misura che conta resta il registro ombra in-app sui paper veri.
+- **Conseguenza pratica**: le regole restano identiche (1.6.7), il registro
+  ombra e le pagelle continuano a raccogliere esiti reali, e una NUOVA
+  finestra di replay (max_days più alto, quando i giorni con candidati
+  saranno di più) può essere rilanciata con `quale=replay` senza costi di
+  sviluppo (solo i centesimi di Kimi: ~0,02 USD per chiamata).
