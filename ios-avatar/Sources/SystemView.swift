@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import SwiftUI
 import UniformTypeIdentifiers
@@ -55,6 +56,19 @@ struct SystemView: View {
             } footer: {
                 Text("Privacy: tutto resta solo su questo iPhone (sandbox dell'app). Nessun server, nessuna rete, nessun account.")
             }
+
+            Section {
+                LabeledContent("Modello", value: deviceIdentifier())
+                LabeledContent("iOS", value: UIDevice.current.systemVersion)
+                LabeledContent("Ultimo avvio", value: UserDefaults.standard.string(forKey: "ultimoAvvio") ?? "—")
+                Text(CrashLog.tail())
+                    .font(.caption2.monospaced())
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Diagnostica".uppercased()).foregroundStyle(Theme.accent)
+            } footer: {
+                Text("Se l'app va in crash o resta nera, copia qui il testo e mandamelo.")
+            }
         }
         .listStyle(.insetGrouped)
         .scrollContentBackground(.hidden)
@@ -89,6 +103,14 @@ struct SystemView: View {
                 alertMessage = "Importazione annullata."
             }
         }
+    }
+}
+
+private func deviceIdentifier() -> String {
+    var sysinfo = utsname()
+    uname(&sysinfo)
+    return withUnsafePointer(to: &sysinfo.machine) { ptr in
+        String(cString: UnsafeRawPointer(ptr).assumingMemoryBound(to: CChar.self))
     }
 }
 

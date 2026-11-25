@@ -32,7 +32,7 @@ final class AppStore {
         var exercises: [Exercise]
         var demoExerciseId: UUID?
         var sessionIds: [UUID]
-        var use3D: Bool
+        var use3D: Bool?
         var faceMesh: FaceMeshData?
     }
 
@@ -56,7 +56,7 @@ final class AppStore {
             exercises = snap.exercises
             demoExerciseId = snap.demoExerciseId
             sessionIds = snap.sessionIds
-            use3D = snap.use3D
+            use3D = snap.use3D ?? true
             faceMesh = snap.faceMesh
         } else {
             seed()
@@ -136,7 +136,7 @@ final class AppStore {
         exercises = snap.exercises
         demoExerciseId = snap.demoExerciseId
         sessionIds = snap.sessionIds
-        use3D = snap.use3D
+        use3D = snap.use3D ?? true
         faceMesh = snap.faceMesh
         return true
     }

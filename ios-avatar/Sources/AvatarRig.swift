@@ -130,7 +130,7 @@ final class AvatarRig {
     init(measurements m: Measurements, appearance a: Appearance, fitness f: Double, faceMesh: FaceMeshData?) {
         bodyH = max(m.heightCm, 120)
         shoulderWidth = max(m.shoulderCm / .pi, bodyH * 0.15)
-        scene.background.contents = UIColor.black
+        scene.background.contents = UIColor.clear
         scene.rootNode.addChildNode(root)
         build(measurements: m, appearance: a, fitness: f, faceMesh: faceMesh)
         addLightsAndCamera()

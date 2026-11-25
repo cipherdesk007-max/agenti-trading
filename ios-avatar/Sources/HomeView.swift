@@ -18,27 +18,26 @@ struct HomeView: View {
             ScrollView {
                 let avatarH = min(320, max(230, geo.size.height * 0.36))
                 VStack(spacing: 12) {
-                    ZStack(alignment: .topTrailing) {
-                        Group {
-                            if store.use3D {
-                                AvatarSceneView(
-                                    measurements: store.measurements,
-                                    appearance: store.appearance,
-                                    fitness: store.fitness,
-                                    faceMesh: store.faceMesh,
-                                    demoMovement: demoExercise?.movement,
-                                    demoMuscles: demoExercise.map { [$0.muscle] } ?? []
-                                )
-                            } else {
-                                Avatar2DView(
-                                    measurements: store.measurements,
-                                    appearance: store.appearance,
-                                    fitness: store.fitness
-                                )
-                            }
+                    ZStack {
+                        Avatar2DView(
+                            measurements: store.measurements,
+                            appearance: store.appearance,
+                            fitness: store.fitness
+                        )
+                        if store.use3D {
+                            AvatarSceneView(
+                                measurements: store.measurements,
+                                appearance: store.appearance,
+                                fitness: store.fitness,
+                                faceMesh: store.faceMesh,
+                                demoMovement: demoExercise?.movement,
+                                demoMuscles: demoExercise.map { [$0.muscle] } ?? []
+                            )
                         }
-                        .frame(height: avatarH)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    }
+                    .frame(height: avatarH)
+                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                    .overlay(alignment: .topTrailing) {
                         Label("Ruota 360° · zoom", systemImage: "rotate.3d")
                             .font(.caption2.bold())
                             .padding(.horizontal, 10)
@@ -46,6 +45,8 @@ struct HomeView: View {
                             .background(.ultraThinMaterial)
                             .clipShape(Capsule())
                             .padding(12)
+                    }
+                    .overlay(alignment: .bottomTrailing) {
                         Button {
                             haptic(.medium)
                             store.use3D.toggle()
