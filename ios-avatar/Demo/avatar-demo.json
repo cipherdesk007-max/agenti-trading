@@ -52,7 +52,7 @@
    "id": "c5902ed2-c4ea-5d6a-8a38-2e1a133ce810",
    "date": -24.0,
    "name": "Trazioni (pull-up)",
-   "kind": "pesi",
+   "kind": "Pesi",
    "weightKg": 83.0,
    "reps": 8,
    "durationMin": 0
@@ -61,7 +61,7 @@
    "id": "80b676d9-7af6-520d-a54e-b597135ec1f9",
    "date": -24.0,
    "name": "Flessioni",
-   "kind": "pesi",
+   "kind": "Pesi",
    "weightKg": 53.1,
    "reps": 15,
    "durationMin": 0
@@ -70,7 +70,7 @@
    "id": "a0969371-15ba-5c73-abd1-d24b5910c169",
    "date": -72.0,
    "name": "Panca piana",
-   "kind": "pesi",
+   "kind": "Pesi",
    "weightKg": 60.0,
    "reps": 8,
    "durationMin": 0
@@ -79,7 +79,7 @@
    "id": "419793b5-e59b-5f3c-a00b-8cdad18cd8b4",
    "date": -120.0,
    "name": "Corsa all'aperto",
-   "kind": "cardio",
+   "kind": "Cardio",
    "weightKg": 0.0,
    "reps": 0,
    "durationMin": 35
