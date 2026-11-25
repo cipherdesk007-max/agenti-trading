@@ -7,9 +7,11 @@ enum CrashLog {
     }()
 
     static func install() {
-        NSSetUncaughtExceptionHandler { exception in
-            append("CRASH \(Date().ISO8601Format()): \(exception.name.rawValue) — \(exception.reason ?? "")")
-        }
+        NSSetUncaughtExceptionHandler(crashHandler)
+    }
+
+    private static func crashHandler(_ exception: NSException) {
+        append("CRASH \(Date().ISO8601Format()): \(exception.name.rawValue) — \(exception.reason ?? "")")
     }
 
     static func append(_ line: String) {
