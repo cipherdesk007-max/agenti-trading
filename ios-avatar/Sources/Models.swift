@@ -1,5 +1,10 @@
 import Foundation
 
+func epley1RM(_ weight: Double, _ reps: Int) -> Double {
+    guard reps > 1 else { return weight }
+    return weight * (1 + Double(reps) / 30)
+}
+
 struct Measurements: Codable, Equatable, Sendable {
     var heightCm: Double = 175
     var weightKg: Double = 72
@@ -34,8 +39,8 @@ struct Appearance: Codable, Equatable, Sendable {
         ("Rosso", 0x8C3A1E), ("Grigio", 0x9A9A9A), ("Bianco", 0xE8E8E8)
     ]
     static let outfitColors: [(String, UInt32)] = [
-        ("Azzurro elettrico", 0x2E8BFF), ("Violetto", 0x8B5CF6), ("Verde", 0x34D399),
-        ("Arancio", 0xFB923C), ("Rosa", 0xF472B6), ("Antracite", 0x6B7280)
+        ("Ciano neon", 0x00E5FF), ("Oro", 0xFFD60A), ("Violetto", 0x8B5CF6),
+        ("Verde", 0x34D399), ("Arancio", 0xFB923C), ("Antracite", 0x6B7280)
     ]
 }
 
@@ -43,6 +48,53 @@ struct FaceMeshData: Codable, Sendable {
     var positions: [Float]
     var normals: [Float]
     var indices: [Int32]
+}
+
+enum MuscleGroup: String, Codable, CaseIterable, Sendable {
+    case petto = "Petto"
+    case dorso = "Dorso"
+    case spalle = "Spalle"
+    case braccia = "Braccia"
+    case gambe = "Gambe"
+    case core = "Core"
+    case cardio = "Cardio"
+}
+
+enum MovementType: String, Codable, CaseIterable, Sendable {
+    case pullUp = "Trazioni alla sbarra"
+    case pushUp = "Piegamenti (push-up)"
+    case bench = "Panca piana"
+    case squat = "Squat"
+    case lunge = "Affondi"
+    case row = "Rematore"
+    case curl = "Curl manubri"
+    case lateralRaise = "Alzate laterali"
+    case plank = "Plank"
+    case custom = "Movimento libero"
+}
+
+struct ExerciseLog: Codable, Identifiable, Sendable {
+    var id = UUID()
+    var date: Date
+    var weight: Double
+    var reps: Int
+}
+
+struct Exercise: Codable, Identifiable, Sendable {
+    var id = UUID()
+    var name: String
+    var muscle: MuscleGroup
+    var equipment: String
+    var movement: MovementType
+    var defaultSets: Int = 3
+    var defaultReps: Int = 10
+    var defaultWeight: Double = 0
+    var custom: Bool = false
+    var history: [ExerciseLog] = []
+
+    var best1RM: Double {
+        history.reduce(0) { max($0, epley1RM($1.weight, $1.reps)) }
+    }
 }
 
 struct SmokeSettings: Codable, Sendable {
@@ -68,7 +120,7 @@ extension HealthMilestone {
         HealthMilestone(minutes: 24 * 60, title: "Rischio infarto", detail: "Inizia a scendere il rischio di infarto", icon: "waveform.path.ecg"),
         HealthMilestone(minutes: 48 * 60, title: "Gusto e olfatto", detail: "I sensi di gusto e olfatto migliorano", icon: "nose.fill"),
         HealthMilestone(minutes: 14 * 24 * 60, title: "Circolazione", detail: "Circolazione e funzione polmonare migliorano", icon: "lungs.fill"),
-        HealthMilestone(minutes: 90 * 24 * 60, title: "Polmoni", detail: "La funzione polmonare puo' aumentare fino al 30%", icon: "lungs.fill"),
+        HealthMilestone(minutes: 90 * 24 * 60, title: "Capacita' polmonare", detail: "La funzione polmonare puo' aumentare fino al 30%", icon: "lungs.fill"),
         HealthMilestone(minutes: 365 * 24 * 60, title: "Cuore protetto", detail: "Il rischio di malattie cardiache si dimezza", icon: "heart.text.square"),
         HealthMilestone(minutes: 10 * 365 * 24 * 60, title: "Rischio tumore", detail: "Il rischio di tumore al polmone si dimezza", icon: "checkmark.shield.fill")
     ]

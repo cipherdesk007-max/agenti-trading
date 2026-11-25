@@ -1,8 +1,11 @@
 import SwiftUI
+import UIKit
 
 enum Theme {
-    static let accent = Color(red: 0.30, green: 0.72, blue: 1.00)
-    static let accent2 = Color(red: 0.55, green: 0.40, blue: 1.00)
+    static let accent = hexColor(0x00E5FF)
+    static let gold = hexColor(0xFFD60A)
+    static let danger = hexColor(0xFF453A)
+    static let background = Color.black
 }
 
 extension UIColor {
@@ -20,12 +23,21 @@ func hexColor(_ hex: UInt32) -> Color {
     Color(uiColor: UIColor(hex: hex))
 }
 
+func haptic(_ style: UIImpactFeedbackGenerator.FeedbackStyle = .light) {
+    UIImpactFeedbackGenerator(style: style).impactOccurred()
+}
+
 struct CardModifier: ViewModifier {
     func body(content: Content) -> some View {
         content
             .padding(16)
-            .background(Color(uiColor: .secondarySystemBackground))
+            .background(Color.black)
+            .overlay {
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Theme.accent.opacity(0.22), lineWidth: 1)
+            }
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .shadow(color: Theme.accent.opacity(0.10), radius: 10, x: 0, y: 0)
     }
 }
 

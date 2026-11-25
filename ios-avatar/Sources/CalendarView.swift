@@ -18,6 +18,11 @@ struct CalendarView: View {
             .sorted { $0.date < $1.date }
     }
 
+    private var completion: Double {
+        guard !dayEvents.isEmpty else { return 0 }
+        return Double(dayEvents.filter { $0.isDone }.count) / Double(dayEvents.count)
+    }
+
     var body: some View {
         VStack(spacing: 12) {
             ScrollView(.horizontal, showsIndicators: false) {
@@ -29,28 +34,63 @@ struct CalendarView: View {
                 .padding(.horizontal)
             }
 
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .stroke(Color.secondary.opacity(0.25), lineWidth: 7)
+                    Circle()
+                        .trim(from: 0, to: completion)
+                        .stroke(completion >= 1 ? .green : Theme.accent, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                        .rotationEffect(.degrees(-90))
+                    Text("\(Int(completion * 100))%")
+                        .font(.caption.bold())
+                        .monospacedDigit()
+                }
+                .frame(width: 52, height: 52)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Completamento giornata").font(.subheadline.bold())
+                    Text("\(dayEvents.filter { $0.isDone }.count) di \(dayEvents.count) attività spuntate")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.horizontal)
+
             List {
                 if dayEvents.isEmpty {
-                    Text("Nessun impegno per questo giorno. Tocca + per aggiungerne uno.")
+                    Text("Nessuna attività per questo giorno. Tocca + per aggiungerne una.")
                         .foregroundStyle(.secondary)
                         .listRowBackground(Color.clear)
                 }
-                ForEach(dayEvents) { ev in
-                    eventRow(ev)
-                }
-                .onDelete { indexSet in
-                    let ids = indexSet.map { dayEvents[$0].id }
-                    store.events.removeAll { ids.contains($0.id) }
+                ForEach(0..<24, id: \.self) { hour in
+                    let eventsAtHour = dayEvents.filter { Calendar.current.component(.hour, from: $0.date) == hour }
+                    if !eventsAtHour.isEmpty {
+                        Section {
+                            ForEach(eventsAtHour) { ev in
+                                eventRow(ev)
+                            }
+                            .onDelete { indexSet in
+                                let ids = indexSet.map { eventsAtHour[$0].id }
+                                store.events.removeAll { ids.contains($0.id) }
+                            }
+                        } header: {
+                            Text("\(String(format: "%02d", hour)):00")
+                                .font(.caption.bold())
+                                .foregroundStyle(Theme.accent)
+                        }
+                    }
                 }
             }
             .listStyle(.insetGrouped)
             .scrollContentBackground(.hidden)
         }
-        .navigationTitle("Calendario & routine")
+        .navigationTitle("TIMELINE 24H")
         .background(Color.black)
         .toolbar {
             ToolbarItem(placement: .navigationBarTrailing) {
                 Button {
+                    haptic()
                     showAdd = true
                 } label: {
                     Image(systemName: "plus")
@@ -65,6 +105,7 @@ struct CalendarView: View {
         let isSelected = cal.isDate(day, inSameDayAs: selected)
         let isToday = cal.isDateInToday(day)
         return Button {
+            haptic()
             selected = day
         } label: {
             VStack(spacing: 2) {
@@ -100,7 +141,7 @@ struct CalendarView: View {
             Spacer()
             if ev.reminder {
                 Image(systemName: "bell.fill")
-                    .foregroundStyle(Theme.accent)
+                    .foregroundStyle(Theme.gold)
             }
         }
     }
@@ -122,7 +163,7 @@ struct AddEventView: View {
     var body: some View {
         NavigationStack {
             Form {
-                TextField("Titolo (es. allenamento, visita...)", text: $title)
+                TextField("Titolo (es. allenamento, lavoro, abitudine...)", text: $title)
                 DatePicker("Data e ora", selection: $date)
                 Toggle("Promemoria", isOn: $reminder)
             }
@@ -135,6 +176,7 @@ struct AddEventView: View {
                     Button("Salva") {
                         let clean = title.trimmingCharacters(in: .whitespaces)
                         guard !clean.isEmpty else { return }
+                        haptic(.medium)
                         store.events.append(CalendarEvent(title: clean, date: date, reminder: reminder))
                         dismiss()
                     }
