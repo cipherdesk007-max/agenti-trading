@@ -1,5 +1,9 @@
 import Foundation
 
+private func avatarCrashHandler(_ exception: NSException) {
+    CrashLog.append("CRASH \(Date().ISO8601Format()): \(exception.name.rawValue) — \(exception.reason ?? "")")
+}
+
 enum CrashLog {
     static let url: URL? = {
         guard let dir = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else { return nil }
@@ -7,11 +11,7 @@ enum CrashLog {
     }()
 
     static func install() {
-        NSSetUncaughtExceptionHandler(crashHandler)
-    }
-
-    private static func crashHandler(_ exception: NSException) {
-        append("CRASH \(Date().ISO8601Format()): \(exception.name.rawValue) — \(exception.reason ?? "")")
+        NSSetUncaughtExceptionHandler(avatarCrashHandler)
     }
 
     static func append(_ line: String) {
