@@ -24,6 +24,7 @@ struct AvatarSceneView: UIViewRepresentable {
         )
         context.coordinator.rig = rig
         view.scene = rig.scene
+        view.pointOfView = rig.cameraNode
         if let movement = demoMovement {
             rig.play(movement, muscles: demoMuscles)
             context.coordinator.lastMovement = movement
@@ -44,6 +45,7 @@ struct AvatarSceneView: UIViewRepresentable {
             )
             c.rig = rig
             uiView.scene = rig.scene
+            uiView.pointOfView = rig.cameraNode
             c.lastSignature = signature
             if let movement = demoMovement {
                 rig.play(movement, muscles: demoMuscles)

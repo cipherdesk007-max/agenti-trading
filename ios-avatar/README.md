@@ -103,6 +103,24 @@ Su iPhone reale: seleziona il dispositivo in Xcode e firma con il tuo Apple ID
 3. **Nota**: l'.ipa è un binario firmato compilabile **solo su macOS con Xcode**;
    in sandbox Linux non si può generare. Qui c'è il codice completo pronto.
 
+## IPA automatico via CI (verificato)
+
+Il workflow `.github/workflows/ipa-avatarfit.yml` gira a ogni push su
+`vibe/avatarfit-ios-3061f8` (o a mano da Actions) su runner `macos-15`:
+controlla le regole di codice, genera il progetto con XcodeGen, **esegue i
+test unitari su simulatore (bloccanti: se falliscono niente IPA)**, compila la
+Release non firmata per `generic/platform=iOS`, impacchetta e **verifica** la
+struttura dell'`.ipa`, poi pubblica:
+
+- artifact `AvatarFit-unsigned` del run (30 giorni di retention), e
+- `AvatarFit.ipa` sul branch `bozza-ipa-avatarfit` (un commit sovrascritto ogni
+  build): URL diretto
+  `https://github.com/cipherdesk007-max/agenti-trading/raw/bozza-ipa-avatarfit/AvatarFit.ipa`
+
+L'IPA è **non firmato**: per installarlo firma con il tuo Apple ID gratuito
+(Sideloadly/AltStore/SideStore ri-firmano in automatico) oppure caricalo in
+LiveContainer. Prima di aggiornare l'ipa esporta il backup JSON da SISTEMA.
+
 ## Sideload su iPhone
 
 - **LiveContainer**: apri l'app, "+", scegli `AvatarFit.ipa` → gira nel container

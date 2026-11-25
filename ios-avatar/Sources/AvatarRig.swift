@@ -38,6 +38,10 @@ func lerpPose(_ a: Pose, _ b: Pose, _ t: CGFloat) -> Pose {
     )
 }
 
+func v3(_ x: CGFloat, _ y: CGFloat, _ z: CGFloat) -> SCNVector3 {
+    SCNVector3(Float(x), Float(y), Float(z))
+}
+
 enum Keyframes {
     static func forMovement(_ movement: MovementType) -> [Keyframe] {
         switch movement {
@@ -100,6 +104,7 @@ enum Keyframes {
 final class AvatarRig {
     let scene = SCNScene()
     let root = SCNNode()
+    let cameraNode = SCNNode()
 
     private var pelvisNode = SCNNode()
     private var spineNode = SCNNode()
@@ -190,11 +195,11 @@ final class AvatarRig {
 
         var legGeos: [SCNNode] = []
         for side in [-1.0, 1.0] {
-            let thigh = joint(root, SCNVector3(CGFloat(side) * legX, legLen, 0))
-            let thighGeo = geo(thigh, SCNCapsule(radius: legR, height: thighLen), matOutfit, SCNVector3(0, -thighLen / 2, 0))
-            let shin = joint(thigh, SCNVector3(0, -thighLen, 0))
-            let shinGeo = geo(shin, SCNCapsule(radius: legR * 0.85, height: shinLen), matOutfit, SCNVector3(0, -shinLen / 2, 0))
-            geo(shin, SCNBox(width: legR * 2.1, height: footH, depth: legR * 3.4, chamferRadius: footH * 0.4), matDark, SCNVector3(0, -shinLen - footH / 2, legR * 1.1))
+            let thigh = joint(root, v3(CGFloat(side) * legX, legLen, 0))
+            let thighGeo = geo(thigh, SCNCapsule(capRadius: legR, height: thighLen), matOutfit, v3(0, -thighLen / 2, 0))
+            let shin = joint(thigh, v3(0, -thighLen, 0))
+            let shinGeo = geo(shin, SCNCapsule(capRadius: legR * 0.85, height: shinLen), matOutfit, v3(0, -shinLen / 2, 0))
+            geo(shin, SCNBox(width: legR * 2.1, height: footH, length: legR * 3.4, chamferRadius: footH * 0.4), matDark, v3(0, -shinLen - footH / 2, legR * 1.1))
             legGeos.append(contentsOf: [thighGeo, shinGeo])
             if side < 0 { thighL = thigh; shinL = shin }
             else { thighR = thigh; shinR = shin }
@@ -205,25 +210,25 @@ final class AvatarRig {
         let chestH = torsoLen * 0.40
 
         root.addChildNode(pelvisNode)
-        pelvisNode.position = SCNVector3(0, legLen, 0)
+        pelvisNode.position = v3(0, legLen, 0)
         basePelvisY = legLen
-        let pelvisGeo = geo(pelvisNode, SCNBox(width: hipW, height: pelvisH, depth: hipW * 0.52 * thick, chamferRadius: pelvisH * 0.3), matOutfit, SCNVector3(0, pelvisH / 2, 0))
+        let pelvisGeo = geo(pelvisNode, SCNBox(width: hipW, height: pelvisH, length: hipW * 0.52 * thick, chamferRadius: pelvisH * 0.3), matOutfit, v3(0, pelvisH / 2, 0))
 
         pelvisNode.addChildNode(spineNode)
         let midW = (hipW + waistW) / 2
-        let abdomenGeo = geo(spineNode, SCNBox(width: midW, height: abdomenH, depth: midW * 0.48 * thick, chamferRadius: abdomenH * 0.3), matOutfit, SCNVector3(0, abdomenH / 2, 0))
-        let chestGeo = geo(spineNode, SCNBox(width: shoulderW, height: chestH, depth: chestD * thick, chamferRadius: chestH * 0.3), matOutfit, SCNVector3(0, abdomenH + chestH / 2, 0))
-        geo(spineNode, SCNCylinder(radius: neckR, height: neckLen), matSkin, SCNVector3(0, abdomenH + chestH + neckLen / 2, 0))
-        let headJoint = joint(spineNode, SCNVector3(0, abdomenH + chestH + neckLen + headR * 0.9, 0))
+        let abdomenGeo = geo(spineNode, SCNBox(width: midW, height: abdomenH, length: midW * 0.48 * thick, chamferRadius: abdomenH * 0.3), matOutfit, v3(0, abdomenH / 2, 0))
+        let chestGeo = geo(spineNode, SCNBox(width: shoulderW, height: chestH, length: chestD * thick, chamferRadius: chestH * 0.3), matOutfit, v3(0, abdomenH + chestH / 2, 0))
+        geo(spineNode, SCNCylinder(radius: neckR, height: neckLen), matSkin, v3(0, abdomenH + chestH + neckLen / 2, 0))
+        let headJoint = joint(spineNode, v3(0, abdomenH + chestH + neckLen + headR * 0.9, 0))
         if let faceMesh, let faceGeometry = AvatarSceneView.geometry(from: faceMesh) {
-            let head = geo(headJoint, faceGeometry, matSkin, SCNVector3(0, 0, 0))
+            let head = geo(headJoint, faceGeometry, matSkin, v3(0, 0, 0))
             let scale = CGFloat(2 * headR) / 0.20
-            head.scale = SCNVector3(scale, scale, scale)
-            head.eulerAngles.y = .pi
+            head.scale = v3(scale, scale, scale)
+            head.eulerAngles = v3(0, .pi, 0)
         } else {
-            geo(headJoint, SCNSphere(radius: headR), matSkin, SCNVector3(0, 0, 0))
-            let hairNode = geo(headJoint, SCNSphere(radius: headR * 1.04), matHair, SCNVector3(0, headR * 0.28, -headR * 0.18))
-            hairNode.scale = SCNVector3(1, 0.72, 1)
+            geo(headJoint, SCNSphere(radius: headR), matSkin, v3(0, 0, 0))
+            let hairNode = geo(headJoint, SCNSphere(radius: headR * 1.04), matHair, v3(0, headR * 0.28, -headR * 0.18))
+            hairNode.scale = v3(1, 0.72, 1)
         }
 
         let shoulderY = abdomenH + chestH * 0.75
@@ -232,13 +237,13 @@ final class AvatarRig {
         let foreLen = armLen * 0.45
 
         for side in [-1.0, 1.0] {
-            let shoulder = joint(spineNode, SCNVector3(CGFloat(side) * shoulderW / 2, shoulderY, 0))
-            let shoulderGeo = geo(shoulder, SCNSphere(radius: armR * 1.2), matOutfit, SCNVector3(0, 0, 0))
-            let upper = joint(shoulder, SCNVector3(0, -armR * 0.6, 0))
-            let upperGeo = geo(upper, SCNCapsule(radius: armR, height: upperLen), matSkin, SCNVector3(0, -upperLen / 2, 0))
-            let forearm = joint(upper, SCNVector3(0, -upperLen, 0))
-            let foreGeo = geo(forearm, SCNCapsule(radius: armR * 0.85, height: foreLen), matSkin, SCNVector3(0, -foreLen / 2, 0))
-            geo(forearm, SCNSphere(radius: armR * 0.95), matSkin, SCNVector3(0, -foreLen - armR * 0.4, 0))
+            let shoulder = joint(spineNode, v3(CGFloat(side) * shoulderW / 2, shoulderY, 0))
+            let shoulderGeo = geo(shoulder, SCNSphere(radius: armR * 1.2), matOutfit, v3(0, 0, 0))
+            let upper = joint(shoulder, v3(0, -armR * 0.6, 0))
+            let upperGeo = geo(upper, SCNCapsule(capRadius: armR, height: upperLen), matSkin, v3(0, -upperLen / 2, 0))
+            let forearm = joint(upper, v3(0, -upperLen, 0))
+            let foreGeo = geo(forearm, SCNCapsule(capRadius: armR * 0.85, height: foreLen), matSkin, v3(0, -foreLen / 2, 0))
+            geo(forearm, SCNSphere(radius: armR * 0.95), matSkin, v3(0, -foreLen - armR * 0.4, 0))
             if side < 0 {
                 shoulderL = shoulder
                 forearmL = forearm
@@ -259,16 +264,14 @@ final class AvatarRig {
         let platformR = max(shoulderW, hipW) * 1.25 + 8
         let platformMat = SCNMaterial()
         platformMat.diffuse.contents = dark
-        platformMat.emission.contents = glow
-        platformMat.emissionIntensity = 0.25
-        geo(root, SCNCylinder(radius: platformR, height: 1.6), platformMat, SCNVector3(0, -0.8, 0))
+        platformMat.emission.contents = glow.withAlphaComponent(0.25)
+        geo(root, SCNCylinder(radius: platformR, height: 1.6), platformMat, v3(0, -0.8, 0))
         let ringMat = SCNMaterial()
         ringMat.diffuse.contents = dark
         ringMat.emission.contents = glow
-        ringMat.emissionIntensity = 1.5
-        let ring = geo(root, SCNTorus(ringRadius: platformR, tubeRadius: 0.5), ringMat, SCNVector3(0, 0.2, 0))
-        let spin = SCNAction.rotateBy(x: 0, y: CGFloat.pi * 2, z: 0, duration: 6)
-        ring.runAction(.repeatForever(spin))
+        let ring = geo(root, SCNTorus(ringRadius: platformR, pipeRadius: 0.5), ringMat, v3(0, 0.2, 0))
+        let spin = SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 6)
+        ring.runAction(SCNAction.repeatForever(spin))
     }
 
     private func addLightsAndCamera() {
@@ -284,7 +287,7 @@ final class AvatarRig {
         key.light = SCNLight()
         key.light?.type = .omni
         key.light?.intensity = 1100
-        key.position = SCNVector3(h * 0.9, h * 1.7, h * 1.4)
+        key.position = v3(h * 0.9, h * 1.7, h * 1.4)
         scene.rootNode.addChildNode(key)
 
         let rim = SCNNode()
@@ -292,35 +295,33 @@ final class AvatarRig {
         rim.light?.type = .omni
         rim.light?.color = glow
         rim.light?.intensity = 650
-        rim.position = SCNVector3(-h * 0.8, h * 0.9, -h * 1.6)
+        rim.position = v3(-h * 0.8, h * 0.9, -h * 1.6)
         scene.rootNode.addChildNode(rim)
 
         let camera = SCNCamera()
         camera.fieldOfView = 42
-        let camNode = SCNNode()
-        camNode.camera = camera
-        camNode.position = SCNVector3(0, h * 0.60, h * 1.85)
+        cameraNode.camera = camera
+        cameraNode.position = v3(0, h * 0.60, h * 1.85)
         let target = SCNNode()
-        target.position = SCNVector3(0, h * 0.47, 0)
-        camNode.constraints = [SCNLookAtConstraint(target: target)]
-        scene.rootNode.addChildNode(camNode)
+        target.position = v3(0, h * 0.47, 0)
+        cameraNode.constraints = [SCNLookAtConstraint(target: target)]
+        scene.rootNode.addChildNode(cameraNode)
         scene.rootNode.addChildNode(target)
-        scene.pointOfView = camNode
     }
 
     func applyPose(_ p: Pose) {
-        root.eulerAngles = SCNVector3(p.bodyPitch, 0, 0)
-        root.position.y = p.rootLift
-        pelvisNode.position.y = basePelvisY - p.pelvisDrop
-        spineNode.eulerAngles = SCNVector3(p.torsoPitch, 0, 0)
-        shoulderL.eulerAngles = SCNVector3(p.shoulderX, 0, p.shoulderZ)
-        shoulderR.eulerAngles = SCNVector3(p.shoulderX, 0, -p.shoulderZ)
-        forearmL.eulerAngles = SCNVector3(-p.elbow, 0, 0)
-        forearmR.eulerAngles = SCNVector3(-p.elbow, 0, 0)
-        thighL.eulerAngles = SCNVector3(-p.hip, 0, 0)
-        thighR.eulerAngles = SCNVector3(-p.hip, 0, 0)
-        shinL.eulerAngles = SCNVector3(p.knee, 0, 0)
-        shinR.eulerAngles = SCNVector3(p.knee, 0, 0)
+        root.eulerAngles = v3(p.bodyPitch, 0, 0)
+        root.position.y = Float(p.rootLift)
+        pelvisNode.position.y = Float(basePelvisY - p.pelvisDrop)
+        spineNode.eulerAngles = v3(p.torsoPitch, 0, 0)
+        shoulderL.eulerAngles = v3(p.shoulderX, 0, p.shoulderZ)
+        shoulderR.eulerAngles = v3(p.shoulderX, 0, -p.shoulderZ)
+        forearmL.eulerAngles = v3(-p.elbow, 0, 0)
+        forearmR.eulerAngles = v3(-p.elbow, 0, 0)
+        thighL.eulerAngles = v3(-p.hip, 0, 0)
+        thighR.eulerAngles = v3(-p.hip, 0, 0)
+        shinL.eulerAngles = v3(p.knee, 0, 0)
+        shinR.eulerAngles = v3(p.knee, 0, 0)
     }
 
     private func poseAt(_ t: CGFloat, keys: [Keyframe], total: CGFloat) -> Pose {
@@ -347,9 +348,9 @@ final class AvatarRig {
         let total = max(keys.reduce(0.0) { $0 + $1.duration }, 0.001)
         let action = SCNAction.customAction(duration: total) { [weak self] _, elapsed in
             guard let self else { return }
-            self.applyPose(self.poseAt(elapsed, keys: keys, total: CGFloat(total)))
+            self.applyPose(self.poseAt(CGFloat(elapsed), keys: keys, total: CGFloat(total)))
         }
-        root.runAction(.repeatForever(action), forKey: "demo")
+        root.runAction(SCNAction.repeatForever(action), forKey: "demo")
     }
 
     func stop() {
@@ -369,24 +370,25 @@ final class AvatarRig {
             for node in muscleNodes[group] ?? [] {
                 if let material = node.geometry?.firstMaterial {
                     material.emission.contents = glow
-                    material.emissionIntensity = 2.2
                     highlighted.append(material)
                 }
             }
         }
         guard !highlighted.isEmpty else { return }
         let materials = highlighted
-        let pulse = SCNAction.customAction(duration: 1.0) { _, t in
-            let value = 1.6 + sin(t * 2 * .pi) * 0.9
-            for material in materials { material.emissionIntensity = CGFloat(value) }
+        let pulse = SCNAction.customAction(duration: 1.0) { [weak self] _, t in
+            guard let self else { return }
+            let alpha = 0.55 + 0.45 * (0.5 + 0.5 * sin(t * 2 * .pi))
+            for material in materials {
+                material.emission.contents = self.glow.withAlphaComponent(alpha)
+            }
         }
-        root.runAction(.repeatForever(pulse), forKey: "pulse")
+        root.runAction(SCNAction.repeatForever(pulse), forKey: "pulse")
     }
 
     private func clearHighlight() {
         for material in highlighted {
             material.emission.contents = UIColor.black
-            material.emissionIntensity = 0
         }
         highlighted.removeAll()
     }
@@ -395,21 +397,20 @@ final class AvatarRig {
         if movement == .pullUp {
             let material = SCNMaterial()
             material.diffuse.contents = UIColor(hex: 0x2A2F36)
-            material.emission.contents = glow
-            material.emissionIntensity = 0.6
+            material.emission.contents = glow.withAlphaComponent(0.6)
             let bar = SCNNode(geometry: SCNCylinder(radius: 1.4, height: shoulderWidth * 1.8))
             bar.geometry?.firstMaterial = material
-            bar.eulerAngles.z = .pi / 2
-            bar.position = SCNVector3(0, bodyH * 1.0, 0)
+            bar.eulerAngles = v3(0, 0, .pi / 2)
+            bar.position = v3(0, bodyH * 1.0, 0)
             root.addChildNode(bar)
             barNode = bar
         }
         if movement == .bench {
             let material = SCNMaterial()
             material.diffuse.contents = UIColor(hex: 0x1A1E24)
-            let bench = SCNNode(geometry: SCNBox(width: shoulderWidth * 1.5, height: 5, depth: bodyH * 0.55, chamferRadius: 1.5))
+            let bench = SCNNode(geometry: SCNBox(width: shoulderWidth * 1.5, height: 5, length: bodyH * 0.55, chamferRadius: 1.5))
             bench.geometry?.firstMaterial = material
-            bench.position = SCNVector3(0, bodyH * 0.20, bodyH * 0.30)
+            bench.position = v3(0, bodyH * 0.20, bodyH * 0.30)
             root.addChildNode(bench)
             benchNode = bench
         }
