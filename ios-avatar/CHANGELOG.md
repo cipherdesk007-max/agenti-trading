@@ -5,8 +5,10 @@
 - Demo e screenshot della UI in CI: l'app accetta l'argomento di lancio
   `--tab=<home|giornata|nosmoke|workout|tracker|sistema>` (valore sconosciuto
   o assente → Home); il workflow scatta le schermate delle 6 schede sul
-  simulatore con l'avatar di prova e le pubblica sul branch
-  `bozza-screenshot-avatarfit`. Nessun cambiamento per chi usa l'app.
+  simulatore con l'avatar di prova (dati versionati in `Demo/avatar-demo.json`,
+  decodifica protetta da test bloccante) e le pubblica sul branch
+  `bozza-screenshot-avatarfit`, insieme a una copia b64 di dati.json prima e
+  dopo il lancio (diagnostica). Nessun cambiamento per chi usa l'app.
 
 ## 1.1.0 (build 2)
 

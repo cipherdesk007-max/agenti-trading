@@ -70,6 +70,27 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertEqual(effectiveLoad(movement: .pushUp, bodyWeightKg: -5, addedKg: -1), 0, accuracy: 0.001)
     }
 
+    @MainActor
+    func testDecodificaSnapshotDemoAvatar() throws {
+        // il file usato dalla CI per gli screenshot deve decodificarsi esattamente
+        // come i dati dell'app ( stessi tipi, stesse chiavi )
+        let dir = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()  // Tests/
+            .deletingLastPathComponent()  // ios-avatar/
+        let url = dir.appendingPathComponent("Demo/avatar-demo.json")
+        let data = try Data(contentsOf: url)
+        let snap = try JSONDecoder().decode(AppStore.Snapshot.self, from: data)
+        XCTAssertEqual(snap.measurements.heightCm, 187)
+        XCTAssertEqual(snap.measurements.weightKg, 83)
+        XCTAssertEqual(snap.events.count, 3)
+        XCTAssertEqual(snap.workouts.count, 4)
+        XCTAssertEqual(snap.trackers.count, 3)
+        XCTAssertEqual(snap.exercises.count, 11)
+        XCTAssertTrue(snap.smoke.enabled)
+        XCTAssertEqual(snap.exercises.first?.history.count ?? 0, 2)
+        XCTAssertNotNil(snap.demoExerciseId)
+    }
+
     func testTabDaArgomentiDiLancio() {
         XCTAssertEqual(AppTab.tab(fromArgs: []), .home)
         XCTAssertEqual(AppTab.tab(fromArgs: ["--tab=workout"]), .workout)

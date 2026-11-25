@@ -1,0 +1,285 @@
+{
+ "measurements": {
+  "heightCm": 187,
+  "weightKg": 83,
+  "shoeSize": 44,
+  "headCm": 58,
+  "neckCm": 40,
+  "shoulderCm": 118,
+  "chestCm": 105,
+  "armCm": 38,
+  "waistCm": 78,
+  "hipCm": 95,
+  "legCm": 96
+ },
+ "appearance": {
+  "skinTone": 1,
+  "hairColor": 0,
+  "outfitColor": 5
+ },
+ "smoke": {
+  "enabled": true,
+  "quitDate": -48.0,
+  "cigarettesPerDay": 15,
+  "packPrice": 6.0,
+  "cigarettesPerPack": 20
+ },
+ "events": [
+  {
+   "id": "a932c22f-e6d5-56b8-aba3-05f7c5b4bf18",
+   "title": "Allenamento gambe",
+   "date": -1.0,
+   "reminder": true,
+   "isDone": false
+  },
+  {
+   "id": "adeca138-c3b0-5be3-91c5-ab484ca14860",
+   "title": "Colazione proteica",
+   "date": -3.0,
+   "reminder": false,
+   "isDone": true
+  },
+  {
+   "id": "8ac9bff0-56f8-55b2-bfcf-3669f35ae73c",
+   "title": "Stretching serale",
+   "date": -5.0,
+   "reminder": true,
+   "isDone": false
+  }
+ ],
+ "workouts": [
+  {
+   "id": "c5902ed2-c4ea-5d6a-8a38-2e1a133ce810",
+   "date": -24.0,
+   "name": "Trazioni (pull-up)",
+   "kind": "pesi",
+   "weightKg": 83.0,
+   "reps": 8,
+   "durationMin": 0
+  },
+  {
+   "id": "80b676d9-7af6-520d-a54e-b597135ec1f9",
+   "date": -24.0,
+   "name": "Flessioni",
+   "kind": "pesi",
+   "weightKg": 53.1,
+   "reps": 15,
+   "durationMin": 0
+  },
+  {
+   "id": "a0969371-15ba-5c73-abd1-d24b5910c169",
+   "date": -72.0,
+   "name": "Panca piana",
+   "kind": "pesi",
+   "weightKg": 60.0,
+   "reps": 8,
+   "durationMin": 0
+  },
+  {
+   "id": "419793b5-e59b-5f3c-a00b-8cdad18cd8b4",
+   "date": -120.0,
+   "name": "Corsa all'aperto",
+   "kind": "cardio",
+   "weightKg": 0.0,
+   "reps": 0,
+   "durationMin": 35
+  }
+ ],
+ "trackers": [
+  {
+   "id": "c915ecc3-f22e-57fb-8447-2749d4039899",
+   "name": "Acqua",
+   "symbol": "💧",
+   "unit": "L",
+   "goal": 2.0,
+   "value": 1.25,
+   "step": 0.25,
+   "lastReset": -8.0
+  },
+  {
+   "id": "f739f08e-1866-5a65-9772-3e7475c1eb18",
+   "name": "Sonno",
+   "symbol": "😴",
+   "unit": "h",
+   "goal": 8.0,
+   "value": 0.0,
+   "step": 0.5,
+   "lastReset": -8.0
+  },
+  {
+   "id": "491d5ade-4e84-579d-af16-a10c3625f02a",
+   "name": "Passi",
+   "symbol": "🚶",
+   "unit": "passi",
+   "goal": 10000.0,
+   "value": 4200.0,
+   "step": 500.0,
+   "lastReset": -8.0
+  }
+ ],
+ "exercises": [
+  {
+   "id": "a0083a79-a2a6-58c3-89b3-af98eb43785d",
+   "name": "Trazioni (pull-up)",
+   "muscle": "Dorso",
+   "equipment": "Sbarra",
+   "movement": "Trazioni alla sbarra",
+   "defaultSets": 4,
+   "defaultReps": 8,
+   "defaultWeight": 0.0,
+   "custom": false,
+   "history": [
+    {
+     "id": "a0d19c59-069c-55b7-85b4-656fe464ef86",
+     "date": -36.0,
+     "weight": 83.0,
+     "reps": 8
+    },
+    {
+     "id": "8819fa11-f18b-5eb4-a7cd-a04b89a8a1d7",
+     "date": -96.0,
+     "weight": 83.0,
+     "reps": 6
+    }
+   ]
+  },
+  {
+   "id": "d6818f9e-0b23-578b-b477-83dc4bc17b19",
+   "name": "Chin-up",
+   "muscle": "Dorso",
+   "equipment": "Sbarra",
+   "movement": "Trazioni alla sbarra",
+   "defaultSets": 4,
+   "defaultReps": 8,
+   "defaultWeight": 0.0,
+   "custom": false,
+   "history": []
+  },
+  {
+   "id": "dea9297c-2911-5fc6-8adb-8f2261949e9b",
+   "name": "Flessioni",
+   "muscle": "Petto",
+   "equipment": "Corpo libero",
+   "movement": "Piegamenti (push-up)",
+   "defaultSets": 4,
+   "defaultReps": 12,
+   "defaultWeight": 0.0,
+   "custom": false,
+   "history": [
+    {
+     "id": "cb290a56-f386-5ff3-bd26-f35f0c088801",
+     "date": -24.0,
+     "weight": 53.1,
+     "reps": 15
+    }
+   ]
+  },
+  {
+   "id": "fe29ec24-d42d-5dd8-898f-e67cc615009f",
+   "name": "Flessioni diamante",
+   "muscle": "Petto",
+   "equipment": "Corpo libero",
+   "movement": "Piegamenti (push-up)",
+   "defaultSets": 3,
+   "defaultReps": 10,
+   "defaultWeight": 0.0,
+   "custom": false,
+   "history": []
+  },
+  {
+   "id": "9c47d835-b75a-5d3d-8d28-9ee757ce5193",
+   "name": "Panca piana",
+   "muscle": "Petto",
+   "equipment": "Bilanciere",
+   "movement": "Panca piana",
+   "defaultSets": 4,
+   "defaultReps": 8,
+   "defaultWeight": 60.0,
+   "custom": false,
+   "history": [
+    {
+     "id": "89eb99ac-2af5-50cd-a1d3-380e91d05b41",
+     "date": -72.0,
+     "weight": 60.0,
+     "reps": 8
+    }
+   ]
+  },
+  {
+   "id": "155c0c35-3838-58ed-993d-0c3d76b8fd54",
+   "name": "Rematore con manubrio",
+   "muscle": "Dorso",
+   "equipment": "Manubri",
+   "movement": "Rematore",
+   "defaultSets": 4,
+   "defaultReps": 10,
+   "defaultWeight": 12.0,
+   "custom": false,
+   "history": []
+  },
+  {
+   "id": "5d580a8e-60a8-57bb-b6da-f6505a449afd",
+   "name": "Curl manubri",
+   "muscle": "Braccia",
+   "equipment": "Manubri",
+   "movement": "Curl manubri",
+   "defaultSets": 3,
+   "defaultReps": 12,
+   "defaultWeight": 8.0,
+   "custom": false,
+   "history": []
+  },
+  {
+   "id": "e04afbb7-0699-5d57-a883-9daecd2185a4",
+   "name": "Alzate laterali",
+   "muscle": "Spalle",
+   "equipment": "Manubri",
+   "movement": "Alzate laterali",
+   "defaultSets": 3,
+   "defaultReps": 12,
+   "defaultWeight": 5.0,
+   "custom": false,
+   "history": []
+  },
+  {
+   "id": "bf419545-5476-5006-b0ed-aaf555c6809f",
+   "name": "Squat",
+   "muscle": "Gambe",
+   "equipment": "Corpo libero",
+   "movement": "Squat",
+   "defaultSets": 4,
+   "defaultReps": 12,
+   "defaultWeight": 0.0,
+   "custom": false,
+   "history": []
+  },
+  {
+   "id": "1dcd5361-c04e-518f-8e9d-6034374cfdd3",
+   "name": "Affondi",
+   "muscle": "Gambe",
+   "equipment": "Corpo libero",
+   "movement": "Affondi",
+   "defaultSets": 3,
+   "defaultReps": 10,
+   "defaultWeight": 0.0,
+   "custom": false,
+   "history": []
+  },
+  {
+   "id": "d4a86a45-248e-5222-82c6-23b7a73b763d",
+   "name": "Plank",
+   "muscle": "Core",
+   "equipment": "Corpo libero",
+   "movement": "Plank",
+   "defaultSets": 3,
+   "defaultReps": 30,
+   "defaultWeight": 0.0,
+   "custom": false,
+   "history": []
+  }
+ ],
+ "demoExerciseId": "a0083a79-a2a6-58c3-89b3-af98eb43785d",
+ "sessionIds": [],
+ "use3D": true,
+ "faceMesh": null
+}

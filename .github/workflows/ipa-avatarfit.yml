@@ -169,65 +169,26 @@ jobs:
           xcrun simctl install "$UDID" "$APP"
           DATA=$(xcrun simctl get_app_container "$UDID" com.avatarfit.app data)
           mkdir -p "$DATA/Documents/AvatarFit"
+          cp ios-avatar/Demo/avatar-demo.json "$DATA/Documents/AvatarFit/dati.json"
+          base64 < "$DATA/Documents/AvatarFit/dati.json" > dati-prima.b64
           python3 - "$DATA/Documents/AvatarFit/dati.json" <<'PY'
-          import json, sys, time, uuid
-          N5 = uuid.NAMESPACE_DNS
-          def u(name): return str(uuid.uuid5(N5, "avatarfit-demo-" + name))
+          import json, sys, time
+          path = sys.argv[1]
+          d = json.load(open(path))
           now = time.time() - 978307200  # reference date Apple
-          def ago(days, hours=0): return now - days*86400 - hours*3600
-          def ex(name, muscle, equipment, movement, sets, reps, weight=0.0, history=[]):
-              return {"id": u("ex-" + name), "name": name, "muscle": muscle, "equipment": equipment,
-                      "movement": movement, "defaultSets": sets, "defaultReps": reps,
-                      "defaultWeight": weight, "custom": False, "history": history}
-          def log(days, weight, reps):
-              return {"id": u("log-%d-%d" % (weight, days)), "date": ago(days), "weight": weight, "reps": reps}
-          def workout(i, name, kind, weight, reps, dur, days):
-              return {"id": u("w" + str(i)), "date": ago(days), "name": name, "kind": kind,
-                      "weightKg": weight, "reps": reps, "durationMin": dur}
-          demo = {
-            "measurements": {"heightCm": 187, "weightKg": 83, "shoeSize": 44, "headCm": 58,
-                             "neckCm": 40, "shoulderCm": 118, "chestCm": 105, "armCm": 38,
-                             "waistCm": 78, "hipCm": 95, "legCm": 96},
-            "appearance": {"skinTone": 1, "hairColor": 0, "outfitColor": 5},
-            "smoke": {"enabled": True, "quitDate": ago(2), "cigarettesPerDay": 15,
-                      "packPrice": 6.0, "cigarettesPerPack": 20},
-            "events": [
-              {"id": u("ev1"), "title": "Allenamento gambe", "date": ago(0, 1), "reminder": True, "isDone": False},
-              {"id": u("ev2"), "title": "Colazione proteica", "date": ago(0, 3), "reminder": False, "isDone": True},
-              {"id": u("ev3"), "title": "Stretching serale", "date": ago(0, 5), "reminder": True, "isDone": False}
-            ],
-            "workouts": [
-              workout(1, "Trazioni (pull-up)", "pesi", 83.0, 8, 0, 1),
-              workout(2, "Flessioni", "pesi", 53.1, 15, 0, 1),
-              workout(3, "Panca piana", "pesi", 60.0, 8, 0, 3),
-              workout(4, "Corsa all'aperto", "cardio", 0.0, 0, 35, 5)
-            ],
-            "trackers": [
-              {"id": u("tr1"), "name": "Acqua", "symbol": "💧", "unit": "L", "goal": 2.0, "value": 1.25, "step": 0.25, "lastReset": ago(0, 2)},
-              {"id": u("tr2"), "name": "Sonno", "symbol": "😴", "unit": "h", "goal": 8.0, "value": 0.0, "step": 0.5, "lastReset": ago(0, 2)},
-              {"id": u("tr3"), "name": "Passi", "symbol": "🚶", "unit": "passi", "goal": 10000.0, "value": 4200.0, "step": 500.0, "lastReset": ago(0, 2)}
-            ],
-            "exercises": [
-              ex("Trazioni (pull-up)", "Dorso", "Sbarra", "Trazioni alla sbarra", 4, 8, 0.0, [log(1, 83.0, 8), log(4, 83.0, 6)]),
-              ex("Chin-up", "Dorso", "Sbarra", "Trazioni alla sbarra", 4, 8),
-              ex("Flessioni", "Petto", "Corpo libero", "Piegamenti (push-up)", 4, 12, 0.0, [log(1, 53.1, 15)]),
-              ex("Flessioni diamante", "Petto", "Corpo libero", "Piegamenti (push-up)", 3, 10),
-              ex("Panca piana", "Petto", "Bilanciere", "Panca piana", 4, 8, 60.0, [log(3, 60.0, 8)]),
-              ex("Rematore con manubrio", "Dorso", "Manubri", "Rematore", 4, 10, 12.0),
-              ex("Curl manubri", "Braccia", "Manubri", "Curl manubri", 3, 12, 8.0),
-              ex("Alzate laterali", "Spalle", "Manubri", "Alzate laterali", 3, 12, 5.0),
-              ex("Squat", "Gambe", "Corpo libero", "Squat", 4, 12),
-              ex("Affondi", "Gambe", "Corpo libero", "Affondi", 3, 10),
-              ex("Plank", "Core", "Corpo libero", "Plank", 3, 30)
-            ],
-            "demoExerciseId": u("ex-Trazioni (pull-up)"),
-            "sessionIds": [],
-            "use3D": True,
-            "faceMesh": None
-          }
-          with open(sys.argv[1], "w") as f:
-              json.dump(demo, f)
-          print("dati demo scritti")
+          def fix(o):
+              if isinstance(o, dict):
+                  for k, v in list(o.items()):
+                      if k in ("date", "quitDate", "lastReset") and isinstance(v, (int, float)) and not isinstance(v, bool) and v < 0:
+                          o[k] = now + v * 3600  # marker negativi = ore fa
+                      else:
+                          fix(v)
+              elif isinstance(o, list):
+                  for x in o:
+                      fix(x)
+          fix(d)
+          json.dump(d, open(path, "w"))
+          print("date demo aggiornate")
           PY
           for T in home giornata nosmoke workout tracker sistema; do
             xcrun simctl terminate "$UDID" com.avatarfit.app >/dev/null 2>&1 || true
@@ -238,14 +199,15 @@ jobs:
           done
           sleep 2
           xcrun simctl io "$UDID" screenshot "screen-home-b.png" || true
+          base64 < "$DATA/Documents/AvatarFit/dati.json" > dati-dopo.b64
           xcrun simctl terminate "$UDID" com.avatarfit.app >/dev/null 2>&1 || true
           ls -la screen-*.png
           test -s screen-home.png || { echo "::error::nessuno screenshot prodotto"; exit 1; }
           D=$(mktemp -d)
-          cp screen-*.png "$D/"
+          cp screen-*.png dati-prima.b64 dati-dopo.b64 "$D/"
           cd "$D"
           git init -q -b bozza-screenshot-avatarfit
-          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add screen-*.png
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add screen-*.png dati-prima.b64 dati-dopo.b64
           git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" commit -qm "AvatarFit screenshot demo ($GITHUB_SHA)"
           git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/bozza-screenshot-avatarfit
           echo "Screenshot pubblicati su bozza-screenshot-avatarfit"
