@@ -124,6 +124,14 @@ L'IPA è **non firmato**: per installarlo firma con il tuo Apple ID gratuito
 (Sideloadly/AltStore/SideStore ri-firmano in automatico) oppure caricalo in
 LiveContainer. Prima di aggiornare l'ipa esporta il backup JSON da SISTEMA.
 
+## Screenshot automatici in CI
+
+Il workflow scatta le schermate delle 6 schede sul simulatore con l'avatar di
+prova (misure di un atleta famoso, rigenerate a ogni run) e le pubblica sul
+branch `bozza-screenshot-avatarfit`. L'app accetta l'argomento di lancio
+`--tab=<home|giornata|nosmoke|workout|tracker|sistema>` (whitelist, valore
+sconosciuto → Home).
+
 ## Sideload su iPhone
 
 - **LiveContainer**: apri l'app, "+", scegli `AvatarFit.ipa` → gira nel container

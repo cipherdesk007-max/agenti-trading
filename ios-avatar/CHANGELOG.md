@@ -1,5 +1,13 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.1 (build 3)
+
+- Demo e screenshot della UI in CI: l'app accetta l'argomento di lancio
+  `--tab=<home|giornata|nosmoke|workout|tracker|sistema>` (valore sconosciuto
+  o assente → Home); il workflow scatta le schermate delle 6 schede sul
+  simulatore con l'avatar di prova e le pubblica sul branch
+  `bozza-screenshot-avatarfit`. Nessun cambiamento per chi usa l'app.
+
 ## 1.1.0 (build 2)
 
 - **1RM a corpo libero non più zero**: per gli esercizi a corpo libero il carico

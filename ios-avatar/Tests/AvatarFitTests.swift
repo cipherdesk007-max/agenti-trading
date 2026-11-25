@@ -70,6 +70,15 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertEqual(effectiveLoad(movement: .pushUp, bodyWeightKg: -5, addedKg: -1), 0, accuracy: 0.001)
     }
 
+    func testTabDaArgomentiDiLancio() {
+        XCTAssertEqual(AppTab.tab(fromArgs: []), .home)
+        XCTAssertEqual(AppTab.tab(fromArgs: ["--tab=workout"]), .workout)
+        XCTAssertEqual(AppTab.tab(fromArgs: ["altro", "--tab=Sistema"]), .sistema)
+        XCTAssertEqual(AppTab.tab(fromArgs: ["--tab=INESISTENTE"]), .home)
+        XCTAssertEqual(AppTab.tab(fromArgs: ["--tab=workout", "--tab=tracker"]), .workout)
+        XCTAssertEqual(AppTab.tab(fromArgs: ["--tab"]), .home)
+    }
+
     func test1RMCorpoLiberoNonZero() {
         // il bug originale: 12 flessioni a corpo libero con 72 kg davano 1RM = 0 kg
         let load = effectiveLoad(movement: .pushUp, bodyWeightKg: 72, addedKg: 0)
