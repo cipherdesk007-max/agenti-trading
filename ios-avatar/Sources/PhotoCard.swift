@@ -1,15 +1,15 @@
-import PhotosUI
 import SwiftUI
 import UIKit
 
 struct PhotoCard: View {
     @Environment(AppStore.self) private var store
-    @State private var item: PhotosPickerItem?
+    @State private var showCamera = false
+    @State private var cameraError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("Foto di riferimento", systemImage: "person.crop.rectangle")
+                Label("Foto di riferimento (automatica)", systemImage: "camera.fill")
                     .font(.headline)
                 Spacer()
                 if store.photoData != nil {
@@ -27,24 +27,79 @@ struct PhotoCard: View {
                     .frame(height: 140)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
             } else {
-                Text("Scegli una foto dal rullino: resta solo dentro la sandbox dell'app su questo iPhone, non viene mai inviata da nessuna parte.")
+                Text("L'app scatta da sé una foto con la fotocamera frontale: non pesca dalla galleria e non la carica da nessuna parte, resta solo dentro la sandbox dell'app.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            PhotosPicker(selection: $item, matching: .images) {
-                Label(store.photoData == nil ? "Scegli foto" : "Cambia foto", systemImage: "photo.badge.plus")
+            Button {
+                haptic(.medium)
+                if UIImagePickerController.isSourceTypeAvailable(.camera),
+                   UIImagePickerController.isCameraDeviceAvailable(.front) {
+                    showCamera = true
+                } else {
+                    cameraError = "Fotocamera frontale non disponibile in questo contesto (simulatore o limitazioni del container). La scansione viso TrueDepth resta il modo migliore per avere il tuo viso reale sull'avatar."
+                }
+            } label: {
+                Label(store.photoData == nil ? "Scatta foto ora" : "Riscatta foto", systemImage: "camera.viewfinder")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .tint(Theme.accent)
+            .tint(Theme.gold)
         }
         .card()
         .padding(.horizontal)
-        .task(id: item) {
-            guard let item else { return }
-            if let data = try? await item.loadTransferable(type: Data.self) {
-                store.setPhoto(data)
+        .sheet(isPresented: $showCamera) {
+            CameraPicker { image in
+                if let data = image.jpegData(compressionQuality: 0.8) {
+                    store.setPhoto(data)
+                }
             }
+        }
+        .alert("Fotocamera", isPresented: Binding(
+            get: { cameraError != nil },
+            set: { if !$0 { cameraError = nil } }
+        )) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(cameraError ?? "")
+        }
+    }
+}
+
+struct CameraPicker: UIViewControllerRepresentable {
+    var onImage: (UIImage) -> Void
+
+    func makeUIViewController(context: Context) -> UIImagePickerController {
+        let picker = UIImagePickerController()
+        picker.sourceType = .camera
+        picker.cameraDevice = .front
+        picker.allowsEditing = false
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: UIImagePickerController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onImage: onImage)
+    }
+
+    final class Coordinator: NSObject, UIImagePickerControllerDelegate, UINavigationControllerDelegate {
+        let onImage: (UIImage) -> Void
+
+        init(onImage: @escaping (UIImage) -> Void) {
+            self.onImage = onImage
+        }
+
+        func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey: Any]) {
+            if let image = info[.originalImage] as? UIImage {
+                onImage(image)
+            }
+            picker.dismiss(animated: true)
+        }
+
+        func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
+            picker.dismiss(animated: true)
         }
     }
 }

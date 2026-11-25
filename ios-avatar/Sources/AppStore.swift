@@ -13,6 +13,7 @@ final class AppStore {
     var exercises: [Exercise] = [] { didSet { save() } }
     var demoExerciseId: UUID? { didSet { save() } }
     var sessionIds: [UUID] = [] { didSet { save() } }
+    var use3D = true { didSet { save() } }
     var faceMesh: FaceMeshData? { didSet { save() } }
 
     private(set) var photoData: Data?
@@ -31,6 +32,7 @@ final class AppStore {
         var exercises: [Exercise]
         var demoExerciseId: UUID?
         var sessionIds: [UUID]
+        var use3D: Bool
         var faceMesh: FaceMeshData?
     }
 
@@ -54,6 +56,7 @@ final class AppStore {
             exercises = snap.exercises
             demoExerciseId = snap.demoExerciseId
             sessionIds = snap.sessionIds
+            use3D = snap.use3D
             faceMesh = snap.faceMesh
         } else {
             seed()
@@ -93,6 +96,7 @@ final class AppStore {
             exercises: exercises,
             demoExerciseId: demoExerciseId,
             sessionIds: sessionIds,
+            use3D: use3D,
             faceMesh: faceMesh
         )
         guard let data = try? JSONEncoder().encode(snap) else { return }
@@ -110,6 +114,7 @@ final class AppStore {
             exercises: exercises,
             demoExerciseId: demoExerciseId,
             sessionIds: sessionIds,
+            use3D: use3D,
             faceMesh: faceMesh
         )
         guard let data = try? JSONEncoder().encode(snap) else { return nil }
@@ -131,6 +136,7 @@ final class AppStore {
         exercises = snap.exercises
         demoExerciseId = snap.demoExerciseId
         sessionIds = snap.sessionIds
+        use3D = snap.use3D
         faceMesh = snap.faceMesh
         return true
     }
@@ -143,6 +149,7 @@ final class AppStore {
         workouts = []
         sessionIds = []
         demoExerciseId = nil
+        use3D = true
         faceMesh = nil
         clearPhoto()
         seed()

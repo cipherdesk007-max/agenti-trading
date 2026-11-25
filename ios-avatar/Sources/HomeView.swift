@@ -14,87 +14,115 @@ struct HomeView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                ZStack(alignment: .topTrailing) {
-                    AvatarSceneView(
-                        measurements: store.measurements,
-                        appearance: store.appearance,
-                        fitness: store.fitness,
-                        faceMesh: store.faceMesh,
-                        demoMovement: demoExercise?.movement,
-                        demoMuscles: demoExercise.map { [$0.muscle] } ?? []
-                    )
-                    .frame(height: 430)
-                    .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                    Label("Ruota 360° · pizzica per zoom", systemImage: "rotate.3d")
-                        .font(.caption2.bold())
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(.ultraThinMaterial)
-                        .clipShape(Capsule())
-                        .padding(12)
-                }
-                .padding(.horizontal)
-
-                HStack(spacing: 12) {
-                    StatChip(title: "BMI", value: String(format: "%.1f", store.measurements.bmi), icon: "scalemass.fill", tint: Theme.accent)
-                    StatChip(title: "Peso", value: "\(Int(store.measurements.weightKg)) kg", icon: "dumbbell.fill", tint: Theme.gold)
-                    StatChip(title: "Forma", value: "\(Int(store.fitness * 100))%", icon: "figure.run", tint: Theme.accent)
-                }
-                .padding(.horizontal)
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Demo 3D esercizio").font(.headline)
-                    Picker("Esercizio", selection: Binding(
-                        get: { demoExercise?.id },
-                        set: { id in
-                            if let id {
-                                store.demoExerciseId = id
-                                haptic()
+        GeometryReader { geo in
+            ScrollView {
+                let avatarH = min(320, max(230, geo.size.height * 0.36))
+                VStack(spacing: 12) {
+                    ZStack(alignment: .topTrailing) {
+                        Group {
+                            if store.use3D {
+                                AvatarSceneView(
+                                    measurements: store.measurements,
+                                    appearance: store.appearance,
+                                    fitness: store.fitness,
+                                    faceMesh: store.faceMesh,
+                                    demoMovement: demoExercise?.movement,
+                                    demoMuscles: demoExercise.map { [$0.muscle] } ?? []
+                                )
+                            } else {
+                                Avatar2DView(
+                                    measurements: store.measurements,
+                                    appearance: store.appearance,
+                                    fitness: store.fitness
+                                )
                             }
                         }
-                    )) {
-                        ForEach(store.exercises) { ex in
-                            Text(ex.name).tag(Optional(ex.id))
+                        .frame(height: avatarH)
+                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                        Label("Ruota 360° · zoom", systemImage: "rotate.3d")
+                            .font(.caption2.bold())
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(.ultraThinMaterial)
+                            .clipShape(Capsule())
+                            .padding(12)
+                        Button {
+                            haptic(.medium)
+                            store.use3D.toggle()
+                        } label: {
+                            Label(store.use3D ? "2D" : "3D", systemImage: store.use3D ? "square.fill" : "cube.fill")
+                                .font(.caption2.bold())
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(.ultraThinMaterial)
+                                .clipShape(Capsule())
+                        }
+                        .padding(12)
+                        .accessibilityLabel("Cambia vista 3D/2D")
+                    }
+                    .padding(.horizontal)
+
+                    HStack(spacing: 12) {
+                        StatChip(title: "BMI", value: String(format: "%.1f", store.measurements.bmi), icon: "scalemass.fill", tint: Theme.accent)
+                        StatChip(title: "Peso", value: "\(Int(store.measurements.weightKg)) kg", icon: "dumbbell.fill", tint: Theme.gold)
+                        StatChip(title: "Forma", value: "\(Int(store.fitness * 100))%", icon: "figure.run", tint: Theme.accent)
+                    }
+                    .padding(.horizontal)
+
+                    VStack(spacing: 10) {
+                        Button {
+                            haptic(.medium)
+                            showEditor = true
+                        } label: {
+                            Label("Le mie misure", systemImage: "ruler.fill")
+                                .frame(maxWidth: .infinity)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(Theme.accent)
+
+                        Button {
+                            startFaceScan()
+                        } label: {
+                            Label(store.faceMesh == nil ? "Scansiona il viso (TrueDepth)" : "Viso scansionato ✓", systemImage: "faceid")
+                                .frame(maxWidth: .infinity)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(Theme.gold)
+                    }
+                    .padding(.horizontal)
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Demo 3D esercizio").font(.headline)
+                        Picker("Esercizio", selection: Binding(
+                            get: { demoExercise?.id },
+                            set: { id in
+                                if let id {
+                                    store.demoExerciseId = id
+                                    haptic()
+                                }
+                            }
+                        )) {
+                            ForEach(store.exercises) { ex in
+                                Text(ex.name).tag(Optional(ex.id))
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .tint(Theme.accent)
+                        if let demoExercise {
+                            Text("Muscolo target: \(demoExercise.muscle.rawValue) · \(demoExercise.movement.rawValue)")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .pickerStyle(.menu)
-                    .tint(Theme.accent)
-                    if let demoExercise {
-                        Text("Muscolo target: \(demoExercise.muscle.rawValue) · \(demoExercise.movement.rawValue)")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                    }
+                    .card()
+                    .padding(.horizontal)
+
+                    PhotoCard()
                 }
-                .card()
-                .padding(.horizontal)
-
-                VStack(spacing: 10) {
-                    Button {
-                        haptic(.medium)
-                        showEditor = true
-                    } label: {
-                        Label("Le mie misure", systemImage: "ruler.fill")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Theme.accent)
-
-                    Button {
-                        startFaceScan()
-                    } label: {
-                        Label(store.faceMesh == nil ? "Scansiona il viso (TrueDepth)" : "Viso scansionato ✓", systemImage: "faceid")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .tint(Theme.gold)
-                }
-                .padding(.horizontal)
-
-                PhotoCard()
+                .padding(.vertical, 8)
             }
-            .padding(.vertical, 8)
         }
         .navigationTitle("AVATAR OS")
         .background(Color.black)

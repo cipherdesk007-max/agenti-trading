@@ -7,6 +7,7 @@ struct FaceScanSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var captured = false
     @State private var scanError: String?
+    @State private var scanDeadline = Date()
 
     var body: some View {
         NavigationStack {
@@ -52,6 +53,14 @@ struct FaceScanSheet: View {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(scanError ?? "")
+            }
+            .onAppear {
+                scanDeadline = Date().addingTimeInterval(15)
+            }
+            .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
+                if !captured && scanError == nil && now >= scanDeadline {
+                    scanError = "Nessun viso rilevato dopo 15 secondi. Controlla che la fotocamera frontale sia libera, che ci sia luce suficiente e che il viso sia centrato. In LiveContainer la scansione puo' essere limitata: in quel caso l'avatar resta con la testa parametrica dalle tue misure."
+                }
             }
         }
     }
