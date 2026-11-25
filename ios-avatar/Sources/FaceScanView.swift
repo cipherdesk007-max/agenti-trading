@@ -6,6 +6,7 @@ struct FaceScanSheet: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
     @State private var captured = false
+    @State private var scanError: String?
 
     var body: some View {
         NavigationStack {
@@ -19,9 +20,11 @@ struct FaceScanSheet: View {
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
-                    FaceScanView(captured: $captured)
-                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
-                        .frame(height: 380)
+                    FaceScanView(captured: $captured) { message in
+                        scanError = message
+                    }
+                    .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .frame(height: 380)
                     if store.faceMesh != nil {
                         Button("Rimuovi scansione viso", role: .destructive) {
                             store.clearFaceMesh()
@@ -42,6 +45,14 @@ struct FaceScanSheet: View {
                     Button("Fine") { dismiss() }
                 }
             }
+            .alert("Errore scansione", isPresented: Binding(
+                get: { scanError != nil },
+                set: { if !$0 { scanError = nil } }
+            )) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(scanError ?? "")
+            }
         }
     }
 }
@@ -49,6 +60,7 @@ struct FaceScanSheet: View {
 struct FaceScanView: UIViewRepresentable {
     @Environment(AppStore.self) private var store
     @Binding var captured: Bool
+    var onError: (String) -> Void
 
     func makeUIView(context: Context) -> ARSCNView {
         let view = ARSCNView()
@@ -58,6 +70,7 @@ struct FaceScanView: UIViewRepresentable {
             store.setFaceMesh(mesh)
             captured = true
         }
+        context.coordinator.onError = onError
         let configuration = ARFaceTrackingConfiguration()
         view.session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
         return view
@@ -71,6 +84,15 @@ struct FaceScanView: UIViewRepresentable {
 
     final class Coordinator: NSObject, ARSCNViewDelegate, ARSessionDelegate {
         var onCapture: ((FaceMeshData) -> Void)?
+        var onError: ((String) -> Void)?
+
+        func session(_ session: ARSession, didFailWithError error: Error) {
+            onError?("Sessione AR fallita: \(error.localizedDescription). Controlla il permesso fotocamera (Impostazioni → AvatarFit → Fotocamera) e riprova.")
+        }
+
+        func sessionWasInterrupted(_ session: ARSession) {
+            onError?("Sessione AR interrotta (es. da una chiamata o dal blocco schermo). Riapri la scansione e riprova.")
+        }
 
         func session(_ session: ARSession, didUpdate anchors: [ARAnchor]) {
             guard let onCapture,

@@ -1,3 +1,5 @@
+import ARKit
+import AVFoundation
 import Foundation
 import SwiftUI
 
@@ -5,6 +7,7 @@ struct HomeView: View {
     @Environment(AppStore.self) private var store
     @State private var showEditor = false
     @State private var showFaceScan = false
+    @State private var faceAlert: String?
 
     private var demoExercise: Exercise? {
         store.exercises.first { $0.id == store.demoExerciseId } ?? store.exercises.first
@@ -79,8 +82,7 @@ struct HomeView: View {
                     .tint(Theme.accent)
 
                     Button {
-                        haptic()
-                        showFaceScan = true
+                        startFaceScan()
                     } label: {
                         Label(store.faceMesh == nil ? "Scansiona il viso (TrueDepth)" : "Viso scansionato ✓", systemImage: "faceid")
                             .frame(maxWidth: .infinity)
@@ -98,6 +100,45 @@ struct HomeView: View {
         .background(Color.black)
         .sheet(isPresented: $showEditor) { MeasurementsEditorView() }
         .sheet(isPresented: $showFaceScan) { FaceScanSheet() }
+        .alert("Scansione viso", isPresented: Binding(
+            get: { faceAlert != nil },
+            set: { if !$0 { faceAlert = nil } }
+        )) {
+            Button("Apri Impostazioni") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(faceAlert ?? "")
+        }
+    }
+
+    private func startFaceScan() {
+        haptic()
+        guard ARFaceTrackingConfiguration.isSupported else {
+            faceAlert = "Questo iPhone non ha la fotocamera frontale TrueDepth (serve iPhone X o successivo, esclusi i modelli SE): la scansione del viso non è disponibile. L'avatar 3D usa la testa parametrica calibrata sulla misura 'Testa' in Le mie misure."
+            return
+        }
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            showFaceScan = true
+        case .notDetermined:
+            AVCaptureDevice.requestAccess(for: .video) { granted in
+                DispatchQueue.main.async {
+                    if granted {
+                        showFaceScan = true
+                    } else {
+                        faceAlert = "Permesso fotocamera negato: senza accesso alla fotocamera frontale la scansione viso non può partire."
+                    }
+                }
+            }
+        case .denied, .restricted:
+            faceAlert = "Permesso fotocamera non concesso. Vai in Impostazioni → AvatarFit → Fotocamera e attivalo, poi riprova."
+        @unknown default:
+            faceAlert = "Stato permesso fotocamera non gestito: riprova o controlla Impostazioni → AvatarFit → Fotocamera."
+        }
     }
 }
 
