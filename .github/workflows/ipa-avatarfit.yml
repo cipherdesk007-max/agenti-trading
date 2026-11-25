@@ -64,8 +64,7 @@ jobs:
           ios = sorted((k for k in data if "iOS" in k), reverse=True)
           for runtime in ios:
               for d in data[runtime]:
-               
-   if d.get("isAvailable") and d["name"].startswith("iPhone"):
+                  if d.get("isAvailable") and d["name"].startswith("iPhone"):
                       print(d["udid"]); sys.exit(0)
           sys.exit(1)')
           echo "Simulatore: $UDID"
@@ -125,8 +124,7 @@ jobs:
       - name: Verifica struttura IPA
         run: |
           unzip -l AvatarFit-unsigned.ipa | grep -E "Payload/AvatarFit.app/(Info.plist|AvatarFit)$"
-          plutil -p ios-avatar/D
-erivedData/Build/Products/Release-iphoneos/AvatarFit.app/Info.plist | grep -E "CFBundleIdentifier|CFBundleShortVersionString" || true
+          plutil -p ios-avatar/DerivedData/Build/Products/Release-iphoneos/AvatarFit.app/Info.plist | grep -E "CFBundleIdentifier|CFBundleShortVersionString" || true
           ls -la AvatarFit-unsigned.ipa
 
       - name: Upload IPA artifact

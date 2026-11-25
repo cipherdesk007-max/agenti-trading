@@ -61,8 +61,7 @@ struct ActiveWorkoutView: View {
                 }
             }
             .onAppear {
-                if let ex = curren
-t { weight = ex.defaultWeight }
+                if let ex = current { weight = ex.defaultWeight }
             }
             .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
                 if resting && restRemaining > 0 {
@@ -122,8 +121,7 @@ t { weight = ex.defaultWeight }
                     repsDone = max(0, repsDone - 1)
                     haptic()
                 } label: {
-              
-      Image(systemName: "minus.circle.fill").font(.largeTitle)
+                    Image(systemName: "minus.circle.fill").font(.largeTitle)
                 }
                 .disabled(repsDone <= 0)
                 Text("\(repsDone) / \(ex.defaultReps)")
@@ -174,8 +172,7 @@ t { weight = ex.defaultWeight }
                     haptic()
                     resting = false
                     restRemaining = 0
-        
-        }
+                }
                 .buttonStyle(.bordered)
                 .disabled(!resting && restRemaining == 0)
             }

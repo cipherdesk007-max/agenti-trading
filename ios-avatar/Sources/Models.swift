@@ -65,8 +65,7 @@ enum MovementType: String, Codable, CaseIterable, Sendable {
     case pushUp = "Piegamenti (push-up)"
     case bench = "Panca piana"
     case squat = "Squat"
-    case l
-unge = "Affondi"
+    case lunge = "Affondi"
     case row = "Rematore"
     case curl = "Curl manubri"
     case lateralRaise = "Alzate laterali"
@@ -144,8 +143,7 @@ extension HealthMilestone {
         HealthMilestone(minutes: 24 * 60, title: "Rischio infarto", detail: "Inizia a scendere il rischio di infarto", icon: "waveform.path.ecg"),
         HealthMilestone(minutes: 48 * 60, title: "Gusto e olfatto", detail: "I sensi di gusto e olfatto migliorano", icon: "nose.fill"),
         HealthMilestone(minutes: 14 * 24 * 60, title: "Circolazione", detail: "Circolazione e funzione polmonare migliorano", icon: "lungs.fill"),
-        HealthMilestone(minutes: 90 * 24 * 60, title: "Capacita' po
-lmonare", detail: "La funzione polmonare puo' aumentare fino al 30%", icon: "lungs.fill"),
+        HealthMilestone(minutes: 90 * 24 * 60, title: "Capacita' polmonare", detail: "La funzione polmonare puo' aumentare fino al 30%", icon: "lungs.fill"),
         HealthMilestone(minutes: 365 * 24 * 60, title: "Cuore protetto", detail: "Il rischio di malattie cardiache si dimezza", icon: "heart.text.square"),
         HealthMilestone(minutes: 10 * 365 * 24 * 60, title: "Rischio tumore", detail: "Il rischio di tumore al polmone si dimezza", icon: "checkmark.shield.fill")
     ]

@@ -44,7 +44,6 @@ final class AvatarFitTests: XCTestCase {
         e2.history = [ExerciseLog(date: Date(), weight: 100, reps: 5)]
         XCTAssertEqual(e2.best1RM, epley1RM(100, 5), accuracy: 0.001)
     }
-
     func testFrazioniPesoCorporeo() {
         XCTAssertEqual(MovementType.pullUp.bodyweightFraction, 1.0)
         XCTAssertEqual(MovementType.pushUp.bodyweightFraction, 0.64)
