@@ -76,19 +76,15 @@ struct FaceScanView: UIViewRepresentable {
             guard let onCapture,
                   let anchor = anchors.compactMap({ $0 as? ARFaceAnchor }).first else { return }
             let geometry = anchor.geometry
-            let vertices = Array(UnsafeBufferPointer(start: geometry.vertices, count: geometry.vertexCount))
-            let normals = Array(UnsafeBufferPointer(start: geometry.normals, count: geometry.vertexCount))
-            let triangles = Array(UnsafeBufferPointer(start: geometry.triangleIndices, count: geometry.triangleCount * 3))
             var positions: [Float] = []
-            positions.reserveCapacity(vertices.count * 3)
-            for v in vertices { positions.append(contentsOf: [v.x, v.y, v.z]) }
-            var normalValues: [Float] = []
-            normalValues.reserveCapacity(normals.count * 3)
-            for n in normals { normalValues.append(contentsOf: [n.x, n.y, n.z]) }
+            positions.reserveCapacity(geometry.vertices.count * 3)
+            for v in geometry.vertices {
+                positions.append(contentsOf: [v.x, v.y, v.z])
+            }
             let mesh = FaceMeshData(
                 positions: positions,
-                normals: normalValues,
-                indices: triangles.map { Int32($0) }
+                normals: [],
+                indices: geometry.triangleIndices.map { Int32($0) }
             )
             onCapture(mesh)
             self.onCapture = nil

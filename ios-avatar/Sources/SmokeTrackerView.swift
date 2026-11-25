@@ -172,15 +172,20 @@ struct SmokeSetupView: View {
         }
     }
 
+    private func s<T>(_ keyPath: WritableKeyPath<SmokeSettings, T>) -> Binding<T> {
+        Binding(get: { store.smoke[keyPath: keyPath] },
+                set: { store.smoke[keyPath: keyPath] = $0 })
+    }
+
     private var form: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Ultimo mozzicone")
                 .font(.headline)
-            DatePicker("Data e ora", selection: $store.smoke.quitDate)
+            DatePicker("Data e ora", selection: s(\.quitDate))
                 .datePickerStyle(.compact)
-            Stepper("Sigarette al giorno: \(store.smoke.cigarettesPerDay)", value: $store.smoke.cigarettesPerDay, in: 1...60)
-            Stepper("Prezzo pacchetto: € \(String(format: "%.2f", store.smoke.packPrice))", value: $store.smoke.packPrice, in: 1...30, step: 0.5)
-            Stepper("Sigarette per pacchetto: \(store.smoke.cigarettesPerPack)", value: $store.smoke.cigarettesPerPack, in: 10...40, step: 10)
+            Stepper("Sigarette al giorno: \(store.smoke.cigarettesPerDay)", value: s(\.cigarettesPerDay), in: 1...60)
+            Stepper("Prezzo pacchetto: € \(String(format: "%.2f", store.smoke.packPrice))", value: s(\.packPrice), in: 1...30, step: 0.5)
+            Stepper("Sigarette per pacchetto: \(store.smoke.cigarettesPerPack)", value: s(\.cigarettesPerPack), in: 10...40, step: 10)
             Button {
                 store.smoke.enabled = true
                 if !standalone { dismiss() }

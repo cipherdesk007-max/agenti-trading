@@ -276,22 +276,24 @@ final class AvatarRig {
 
     static func faceGeometry(from face: FaceMeshData) -> SCNGeometry? {
         guard face.positions.count % 3 == 0,
-              face.positions.count == face.normals.count,
               !face.indices.isEmpty else { return nil }
         var vertices: [SCNVector3] = []
         vertices.reserveCapacity(face.positions.count / 3)
         for i in stride(from: 0, to: face.positions.count, by: 3) {
             vertices.append(SCNVector3(face.positions[i], face.positions[i + 1], face.positions[i + 2]))
         }
-        var normals: [SCNVector3] = []
-        normals.reserveCapacity(face.normals.count / 3)
-        for i in stride(from: 0, to: face.normals.count, by: 3) {
-            normals.append(SCNVector3(face.normals[i], face.normals[i + 1], face.normals[i + 2]))
-        }
         let vertexSource = SCNGeometrySource(vertices: vertices)
-        let normalSource = SCNGeometrySource(normals: normals)
+        var sources: [SCNGeometrySource] = [vertexSource]
+        if face.normals.count == face.positions.count {
+            var normals: [SCNVector3] = []
+            normals.reserveCapacity(face.normals.count / 3)
+            for i in stride(from: 0, to: face.normals.count, by: 3) {
+                normals.append(SCNVector3(face.normals[i], face.normals[i + 1], face.normals[i + 2]))
+            }
+            sources.append(SCNGeometrySource(normals: normals))
+        }
         let element = SCNGeometryElement(indices: face.indices, primitiveType: .triangles)
-        return SCNGeometry(sources: [vertexSource, normalSource], elements: [element])
+        return SCNGeometry(sources: sources, elements: [element])
     }
 
     private func addLightsAndCamera() {
