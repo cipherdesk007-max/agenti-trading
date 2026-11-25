@@ -1,0 +1,141 @@
+name: IPA AvatarFit (Personal OS)
+
+# Build + test + IPA non firmato dell'app in ios-avatar/, sulla falsariga di
+# ios-build.yml ma su branch dedicato: bozza-ipa e screenshot restano del
+# progetto di trading (AGENTS.md: non toccarli a mano).
+on:
+  push:
+    branches: [vibe/avatarfit-ios-3061f8]
+    paths:
+      - "ios-avatar/**"
+      - ".github/workflows/ipa-avatarfit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ipa-avatarfit
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash -e -o pipefail {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Regole di codice su ios-avatar (niente try!/fatalError/as!)
+        run: |
+          if grep -rnE 'try!|fatalError| as!' ios-avatar/Sources ios-avatar/Tests; then
+            echo "::error::Violazione regole AGENTS.md in ios-avatar"
+            exit 1
+          fi
+          echo "Regole OK"
+
+      - name: Select Xcode 26
+        run: |
+          ls -d /Applications/Xcode*.app
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          test -n "$XC" || { echo "Xcode 26 non disponibile su questo runner"; exit 1; }
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: |
+          cd ios-avatar
+          xcodegen generate --spec project.yml
+          ls AvatarFit.xcodeproj
+
+      - name: Run unit tests (simulatore) — bloccanti, se falliscono niente IPA
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in data if "iOS" in k), reverse=True)
+          for runtime in ios:
+              for d in data[runtime]:
+                  if d.get("isAvailable") and d["name"].startswith("iPhone"):
+                      print(d["udid"]); sys.exit(0)
+          sys.exit(1)')
+          echo "Simulatore: $UDID"
+          cd ios-avatar
+          xcodebuild \
+            -project AvatarFit.xcodeproj \
+            -scheme AvatarFit \
+            -destination "id=$UDID" \
+            -derivedDataPath "$PWD/DerivedDataTests" \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing
+          xcodebuild \
+            -project AvatarFit.xcodeproj \
+            -scheme AvatarFit \
+            -destination "id=$UDID" \
+            -derivedDataPath "$PWD/DerivedDataTests" \
+            -only-testing:AvatarFitTests \
+            CODE_SIGNING_ALLOWED=NO \
+            test-without-building
+
+      - name: Build unsigned Release app
+        run: |
+          cd ios-avatar
+          xcodebuild \
+            -project AvatarFit.xcodeproj \
+            -scheme AvatarFit \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$PWD/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            clean build
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="ios-avatar/DerivedData/Build/Products/Release-iphoneos/AvatarFit.app"
+          test -d "$APP_PATH"
+          mkdir -p ios-avatar/Package/Payload
+          ditto "$APP_PATH" "ios-avatar/Package/Payload/AvatarFit.app"
+          cd ios-avatar/Package
+          zip -qry AvatarFit.ipa Payload
+          unzip -t AvatarFit.ipa
+          mv AvatarFit.ipa "$GITHUB_WORKSPACE/AvatarFit-unsigned.ipa"
+
+      - name: Verifica struttura IPA
+        run: |
+          unzip -l AvatarFit-unsigned.ipa | grep -E "Payload/AvatarFit.app/(Info.plist|AvatarFit)$"
+          plutil -p ios-avatar/DerivedData/Build/Products/Release-iphoneos/AvatarFit.app/Info.plist | grep -E "CFBundleIdentifier|CFBundleShortVersionString" || true
+          ls -la AvatarFit-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: AvatarFit-unsigned
+          path: AvatarFit-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: IPA sul branch bozza-ipa-avatarfit (un commit, sovrascritto)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -m1 'MARKETING_VERSION:' ios-avatar/project.yml | sed -E 's/.*"([^"]+)".*/\1/')
+          D=$(mktemp -d)
+          cp AvatarFit-unsigned.ipa "$D/AvatarFit.ipa"
+          cd "$D"
+          git init -q -b bozza-ipa-avatarfit
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add AvatarFit.ipa
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" commit -qm "AvatarFit IPA $VERSION build $GITHUB_RUN_NUMBER ($GITHUB_SHA)"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/bozza-ipa-avatarfit
