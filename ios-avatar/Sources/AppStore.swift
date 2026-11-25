@@ -47,7 +47,8 @@ final class AppStore {
         try? FileManager.default.createDirectory(at: documents, withIntermediateDirectories: true)
         if let data = try? Data(contentsOf: dataURL),
            let snap = try? JSONDecoder().decode(Snapshot.self, from: data) {
-            measurements = snap.measurements
+            measurements = snap.measu
+rements
             appearance = snap.appearance
             smoke = snap.smoke
             events = snap.events
@@ -78,7 +79,8 @@ final class AppStore {
             Exercise(name: "Panca piana", muscle: .petto, equipment: "Bilanciere", movement: .bench, defaultSets: 4, defaultReps: 8, defaultWeight: 40),
             Exercise(name: "Rematore con manubrio", muscle: .dorso, equipment: "Manubri", movement: .row, defaultSets: 4, defaultReps: 10, defaultWeight: 12),
             Exercise(name: "Curl manubri", muscle: .braccia, equipment: "Manubri", movement: .curl, defaultSets: 3, defaultReps: 12, defaultWeight: 8),
-            Exercise(name: "Alzate laterali", muscle: .spalle, equipment: "Manubri", movement: .lateralRaise, defaultSets: 3, defaultReps: 12, defaultWeight: 5),
+            Exercise(name: "Alzate laterali", muscle: .spalle, equipment: "Manubri", movement: .lateralRaise, defaultSets: 3, defaultReps: 12, defau
+ltWeight: 5),
             Exercise(name: "Squat", muscle: .gambe, equipment: "Corpo libero", movement: .squat, defaultSets: 4, defaultReps: 12),
             Exercise(name: "Affondi", muscle: .gambe, equipment: "Corpo libero", movement: .lunge, defaultSets: 3, defaultReps: 10),
             Exercise(name: "Plank", muscle: .core, equipment: "Corpo libero", movement: .plank, defaultSets: 3, defaultReps: 30)
@@ -128,7 +130,8 @@ final class AppStore {
         guard let data = try? Data(contentsOf: url),
               let snap = try? JSONDecoder().decode(Snapshot.self, from: data) else { return false }
         measurements = snap.measurements
-        appearance = snap.appearance
+      
+  appearance = snap.appearance
         smoke = snap.smoke
         events = snap.events
         workouts = snap.workouts
@@ -199,8 +202,12 @@ final class AppStore {
 
     func logSet(exerciseId: UUID, weight: Double, reps: Int) {
         guard let i = exercises.firstIndex(where: { $0.id == exerciseId }) else { return }
-        exercises[i].history.append(ExerciseLog(date: Date(), weight: weight, reps: reps))
-        exercises[i].defaultWeight = weight
+        exercises[i].history.append(ExerciseLog(date: Date(), weight: weight, reps: 
+reps))
+        // "weight" qui è il carico TOTALE (peso corporeo incluso per gli esercizi a corpo libero):
+        // il defaultWeight della prox sessione resta il solo carico extra.
+        let bodyLoad = exercises[i].movement.bodyweightFraction * measurements.weightKg
+        exercises[i].defaultWeight = max(0, weight - bodyLoad)
         workouts.append(WorkoutEntry(
             date: Date(),
             name: exercises[i].name,

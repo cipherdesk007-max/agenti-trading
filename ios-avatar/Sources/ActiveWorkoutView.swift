@@ -20,8 +20,13 @@ struct ActiveWorkoutView: View {
         return store.exercises.first { $0.id == ids[index] }
     }
 
+    private var currentLoad: Double {
+        guard let ex = current else { return 0 }
+        return effectiveLoad(movement: ex.movement, bodyWeightKg: store.measurements.weightKg, addedKg: weight)
+    }
+
     private var oneRM: Double {
-        epley1RM(weight, max(repsDone, 1))
+        epley1RM(currentLoad, max(repsDone, 1))
     }
 
     var body: some View {
@@ -56,15 +61,27 @@ struct ActiveWorkoutView: View {
                 }
             }
             .onAppear {
-                if let ex = current { weight = ex.defaultWeight }
+                if let ex = curren
+t { weight = ex.defaultWeight }
             }
             .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
                 if resting && restRemaining > 0 {
                     restRemaining -= 1
-                    if restRemaining == 0 { resting = false }
+                    if restRemaining == 0 {
+                        resting = false
+                        haptic(.medium)
+                    }
                 }
             }
         }
+    }
+
+    private func loadLabel(_ ex: Exercise) -> String {
+        if ex.movement.usesBodyweight {
+            let body = effectiveLoad(movement: ex.movement, bodyWeightKg: store.measurements.weightKg, addedKg: 0)
+            return "Carico extra: \(Int(weight)) kg · corpo ~\(Int(body)) kg"
+        }
+        return "Carico: \(Int(weight)) kg"
     }
 
     private func exerciseCard(_ ex: Exercise) -> some View {
@@ -85,7 +102,7 @@ struct ActiveWorkoutView: View {
             }
             HStack(spacing: 16) {
                 VStack(alignment: .leading) {
-                    Text("1RM stimato ora").font(.caption2).foregroundStyle(.secondary)
+                    Text(ex.movement.usesBodyweight ? "1RM stimato ora (incl. corpo)" : "1RM stimato ora").font(.caption2).foregroundStyle(.secondary)
                     Text("\(Int(oneRM)) kg").font(.title3.bold()).foregroundStyle(Theme.gold)
                 }
                 VStack(alignment: .leading) {
@@ -99,13 +116,14 @@ struct ActiveWorkoutView: View {
 
     private func controlsCard(_ ex: Exercise) -> some View {
         VStack(spacing: 12) {
-            Stepper("Carico: \(Int(weight)) kg", value: $weight, in: 0...400, step: 2.5)
+            Stepper(loadLabel(ex), value: $weight, in: 0...400, step: 2.5)
             HStack(spacing: 20) {
                 Button {
                     repsDone = max(0, repsDone - 1)
                     haptic()
                 } label: {
-                    Image(systemName: "minus.circle.fill").font(.largeTitle)
+              
+      Image(systemName: "minus.circle.fill").font(.largeTitle)
                 }
                 .disabled(repsDone <= 0)
                 Text("\(repsDone) / \(ex.defaultReps)")
@@ -156,7 +174,8 @@ struct ActiveWorkoutView: View {
                     haptic()
                     resting = false
                     restRemaining = 0
-                }
+        
+        }
                 .buttonStyle(.bordered)
                 .disabled(!resting && restRemaining == 0)
             }
@@ -188,13 +207,18 @@ struct ActiveWorkoutView: View {
     private func completeSet(_ ex: Exercise) {
         haptic(.medium)
         let reps = max(repsDone, 1)
-        store.logSet(exerciseId: ex.id, weight: weight, reps: reps)
+        store.logSet(exerciseId: ex.id, weight: currentLoad, reps: reps)
         loggedCount += 1
         repsDone = 0
         if setNumber >= ex.defaultSets {
             index += 1
             setNumber = 1
             if let next = current { weight = next.defaultWeight }
+            // recupero auto-avviato anche tra un esercizio e il prossimo
+            if current != nil {
+                restRemaining = restTotal
+                resting = true
+            }
         } else {
             setNumber += 1
             restRemaining = restTotal

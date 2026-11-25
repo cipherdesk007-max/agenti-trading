@@ -65,7 +65,8 @@ enum MovementType: String, Codable, CaseIterable, Sendable {
     case pushUp = "Piegamenti (push-up)"
     case bench = "Panca piana"
     case squat = "Squat"
-    case lunge = "Affondi"
+    case l
+unge = "Affondi"
     case row = "Rematore"
     case curl = "Curl manubri"
     case lateralRaise = "Alzate laterali"
@@ -97,6 +98,29 @@ struct Exercise: Codable, Identifiable, Sendable {
     }
 }
 
+extension MovementType {
+    /// Frazione del peso corporeo sollevata dall'esercizio (0 = solo carico esterno).
+    /// Stime standard: trazioni 100%, piegamenti ~64%, squat/affondi ~65%, plank ~50%.
+    var bodyweightFraction: Double {
+        switch self {
+        case .pullUp: return 1.0
+        case .pushUp: return 0.64
+        case .squat, .lunge: return 0.65
+        case .plank: return 0.5
+        case .bench, .row, .curl, .lateralRaise, .custom: return 0
+        }
+    }
+
+    /// Vero se l'esercizio solleva (anche) il peso del corpo.
+    var usesBodyweight: Bool { bodyweightFraction > 0 }
+}
+
+/// Carico totale sollevato in una ripetizione: frazione del peso corporeo + carico extra aggiunto.
+func effectiveLoad(movement: MovementType, bodyWeightKg: Double, addedKg: Double) -> Double {
+    let body = movement.bodyweightFraction * max(0, bodyWeightKg)
+    return body + max(0, addedKg)
+}
+
 struct SmokeSettings: Codable, Sendable {
     var enabled: Bool = false
     var quitDate: Date = Date()
@@ -120,7 +144,8 @@ extension HealthMilestone {
         HealthMilestone(minutes: 24 * 60, title: "Rischio infarto", detail: "Inizia a scendere il rischio di infarto", icon: "waveform.path.ecg"),
         HealthMilestone(minutes: 48 * 60, title: "Gusto e olfatto", detail: "I sensi di gusto e olfatto migliorano", icon: "nose.fill"),
         HealthMilestone(minutes: 14 * 24 * 60, title: "Circolazione", detail: "Circolazione e funzione polmonare migliorano", icon: "lungs.fill"),
-        HealthMilestone(minutes: 90 * 24 * 60, title: "Capacita' polmonare", detail: "La funzione polmonare puo' aumentare fino al 30%", icon: "lungs.fill"),
+        HealthMilestone(minutes: 90 * 24 * 60, title: "Capacita' po
+lmonare", detail: "La funzione polmonare puo' aumentare fino al 30%", icon: "lungs.fill"),
         HealthMilestone(minutes: 365 * 24 * 60, title: "Cuore protetto", detail: "Il rischio di malattie cardiache si dimezza", icon: "heart.text.square"),
         HealthMilestone(minutes: 10 * 365 * 24 * 60, title: "Rischio tumore", detail: "Il rischio di tumore al polmone si dimezza", icon: "checkmark.shield.fill")
     ]

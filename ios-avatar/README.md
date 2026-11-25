@@ -28,9 +28,13 @@ dispositivo**: nessuna rete, nessun server, nessun account.
   (trazioni, chin-up, flessioni e varianti, panca piana, rematore, curl, alzate
   laterali, squat, affondi, plank) con tasto **"+ Crea Nuovo Esercizio"**
   (nome, muscolo target, tipo di movimento 3D, serie, ripetizioni, carico).
-  Ogni riga ha ▶ demo 3D e + per la sessione. **Workout attivo**: avatar che
+  Ogni riga ha ▶ demo 3D e + per la
+ sessione. **Workout attivo**: avatar che
   esegue l'esercizio corrente, contatore serie/ripetizioni, timer di recupero
-  intelligente auto-avviato, **1RM stimato (Epley)** live e record, storico;
+  intelligente auto-avviato (anche tra un esercizio e il prossimo, vibrazione a
+  fine recupero), **1RM stimato (Epley)** live e record, con **peso corporeo
+  incluso per gli esercizi a corpo libero** (trazioni 100%, piegamenti ~64%,
+  squat/affondi ~65% del peso del corpo, più eventuale zavorra), storico;
   grafico **progresso 1RM nel tempo** (SwiftUI Charts).
 - **Tracker** — sezione modulare con "+": tracker personalizzabili (nome, emoji,
   unità, obiettivo giornaliero; modelli rapidi acqua/sonno/dieta/passi/lettura),
@@ -63,7 +67,8 @@ ios-avatar/
 │   ├── AvatarRig.swift           # rig biomeccanico: pose, keyframe esercizi, glow
 │   ├── AvatarSceneView.swift     # wrapper SceneKit (rotazione/zoom, demo animata)
 │   ├── FaceScanView.swift        # scansione viso TrueDepth (ARKit) → mesh locale
-│   ├── MeasurementsEditorView.swift  # "Le mie misure" + aspetto
+│   ├── MeasurementsEditorView.swift  # "Le m
+ie misure" + aspetto
 │   ├── PhotoCard.swift           # foto di riferimento solo-locale (PHPicker)
 │   ├── ExerciseLibraryView.swift # libreria esercizi espandibile (+ custom)
 │   ├── ActiveWorkoutView.swift   # workout attivo: serie, recupero, 1RM
@@ -109,7 +114,8 @@ Il workflow `.github/workflows/ipa-avatarfit.yml` gira a ogni push su
 `vibe/avatarfit-ios-3061f8` (o a mano da Actions) su runner `macos-15`:
 controlla le regole di codice, genera il progetto con XcodeGen, **esegue i
 test unitari su simulatore (bloccanti: se falliscono niente IPA)**, compila la
-Release non firmata per `generic/platform=iOS`, impacchetta e **verifica** la
+Release non firmata per `gene
+ric/platform=iOS`, impacchetta e **verifica** la
 struttura dell'`.ipa`, poi pubblica:
 
 - artifact `AvatarFit-unsigned` del run (30 giorni di retention), e
