@@ -1,5 +1,5 @@
 import Foundation
-import SceneKit
+@preconcurrency import SceneKit
 
 struct Pose: Equatable {
     var bodyPitch: CGFloat = 0
@@ -220,7 +220,7 @@ final class AvatarRig {
         let chestGeo = geo(spineNode, SCNBox(width: shoulderW, height: chestH, length: chestD * thick, chamferRadius: chestH * 0.3), matOutfit, v3(0, abdomenH + chestH / 2, 0))
         geo(spineNode, SCNCylinder(radius: neckR, height: neckLen), matSkin, v3(0, abdomenH + chestH + neckLen / 2, 0))
         let headJoint = joint(spineNode, v3(0, abdomenH + chestH + neckLen + headR * 0.9, 0))
-        if let faceMesh, let faceGeometry = AvatarSceneView.geometry(from: faceMesh) {
+        if let faceMesh, let faceGeometry = AvatarRig.faceGeometry(from: faceMesh) {
             let head = geo(headJoint, faceGeometry, matSkin, v3(0, 0, 0))
             let scale = CGFloat(2 * headR) / 0.20
             head.scale = v3(scale, scale, scale)
@@ -272,6 +272,26 @@ final class AvatarRig {
         let ring = geo(root, SCNTorus(ringRadius: platformR, pipeRadius: 0.5), ringMat, v3(0, 0.2, 0))
         let spin = SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 6)
         ring.runAction(SCNAction.repeatForever(spin))
+    }
+
+    static func faceGeometry(from face: FaceMeshData) -> SCNGeometry? {
+        guard face.positions.count % 3 == 0,
+              face.positions.count == face.normals.count,
+              !face.indices.isEmpty else { return nil }
+        var vertices: [SCNVector3] = []
+        vertices.reserveCapacity(face.positions.count / 3)
+        for i in stride(from: 0, to: face.positions.count, by: 3) {
+            vertices.append(SCNVector3(face.positions[i], face.positions[i + 1], face.positions[i + 2]))
+        }
+        var normals: [SCNVector3] = []
+        normals.reserveCapacity(face.normals.count / 3)
+        for i in stride(from: 0, to: face.normals.count, by: 3) {
+            normals.append(SCNVector3(face.normals[i], face.normals[i + 1], face.normals[i + 2]))
+        }
+        let vertexSource = SCNGeometrySource(vertices: vertices)
+        let normalSource = SCNGeometrySource(normals: normals)
+        let element = SCNGeometryElement(indices: face.indices, primitiveType: .triangles)
+        return SCNGeometry(sources: [vertexSource, normalSource], elements: [element])
     }
 
     private func addLightsAndCamera() {
