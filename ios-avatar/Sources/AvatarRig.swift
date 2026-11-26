@@ -34,6 +34,53 @@ struct Keyframe {
     let duration: Double
 }
 
+// MARK: - Cinematica 2D (piano Y-Z: tutte le rotazioni del rig sono attorno a X)
+
+struct Punto2D: Equatable, Sendable {
+    var y: CGFloat
+    var z: CGFloat
+}
+
+func ruotaX(_ angolo: CGFloat, _ p: Punto2D) -> Punto2D {
+    let c = CGFloat(cos(Double(angolo)))
+    let s = CGFloat(sin(Double(angolo)))
+    return Punto2D(y: p.y * c - p.z * s, z: p.y * s + p.z * c)
+}
+
+func distanza2D(_ a: Punto2D, _ b: Punto2D) -> CGFloat {
+    let dy = a.y - b.y
+    let dz = a.z - b.z
+    return (dy * dy + dz * dz).squareRoot()
+}
+
+/// Punto a distanza "lunghezza" dalla base: angolo 0 = braccio che pende
+/// in giu' (direzione (−cos a, −sin a)), come i nodi del rig.
+func puntoBraccio(_ base: Punto2D, angolo: CGFloat, lunghezza: CGFloat) -> Punto2D {
+    Punto2D(
+        y: base.y - lunghezza * CGFloat(cos(Double(angolo))),
+        z: base.z - lunghezza * CGFloat(sin(Double(angolo)))
+    )
+}
+
+/// IK analitica a due link (spalla + gomito) nel piano Y-Z: angoli che
+/// portano la mano esattamente sul bersaglio. ramo = +1/−1 decide da che
+/// parte piega il gomito. Se il bersaglio esce dalla portata la distanza
+/// viene saturata: il braccio resta dritto verso il bersaglio invece di
+/// strappare la spalla.
+func angoliIk(spalla: Punto2D, bersaglio: Punto2D, l1: CGFloat, l2: CGFloat, ramo: Int) -> (spalla: CGFloat, avambraccio: CGFloat) {
+    let dy = bersaglio.y - spalla.y
+    let dz = bersaglio.z - spalla.z
+    var d = (dy * dy + dz * dz).squareRoot()
+    d = min(max(d, abs(l1 - l2) + 0.5), l1 + l2 - 0.5)
+    let angoloSt = CGFloat(Double(atan2(Double(-dz), Double(-dy))))
+    let cosK = min(max((l1 * l1 + d * d - l2 * l2) / (2 * l1 * d), -1), 1)
+    let k = CGFloat(acos(Double(cosK)))
+    let angoloSpalla = angoloSt - CGFloat(ramo) * k
+    let gomito = puntoBraccio(spalla, angolo: angoloSpalla, lunghezza: l1)
+    let angoloAvambraccio = CGFloat(Double(atan2(Double(gomito.z - bersaglio.z), Double(gomito.y - bersaglio.y))))
+    return (angoloSpalla, angoloAvambraccio)
+}
+
 func lerpCG(_ a: CGFloat, _ b: CGFloat, _ t: CGFloat) -> CGFloat {
     a + (b - a) * t
 }
@@ -174,6 +221,16 @@ final class AvatarRig {
     private var manubri: [SCNNode] = []
     private var demoTask: Task<Void, Never>?
 
+    /// Mani inchiodate (sbarra o pavimento) durante gli esercizi di
+    /// contatto: l'IK riporta sempre le mani qui, cosi' non scivolano.
+    private struct AncoreMani {
+        var sx: Punto2D
+        var dx: Punto2D
+        var ramoSx: Int
+        var ramoDx: Int
+    }
+    private var ancore: AncoreMani?
+
     private let bodyH: CGFloat
     private let shoulderWidth: CGFloat
     private let scala: CGFloat
@@ -181,6 +238,9 @@ final class AvatarRig {
     private let shinLen: CGFloat
     private let footH: CGFloat
     private let vitaW: CGFloat
+    private let torsoH: CGFloat
+    private let upperLen: CGFloat
+    private let foreLen: CGFloat
     private let glow = UIColor(hex: 0x00E5FF)
 
     init(measurements m: Measurements, appearance a: Appearance, fitness f: Double, faceMesh: FaceMeshData?, facePhoto: UIImage? = nil) {
@@ -192,6 +252,10 @@ final class AvatarRig {
         shinLen = max(legLen * 0.45, bodyH * 0.12)
         footH = max(bodyH * 0.04 + CGFloat(m.shoeSize - 36) * 0.06, 2)
         vitaW = max(m.waistCm / .pi, bodyH * 0.11)
+        let armLen = min(max(m.armCm, bodyH * 0.35), bodyH * 0.60) * 1.08
+        upperLen = armLen * 0.55
+        foreLen = armLen * 0.45
+        torsoH = max((thighLen + shinLen) * 0.62, bodyH * 0.22)
         scene.background.contents = UIColor.clear
         scene.rootNode.addChildNode(root)
         build(measurements: m, appearance: a, fitness: f, faceMesh: faceMesh, facePhoto: facePhoto)
@@ -209,10 +273,6 @@ final class AvatarRig {
         let waistW = max(m.waistCm / .pi, h * 0.11)
         let hipW = max(m.hipCm / .pi, h * 0.12)
         let chestW = shoulderW * 0.96
-        let armLen = min(max(m.armCm, h * 0.35), h * 0.60) * 1.08
-        let upperLen = armLen * 0.55
-        let foreLen = armLen * 0.45
-        let torsoH = max(legLen * 0.62, h * 0.22)
         let bmi = m.bmi
         let thick = min(max(0.80 + (bmi - 18.5) * 0.055, 0.75), 1.70)
         let muscle = 1.0 + 0.30 * f
@@ -296,25 +356,12 @@ final class AvatarRig {
         _ = geo(spineNode, SCNCapsule(capRadius: neckR, height: max(colloAlto - torsoH * 0.90 + neckR, 1)), matSkin, v3(0, (torsoH * 0.90 + colloAlto) / 2, 0))
         let neckJoint = joint(spineNode, v3(0, colloAlto, 0))
         let headJoint = joint(neckJoint, v3(0, headR, 0))
-        var voltoScansionato = false
-        if let faceMesh, let faceGeometry = AvatarRig.faceGeometry(from: faceMesh) {
-            let head = geo(headJoint, faceGeometry, matSkin, v3(0, 0, 0))
-            let scale = CGFloat(2 * headR) / 0.20
-            head.scale = v3(scale, scale, scale)
-            head.eulerAngles = v3(0, .pi, 0)
-            voltoScansionato = true
-        }
-        if voltoScansionato {
-            // la mesh TrueDepth non ha capelli né orecchie: si aggiungono
-            // quelli parametrici, cosi' la testa scansionata non resta nuda
-            for lato in [-1.0, 1.0] {
-                _ = geo(headJoint, SCNSphere(radius: headR * 0.15), matSkinScuro, v3(CGFloat(lato) * headR * 0.94, 0, 0))
-            }
-            let calotta = geo(headJoint, SCNSphere(radius: headR), matHair, v3(0, headR * 0.20, -headR * 0.26))
-            calotta.scale = v3(1.03, 1.02, 1.02)
-            let nuca = geo(headJoint, SCNSphere(radius: headR * 0.70), matHair, v3(0, headR * 0.52, -headR * 0.30))
-            nuca.scale = v3(1.0, 0.92, 1.0)
-        } else {
+        // UNA testa sola: la mesh TrueDepth copre solo la faccia, senza
+        // retro: messa sul 3D con i capelli sopra sembrava una seconda
+        // testa che galleggia. La scansione resta salvata (per le misure
+        // e per quando la rimetteremo a posto sul 3D), il volto visibile
+        // sul 3D è quello della foto con maschera sfumata, se c'è.
+        do {
             let cranio = geo(headJoint, SCNSphere(radius: headR * 0.96), matSkin, v3(0, 0, 0))
             cranio.scale = v3(1, 1.06, 0.96)
             let mascella = geo(headJoint, SCNSphere(radius: headR * 0.60), matSkin, v3(0, -headR * 0.50, headR * 0.26))
@@ -602,14 +649,64 @@ final class AvatarRig {
         return min(sotto(fL, gL), sotto(fR, gR)) + footH
     }
 
+    /// Posizione (y,z) della spalla per una posa: la catena bacino→spina
+    /// ruota solo attorno a X, quindi la vista laterale e' tutto quello che
+    /// serve per le braccia.
+    func spalla2D(p: Pose) -> Punto2D {
+        let o1 = ruotaX(p.bodyPitch, Punto2D(y: 4.5, z: 0))
+        let o2 = ruotaX(p.bodyPitch + p.torsoPitch, Punto2D(y: torsoH - 3.2, z: 0))
+        return Punto2D(
+            y: altezzaPelvi(p) - p.pelvisDrop + p.rootLift + o1.y + o2.y,
+            z: o1.z + o2.z
+        )
+    }
+
+    /// Posizione (y,z) della mano con i valori chiave della posa.
+    func mano2D(p: Pose) -> Punto2D {
+        let sp = spalla2D(p: p)
+        let tetaspalla = p.bodyPitch + p.torsoPitch - p.shoulderX
+        let tetagomito = tetaspalla - p.elbow
+        let gomito = puntoBraccio(sp, angolo: tetaspalla, lunghezza: upperLen)
+        return puntoBraccio(gomito, angolo: tetagomito, lunghezza: foreLen)
+    }
+
+    /// Quanto la posa metterebbe le mani fuori dalla portata dell'ancora
+    /// (0 = presa perfetta possibile in tutto il ciclo).
+    func scartoManiAncorate(_ p: Pose) -> CGFloat {
+        guard let ancore else { return 0 }
+        let sp = spalla2D(p: p)
+        func fuori(_ bersaglio: Punto2D) -> CGFloat {
+            let d = distanza2D(sp, bersaglio)
+            let minD = abs(upperLen - foreLen) + 0.5
+            let maxD = upperLen + foreLen - 0.5
+            if d < minD { return minD - d }
+            if d > maxD { return d - maxD }
+            return 0
+        }
+        return max(fuori(ancore.sx), fuori(ancore.dx))
+    }
+
     func applyPose(_ p: Pose) {
         pelvisNode.position = v3(0, altezzaPelvi(p) - p.pelvisDrop + p.rootLift, 0)
         pelvisNode.eulerAngles = v3(p.bodyPitch, 0, 0)
         spineNode.eulerAngles = v3(p.torsoPitch, 0, 0)
-        spallaL.eulerAngles = v3(-p.shoulderX, 0, p.shoulderZ)
-        spallaR.eulerAngles = v3(-p.shoulderX, 0, -p.shoulderZ)
-        gomitoL.eulerAngles = v3(-p.elbow, 0, 0)
-        gomitoR.eulerAngles = v3(-p.elbow, 0, 0)
+        if let ancore {
+            // mani inchiodate: le spalle ruotano quel che serve per tenere
+            // la presa su sbarra o pavimento per tutto il ciclo
+            let base = p.bodyPitch + p.torsoPitch
+            let sp = spalla2D(p: p)
+            let aSx = angoliIk(spalla: sp, bersaglio: ancore.sx, l1: upperLen, l2: foreLen, ramo: ancore.ramoSx)
+            let aDx = angoliIk(spalla: sp, bersaglio: ancore.dx, l1: upperLen, l2: foreLen, ramo: ancore.ramoDx)
+            spallaL.eulerAngles = v3(aSx.spalla - base, 0, 0)
+            spallaR.eulerAngles = v3(aDx.spalla - base, 0, 0)
+            gomitoL.eulerAngles = v3(aSx.avambraccio - aSx.spalla, 0, 0)
+            gomitoR.eulerAngles = v3(aDx.avambraccio - aDx.spalla, 0, 0)
+        } else {
+            spallaL.eulerAngles = v3(-p.shoulderX, 0, p.shoulderZ)
+            spallaR.eulerAngles = v3(-p.shoulderX, 0, -p.shoulderZ)
+            gomitoL.eulerAngles = v3(-p.elbow, 0, 0)
+            gomitoR.eulerAngles = v3(-p.elbow, 0, 0)
+        }
         cosciaL.eulerAngles = v3(-(p.hipL ?? p.hip), 0, 0)
         cosciaR.eulerAngles = v3(-(p.hipR ?? p.hip), 0, 0)
         ginocchioL.eulerAngles = v3(p.kneeL ?? p.knee, 0, 0)
@@ -689,6 +786,10 @@ final class AvatarRig {
         let keys = Keyframes.forMovement(movement)
         applyPose(keys.first?.pose ?? .riposo)
         mostraProp(movement)
+        ancore = nil
+        if movement == .pullUp || movement == .pushUp || movement == .plank {
+            ancore = ancoraPer(keys.first?.pose ?? .riposo)
+        }
         let total = CGFloat(max(keys.reduce(0.0) { $0 + $1.duration }, 0.001))
         // driver deterministico: un task a 30 fps aggiorna le pose sul main
         // actor, indipendente dal clock delle SCNAction
@@ -704,9 +805,30 @@ final class AvatarRig {
         }
     }
 
+    /// Ancore della presa: le mani nel primo fotogramma. Il ramo del
+    /// gomito si sceglie guardando la flessione del keyframe, cosi' il
+    /// gomito resta piegato dalla parte giusta.
+    private func ancoraPer(_ p: Pose) -> AncoreMani {
+        let sp = spalla2D(p: p)
+        let bersaglio = mano2D(p: p)
+        let deltaKey = -p.elbow
+        var migliore = -1
+        var scarto = CGFloat.greatestFiniteMagnitude
+        for ramo in [-1, 1] {
+            let a = angoliIk(spalla: sp, bersaglio: bersaglio, l1: upperLen, l2: foreLen, ramo: ramo)
+            let d = abs((a.avambraccio - a.spalla) - deltaKey)
+            if d < scarto {
+                scarto = d
+                migliore = ramo
+            }
+        }
+        return AncoreMani(sx: bersaglio, dx: bersaglio, ramoSx: migliore, ramoDx: migliore)
+    }
+
     func stop() {
         demoTask?.cancel()
         demoTask = nil
+        ancore = nil
         root.removeAction(forKey: "pulse")
         applyPose(.idle)
         clearHighlight()

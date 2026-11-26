@@ -1,5 +1,23 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.6 (build 8)
+
+- **Mani inchiodate con cinematica inversa**: nelle trazioni, flessioni e
+  plank le mani restano esattamente su sbarra o pavimento per TUTTO il
+  ciclo, non solo nei fotogramma chiave (prima l'interpolazione le faceva
+  scivolare via dall'attrezzo). IK analitica a due link (spalla+gomito)
+  con saturazione morbida fuori portata e ramo del gomito scelto dal
+  keyframe. Test: la mano torna sul bersaglio punto per punto, e il ciclo
+  intero resta alla portata dell'ancora.
+- **Una testa sola**: la mesh TrueDepth copre solo la faccia e senza
+  retro: sul 3D sembrava una seconda testa sotto i capelli. La scansione
+  resta salvata ma non si mostra più sul rig; il volto visibile è quello
+  scolpito, con la foto selfie applicata via maschera sfumata quando c'è
+  (ora la foto va sul 3D anche se esiste una scansione).
+- Riferimento estetico (Sketchfab dell'utente) e studi su progetti open
+  source per il futuro: il passo dopo sarà un personaggio rigged vero
+  (scheletro + animazioni), la direzione type MakeHuman/BVH/glTF.
+
 ## 1.1.5 (build 7)
 
 - **Niente più 2D dietro il 3D**: il disegno 2D era sempre disegnato sotto la

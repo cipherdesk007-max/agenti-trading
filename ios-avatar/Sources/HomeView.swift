@@ -25,7 +25,7 @@ struct HomeView: View {
                                 appearance: store.appearance,
                                 fitness: store.fitness,
                                 faceMesh: store.faceMesh,
-                                facePhoto: store.faceMesh == nil ? store.faceImage : nil,
+                                facePhoto: store.faceImage,
                                 demoMovement: demoExercise?.movement,
                                 demoMuscles: demoExercise.map { [$0.muscle] } ?? []
                             )
@@ -36,7 +36,7 @@ struct HomeView: View {
                                 measurements: store.measurements,
                                 appearance: store.appearance,
                                 fitness: store.fitness,
-                                facePhoto: store.faceMesh == nil ? store.faceImage : nil
+                                facePhoto: store.faceImage
                             )
                         }
                     }

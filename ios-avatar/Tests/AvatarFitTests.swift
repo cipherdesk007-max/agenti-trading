@@ -213,6 +213,63 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertNil(VersionePubblicata.da(#"{"versione":"1"}"#))
     }
 
+    func testIkPortaLaManoSulBersaglio() {
+        // l'IK analitica deve mettere la mano ESATTAMENTE sul bersaglio,
+        // con entrambi i rami del gomito, e saturare senza esplodere
+        // fuori portata
+        let spalla = Punto2D(y: 100, z: 0)
+        let l1: CGFloat = 37
+        let l2: CGFloat = 30
+        var bersagli: [Punto2D] = []
+        for dy in stride(from: CGFloat(-65), through: 65, by: 15) {
+            for dz in stride(from: CGFloat(-45), through: 45, by: 15) {
+                bersagli.append(Punto2D(y: 100 + dy, z: dz))
+            }
+        }
+        for ramo in [-1, 1] {
+            for bersaglio in bersagli {
+                let a = angoliIk(spalla: spalla, bersaglio: bersaglio, l1: l1, l2: l2, ramo: ramo)
+                let gomito = Punto2D(
+                    y: spalla.y - l1 * CGFloat(cos(Double(a.spalla))),
+                    z: spalla.z - l1 * CGFloat(sin(Double(a.spalla)))
+                )
+                let mano = Punto2D(
+                    y: gomito.y - l2 * CGFloat(cos(Double(a.avambraccio))),
+                    z: gomito.z - l2 * CGFloat(sin(Double(a.avambraccio)))
+                )
+                let d = distanza2D(mano, bersaglio)
+                let dBersaglio = distanza2D(spalla, bersaglio)
+                let minD = abs(l1 - l2) + 0.5
+                let maxD = l1 + l2 - 0.5
+                if dBersaglio >= minD && dBersaglio <= maxD {
+                    XCTAssertLessThan(d, 0.01, "mano fuori dal bersaglio a ramo \(ramo)")
+                } else {
+                    XCTAssertLessThan(d, 1.0, "saturazione troppo brusca a ramo \(ramo)")
+                }
+            }
+        }
+    }
+
+    @MainActor
+    func testManiAncoratePerTuttoIlCiclo() {
+        // nelle demo di contatto le mani non si staccano mai: la posa
+        // interpolata resta sempre alla portata dell'ancora (sbarra o terra)
+        let rig = AvatarRig(measurements: Measurements(), appearance: Appearance(), fitness: 0.4, faceMesh: nil)
+        for movimento in [MovementType.pullUp, .pushUp, .plank] {
+            rig.play(movimento, muscles: [])
+            let keys = Keyframes.forMovement(movimento)
+            let total = CGFloat(keys.reduce(0.0) { $0 + $1.duration })
+            var t: CGFloat = 0
+            while t <= total {
+                let p = AvatarRig.posaA(t, keys: keys, total: total)
+                let scarto = rig.scartoManiAncorate(p)
+                XCTAssertLessThan(scarto, 0.6, "mani fuori portata in \(movimento.rawValue) a t=\(t)")
+                t += 1.0 / 12.0
+            }
+            rig.stop()
+        }
+    }
+
     func testVoltoSfumato() {
         // il volto-foto sul 3D deve avere la maschera ovale sfumata e
         // restare quadrato in formato (il piano lo ritaglia lui)
