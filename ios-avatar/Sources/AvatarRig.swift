@@ -81,15 +81,15 @@ enum Keyframes {
         switch movement {
         case .pushUp:
             return [
-                Keyframe(pose: Pose(bodyPitch: 1.17, pelvisY: 44.5, shoulderX: 1.17), duration: 1.0),
-                Keyframe(pose: Pose(bodyPitch: 1.24, pelvisY: 37.8, shoulderX: 1.24, elbow: -0.95), duration: 1.0)
+                Keyframe(pose: Pose(bodyPitch: 1.17, shoulderX: 1.17, pelvisY: 44.5), duration: 1.0),
+                Keyframe(pose: Pose(bodyPitch: 1.24, shoulderX: 1.24, elbow: -0.95, pelvisY: 37.8), duration: 1.0)
             ]
         case .pullUp:
             return [
-                Keyframe(pose: Pose(pelvisY: 104, shoulderX: -2.90, elbow: -0.40, hip: -0.50, knee: -0.90), duration: 0.9),
-                Keyframe(pose: Pose(pelvisY: 106.5, shoulderX: -2.90, elbow: -0.70, hip: -0.20, kneeL: -0.50, kneeR: -0.55), duration: 0.8),
-                Keyframe(pose: Pose(pelvisY: 141, shoulderX: -2.90, elbow: -2.05, hip: -0.25, kneeL: -0.55, kneeR: -0.55), duration: 0.9),
-                Keyframe(pose: Pose(pelvisY: 106.5, shoulderX: -2.90, elbow: -0.70, hip: -0.20, kneeL: -0.50, kneeR: -0.55), duration: 0.8)
+                Keyframe(pose: Pose(shoulderX: -2.90, elbow: -0.40, hip: -0.50, knee: -0.90, pelvisY: 104), duration: 0.9),
+                Keyframe(pose: Pose(shoulderX: -2.90, elbow: -0.70, hip: -0.20, pelvisY: 106.5, kneeL: -0.50, kneeR: -0.55), duration: 0.8),
+                Keyframe(pose: Pose(shoulderX: -2.90, elbow: -2.05, hip: -0.25, pelvisY: 141, kneeL: -0.55, kneeR: -0.55), duration: 0.9),
+                Keyframe(pose: Pose(shoulderX: -2.90, elbow: -0.70, hip: -0.20, pelvisY: 106.5, kneeL: -0.50, kneeR: -0.55), duration: 0.8)
             ]
         case .squat:
             return [
@@ -109,7 +109,7 @@ enum Keyframes {
                 Keyframe(pose: { var p = base; p.elbow = -1.95; return p }(), duration: 0.7)
             ]
         case .bench:
-            let base = Pose(bodyPitch: -1.40, pelvisY: 39.5, hip: -0.34, knee: -0.21)
+            let base = Pose(bodyPitch: -1.40, hip: -0.34, knee: -0.21, pelvisY: 39.5)
             return [
                 Keyframe(pose: { var p = base; p.shoulderX = 1.74; p.elbow = 0.05; return p }(), duration: 1.0),
                 Keyframe(pose: { var p = base; p.shoulderX = 1.05; p.elbow = -0.90; return p }(), duration: 1.0)
@@ -123,11 +123,11 @@ enum Keyframes {
         case .lunge:
             return [
                 Keyframe(pose: .riposo, duration: 0.5),
-                Keyframe(pose: Pose(hipL: -0.85, kneeL: -0.85, hipR: 0.55, kneeR: -0.20, torsoPitch: 0.12, shoulderX: -0.35, elbow: 0.25), duration: 0.9),
+                Keyframe(pose: Pose(torsoPitch: 0.12, shoulderX: -0.35, elbow: 0.25, hipL: -0.85, hipR: 0.55, kneeL: -0.85, kneeR: -0.20), duration: 0.9),
                 Keyframe(pose: .riposo, duration: 0.9)
             ]
         case .plank:
-            return [Keyframe(pose: Pose(bodyPitch: 1.36, pelvisY: 27.1, shoulderX: 1.36, elbow: 1.57), duration: 3.0)]
+            return [Keyframe(pose: Pose(bodyPitch: 1.36, shoulderX: 1.36, elbow: 1.57, pelvisY: 27.1), duration: 3.0)]
         case .custom:
             return [
                 Keyframe(pose: Pose(shoulderX: -2.90, elbow: 1.40), duration: 1.2),
