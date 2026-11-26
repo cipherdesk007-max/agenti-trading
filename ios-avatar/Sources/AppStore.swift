@@ -99,9 +99,9 @@ final class AppStore {
 
     private func seed() {
         trackers = [
-            CustomTracker(name: "Acqua", symbol: "", unit: "L", goal: 2, step: 0.25),
-            CustomTracker(name: "Sonno", symbol: "", unit: "h", goal: 8, step: 0.5),
-            CustomTracker(name: "Passi", symbol: "", unit: "passi", goal: 10000, step: 500)
+            CustomTracker(name: "Acqua", symbol: "💧", unit: "L", goal: 2, step: 0.25),
+            CustomTracker(name: "Sonno", symbol: "😴", unit: "h", goal: 8, step: 0.5),
+            CustomTracker(name: "Passi", symbol: "🚶", unit: "passi", goal: 10000, step: 500)
         ]
         exercises = [
             Exercise(name: "Trazioni (pull-up)", muscle: .dorso, equipment: "Sbarra", movement: .pullUp, defaultSets: 4, defaultReps: 8),
@@ -321,4 +321,4 @@ final class AppStore {
     func todayValue(_ t: CustomTracker) -> Double {
         Calendar.current.isDateInToday(t.lastReset) ? t.value : 0
     }
-} 
+}

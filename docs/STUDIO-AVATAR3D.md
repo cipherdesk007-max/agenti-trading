@@ -114,4 +114,4 @@ piccole, una run CI a turno).
   personaggio CC0 è stilizzato non "da vetrina", e il percorso C (modello
   comprato su TurboSquid/Fab, 30-150 € + animazioni) resta aperto se il
   proprietario vuole quel look: la fase 2 rende il motore pronto anche
-  per quel file
+  per quel file.

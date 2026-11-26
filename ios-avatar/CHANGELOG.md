@@ -166,4 +166,4 @@
 - Prima versione: avatar parametrico 3D/2D, scansione viso TrueDepth, demo 3D
   degli esercizi, workout attivo con serie/recupero/1RM, libreria esercizi
   espandibile, tracker personalizzabili, contatore no-smoke con traguardi di
-  salute, timeline 24h, backup export/import JSON, crash log in Sistema
+  salute, timeline 24h, backup export/import JSON, crash log in Sistema.

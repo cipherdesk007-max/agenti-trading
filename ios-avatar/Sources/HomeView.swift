@@ -205,4 +205,4 @@ struct StatChip: View {
                 .stroke(tint.opacity(0.25), lineWidth: 1)
         }
     }
-
+}

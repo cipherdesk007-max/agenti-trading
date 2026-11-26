@@ -387,4 +387,4 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertFalse(store.usePersonalAvatar)
         XCTAssertFalse(FileManager.default.fileExists(atPath: store.urlAvatarPersonale?.path ?? "/nessuno"))
     }
-
+}
