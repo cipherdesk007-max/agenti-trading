@@ -1,5 +1,23 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.4 (build 6)
+
+- **Fix del 3D invisibile (il bug per cui "il 3D non va")**: il corpo è
+  costruito in centimetri e la camera sta a 2,2 volte l'altezza, ma i piani
+  depth di default di SceneKit tagliano a zFar = 100: tutta la scena finiva
+  oltre il piano di taglio e restava invisibile, sotto si vedeva il
+  disegno 2D di riserva (per questo non girava nulla). Ora zNear/zFar sono
+  espliciti e la camera vede tutto il manichino.
+- **Controllo aggiornamenti in-app**: Home mostra un banner quando sul
+  canale c'è una build più recente, la scheda SISTEMA ha la sezione
+  AGGIORNAMENTI con versione installata, ultima build pubblicata e bottone
+  che scarica l'IPA (il numero di versione arriva da versione.json che la
+  CI pubblica accanto all'IPA; nessun dato utente lascia l'iPhone).
+- Confronto versioni numerico per componenti ("1.2.10" > "1.2.9"),
+  parsing tollerante, testo privacy in SISTEMA aggiornato (unica rete:
+  il controllo versione). Nuovi test: visibilità camera, parsing
+  versione, confronto versioni.
+
 ## 1.1.3 (build 5)
 
 - **Rig 3D riscritto da zero** (eccezione voluta dal proprietario alla regola
@@ -10,7 +28,7 @@
 - **Pose degli esercizi riprogettate frame per frame** su un renderer di
   riferimento: ogni keyframe ha contatti verificati (mani a terra, punte dei
   piedi a terra, sbarra in mano, schiena appoggiata alla panca) e verso del
-  corpo corretto (flessioni e plank proni, panca supina) - nell versione
+  corpo corretto (flessioni e plank proni, panca supina) - nella versione
   precedente i piedi galleggiavano e in alcuni casi il volto guardava
   dalla parte sbagliata.
 - Movimenti coperti: push-up, trazioni (3 fasi con sbarra fissata

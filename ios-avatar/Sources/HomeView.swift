@@ -65,6 +65,9 @@ struct HomeView: View {
                     }
                     .padding(.horizontal)
 
+                    AggiornamentiBanner()
+                        .padding(.horizontal)
+
                     HStack(spacing: 12) {
                         StatChip(title: "BMI", value: String(format: "%.1f", store.measurements.bmi), icon: "scalemass.fill", tint: Theme.accent)
                         StatChip(title: "Peso", value: "\(Int(store.measurements.weightKg)) kg", icon: "dumbbell.fill", tint: Theme.gold)

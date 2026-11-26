@@ -606,6 +606,11 @@ final class AvatarRig {
 
         let camera = SCNCamera()
         camera.fieldOfView = 46
+        // Il corpo è in centimetri: i piani depth di default (zFar = 100)
+        // tagliavano via tutta la scena, con la camera a 2,2h il manichino
+        // restava invisibile e sotto si vedeva il disegno 2D.
+        camera.zNear = 1
+        camera.zFar = h * 20
         cameraNode.camera = camera
         cameraNode.position = v3(0, h * 0.58, h * 2.2)
         let target = SCNNode()

@@ -14,6 +14,14 @@ struct SystemView: View {
     var body: some View {
         List {
             Section {
+                AggiornamentiCard()
+            } header: {
+                Text("Aggiornamenti".uppercased()).foregroundStyle(Theme.accent)
+            } footer: {
+                Text("Il controllo legge solo il numero di versione pubblicato su GitHub: nessun tuo dato lascia l'iPhone. Il bottone scarica l'ultima build dell'IPA da importare in LiveContainer.")
+            }
+
+            Section {
                 Button {
                     haptic(.medium)
                     if let url = store.exportBackup() {
@@ -54,7 +62,7 @@ struct SystemView: View {
                     showResetAlert = true
                 }
             } footer: {
-                Text("Privacy: tutto resta solo su questo iPhone (sandbox dell'app). Nessun server, nessuna rete, nessun account.")
+                Text("Privacy: i tuoi dati restano solo su questo iPhone (sandbox dell'app), nessun account. Unica rete usata dall'app: il controllo aggiornamenti, che legge solo il numero di versione.")
             }
 
             Section {

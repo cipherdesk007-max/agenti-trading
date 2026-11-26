@@ -73,8 +73,8 @@ ios-avatar/
 │   ├── Models.swift              # modelli Codable + MuscleGroup/MovementType + 1RM
 │   ├── AppStore.swift            # store @Observable, JSON locale, backup, fitness
 │   ├── Theme.swift               # pure black + neon ciano/oro, card HUD, aptici
-│   ├── HomeView.swift            # avatar 3D + demo esercizio + chip + foto
-│   ├── AvatarRig.swift           # rig loftato: pose con contatti verificati, keyframe, glow
+│   ├── HomeView.swift            # avatar 3D + demo esercizio + chip + banner aggiornamenti
+│   ├── AvatarRig.swift           # rig loftato: pose con contatti verificati, camera con zNear/zFar corretti
 │   ├── AvatarSceneView.swift     # wrapper SceneKit (rotazione/zoom, demo animata)
 │   ├── FaceScanView.swift        # scansione viso TrueDepth (ARKit) → mesh locale
 │   ├── MeasurementsEditorView.swift  # "Le mie misure" + aspetto
@@ -85,7 +85,8 @@ ios-avatar/
 │   ├── SmokeTrackerView.swift    # contatore no-smoke, risparmi, salute
 │   ├── CalendarView.swift        # timeline 24h + completamento giornaliero
 │   ├── CustomTrackersView.swift  # tracker modulari con "+"
-│   └── SystemView.swift          # backup export/import JSON, statistiche, reset
+│   ├── Aggiornamenti.swift       # controllo versione dal canale CI + banner/card di download
+│   └── SystemView.swift          # aggiornamenti, backup export/import JSON, statistiche, reset
 └── Resources/Assets.xcassets
 ```
 

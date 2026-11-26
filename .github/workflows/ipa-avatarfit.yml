@@ -142,9 +142,10 @@ jobs:
           VERSION=$(grep -m1 'MARKETING_VERSION:' ios-avatar/project.yml | sed -E 's/.*"([^"]+)".*/\1/')
           D=$(mktemp -d)
           cp AvatarFit-unsigned.ipa "$D/AvatarFit.ipa"
+          printf '{\n  "versione": "%s",\n  "build": %s,\n  "data": "%s",\n  "url": "https://github.com/cipherdesk007-max/agenti-trading/raw/bozza-ipa-avatarfit/AvatarFit.ipa"\n}\n' "$VERSION" "$GITHUB_RUN_NUMBER" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$D/versione.json"
           cd "$D"
           git init -q -b bozza-ipa-avatarfit
-          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add AvatarFit.ipa
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add AvatarFit.ipa versione.json
           git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" commit -qm "AvatarFit IPA $VERSION build $GITHUB_RUN_NUMBER ($GITHUB_SHA)"
           git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/bozza-ipa-avatarfit
 

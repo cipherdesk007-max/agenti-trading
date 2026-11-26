@@ -187,4 +187,35 @@ final class AvatarFitTests: XCTestCase {
         let squat = Pose(hip: -1.15, knee: -1.45)
         XCTAssertLessThan(rig.altezzaPelvi(squat), atteso - 25)
     }
+
+    func testCameraVedeIlCorpo() {
+        // regressione della 1.1.4: il corpo è in centimetri e la camera
+        // sta a 2,2h, i piani depth di default (zFar = 100) facevano
+        // sparire tutto il manichino
+        let rig = AvatarRig(measurements: Measurements(), appearance: Appearance(), fitness: 0.4, faceMesh: nil)
+        let camera = rig.cameraNode.camera
+        XCTAssertNotNil(camera)
+        guard let camera else { return }
+        let h = max(Measurements().heightCm, 120)
+        XCTAssertLessThan(camera.zNear, 2)
+        XCTAssertGreaterThan(camera.zFar, h * 2.2 + h, "il corpo intero deve stare tra zNear e zFar")
+    }
+
+    func testVersionePubblicataParsing() {
+        let json = #"{"versione":"1.1.4","build":22,"data":"2026-11-26","url":"https://esempio/AvatarFit.ipa"}"#
+        let v = VersionePubblicata.da(json)
+        XCTAssertEqual(v?.versione, "1.1.4")
+        XCTAssertEqual(v?.build, 22)
+        XCTAssertEqual(v?.url, "https://esempio/AvatarFit.ipa")
+        XCTAssertNil(VersionePubblicata.da("non è json"))
+        XCTAssertNil(VersionePubblicata.da(#"{"versione":"1"}"#))
+    }
+
+    func testConfrontoVersioni() {
+        XCTAssertEqual(VersionePubblicata.confronta("1.1.4", "1.1.3"), .orderedDescending)
+        XCTAssertEqual(VersionePubblicata.confronta("1.1.3", "1.1.4"), .orderedAscending)
+        XCTAssertEqual(VersionePubblicata.confronta("1.2.10", "1.2.9"), .orderedDescending)
+        XCTAssertEqual(VersionePubblicata.confronta("1.1", "1.1.0"), .orderedSame)
+        XCTAssertEqual(VersionePubblicata.confronta("1.1.4", "1.1.4"), .orderedSame)
+    }
 }
