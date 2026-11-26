@@ -1,7 +1,13 @@
 # CHANGELOG · AvatarFit
 
-## 1.1.6 (build 8)
+## 1.1.6 (build 9)
 
+- **Build 9**: corretto il test dell'IK: i bersagli fuori portata non
+  possono pretendere la mano a un centimetro dal bersaglio (e' la run #24
+  rossa: asserzioni sbagliate nel test, non nel codice dell'IK). Ora il
+  test verifica che il braccio resti di un pezzo (omero e avambraccio
+  mai allungati), che si tenda tutto verso un bersaglio lontano e che la
+  mano si tenga alla distanza legale quando il bersaglio e' troppo vicino.
 - **Mani inchiodate con cinematica inversa**: nelle trazioni, flessioni e
   plank le mani restano esattamente su sbarra o pavimento per TUTTO il
   ciclo, non solo nei fotogramma chiave (prima l'interpolazione le faceva

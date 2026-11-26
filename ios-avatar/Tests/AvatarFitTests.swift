@@ -214,37 +214,42 @@ final class AvatarFitTests: XCTestCase {
     }
 
     func testIkPortaLaManoSulBersaglio() {
-        // l'IK analitica deve mettere la mano ESATTAMENTE sul bersaglio,
-        // con entrambi i rami del gomito, e saturare senza esplodere
-        // fuori portata
+        // l'IK analitica a due link deve: portare la mano ESATTAMENTE sul
+        // bersaglio quando e' alla portata (zona centrale), tendere il braccio
+        // tutto verso il bersaglio quando e' troppo lontano, respingere la
+        // mano quando e' troppo vicino, e non rompere mai i segmenti.
+        // NB: fuori portata la mano NON puo' stare sul bersaglio: la asserzione
+        // e' sulla forma del braccio, non sulla distanza dal bersaglio.
         let spalla = Punto2D(y: 100, z: 0)
         let l1: CGFloat = 37
         let l2: CGFloat = 30
-        var bersagli: [Punto2D] = []
-        for dy in stride(from: CGFloat(-65), through: 65, by: 15) {
-            for dz in stride(from: CGFloat(-45), through: 45, by: 15) {
-                bersagli.append(Punto2D(y: 100 + dy, z: dz))
-            }
-        }
+        let minD = abs(l1 - l2) + 0.5
+        let maxD = l1 + l2 - 0.5
         for ramo in [-1, 1] {
-            for bersaglio in bersagli {
-                let a = angoliIk(spalla: spalla, bersaglio: bersaglio, l1: l1, l2: l2, ramo: ramo)
-                let gomito = Punto2D(
-                    y: spalla.y - l1 * CGFloat(cos(Double(a.spalla))),
-                    z: spalla.z - l1 * CGFloat(sin(Double(a.spalla)))
-                )
-                let mano = Punto2D(
-                    y: gomito.y - l2 * CGFloat(cos(Double(a.avambraccio))),
-                    z: gomito.z - l2 * CGFloat(sin(Double(a.avambraccio)))
-                )
-                let d = distanza2D(mano, bersaglio)
-                let dBersaglio = distanza2D(spalla, bersaglio)
-                let minD = abs(l1 - l2) + 0.5
-                let maxD = l1 + l2 - 0.5
-                if dBersaglio >= minD && dBersaglio <= maxD {
-                    XCTAssertLessThan(d, 0.01, "mano fuori dal bersaglio a ramo \(ramo)")
-                } else {
-                    XCTAssertLessThan(d, 1.0, "saturazione troppo brusca a ramo \(ramo)")
+            for dy in stride(from: CGFloat(-65), through: 65, by: 15) {
+                for dz in stride(from: CGFloat(-45), through: 45, by: 15) {
+                    let bersaglio = Punto2D(y: 100 + dy, z: dz)
+                    let a = angoliIk(spalla: spalla, bersaglio: bersaglio, l1: l1, l2: l2, ramo: ramo)
+                    let gomito = puntoBraccio(spalla, angolo: a.spalla, lunghezza: l1)
+                    let mano = puntoBraccio(gomito, angolo: a.avambraccio, lunghezza: l2)
+                    // 1. il braccio non si rompe mai, nessun ramo
+                    XCTAssertEqual(distanza2D(spalla, gomito), l1, accuracy: 0.01, "omero rotto a ramo \(ramo)")
+                    XCTAssertEqual(distanza2D(gomito, mano), l2, accuracy: 0.01, "avambraccio rotto a ramo \(ramo)")
+                    let dSpallaMano = distanza2D(spalla, mano)
+                    XCTAssertLessThanOrEqual(dSpallaMano, l1 + l2 + 0.01, "braccio allungato oltre la lunghezza totale a ramo \(ramo)")
+                    XCTAssertGreaterThanOrEqual(dSpallaMano, abs(l1 - l2) - 0.2, "braccio piegato oltre il limite a ramo \(ramo)")
+                    let dBersaglio = distanza2D(spalla, bersaglio)
+                    if dBersaglio >= minD + 0.5 && dBersaglio <= maxD - 0.5 {
+                        // 2. zona centrale: mano esatta sul bersaglio
+                        XCTAssertLessThan(distanza2D(mano, bersaglio), 0.01, "mano fuori dal bersaglio a ramo \(ramo)")
+                    } else if dBersaglio > maxD - 0.5 {
+                        // 3. bersaglio lontano: braccio teso, mano in direzione del bersaglio
+                        XCTAssertGreaterThanOrEqual(dSpallaMano, maxD - 0.2, "braccio non teso verso il bersaglio lontano a ramo \(ramo)")
+                        XCTAssertLessThanOrEqual(distanza2D(mano, bersaglio), dBersaglio - dSpallaMano + 0.2, "mano fuori dalla direzione del bersaglio lontano a ramo \(ramo)")
+                    } else {
+                        // 4. bersaglio troppo vicino: la mano resta alla distanza legale minima
+                        XCTAssertEqual(distanza2D(mano, bersaglio), minD - dBersaglio, accuracy: 0.6, "mano non respinta dal bersaglio troppo vicino a ramo \(ramo)")
+                    }
                 }
             }
         }
