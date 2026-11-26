@@ -1,5 +1,15 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.11 (build della CI)
+
+- **Volto-foto sul viso, non sopra il collo**: nei frame del telefono
+  (1.1.10) la foto del volto fluttuava sopra il collo con la testa
+  assente. Il piano ora si piazza sul viso usando la geometria reale
+  della testa letta dallo scheletro a riposo (dall'osso head alla
+  sommita' del capo): centro a 42% di quell'altezza, davanti alla
+  superficie al 72% del lato, lato 62%. Prima usava frazioni
+  dell'altezza totale del corpo, sbagliate per il Quaternius.
+
 ## 1.1.10 (build della CI)
 
 - **Volto-foto anche sul personaggio 3D**: la foto/Memoji dell'utente

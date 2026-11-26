@@ -71,6 +71,10 @@ final class PersonaggioRig {
     private let L2: Double
     private let cosciaChar: Double
     private let altezzaChar: Double
+    // testa: quota dell'osso head e sommità del capo a riposo (unità glTF):
+    // servono a piazzare il volto-foto SUL viso, non sopra il collo
+    private let restTestaY: Double
+    private let sommitaY: Double
 
     private var manubri: [SCNNode] = []
     private var sbarraFissa: SCNNode?
@@ -138,6 +142,8 @@ final class PersonaggioRig {
         restPelviPadre = scheletro.restPelviPadre
         piantaY = scheletro.piantaY
         altezzaChar = scheletro.altezzaChar
+        restTestaY = scheletro.restTestaY
+        sommitaY = scheletro.sommitaY
         unita = bodyH / altezzaChar
 
         // proporzioni dell'utente: braccia e gambe rispetto all'uomo di
@@ -168,20 +174,23 @@ final class PersonaggioRig {
     }
 
     /// Volto dell'utente (maschera ovale sfumata, la stessa del manichino):
-    /// piano davanti alla testa, luce costante perche' la foto deve restare
-    /// leggibile. Il piano segue la testa del personaggio (figlio del nodo
-    /// head), quindi resta al posto giusto anche a collo piegato.
+    /// piano davanti al VISO (il nodo head nasce all'attacco del collo: senza
+    /// questa misura la foto fluttuava sopra il collo, visto sul telefono nella
+    /// 1.1.10). Altezza della testa = dall'osso head alla sommità del capo,
+    /// misurata sullo scheletro a riposo: centro del viso a 42% di quella
+    /// altezza, davanti alla superficie (72% del lato), lato 62%.
     private func aggiungiVolto(_ volto: UIImage) {
         guard let testa = nodi["head"] else { return }
         let materiale = SCNMaterial()
         materiale.diffuse.contents = AvatarRig.voltoSfumato(volto)
         materiale.lightingModel = .constant
         materiale.isDoubleSided = false
-        let lato = altezzaChar * 0.082
+        let altezzaTesta = max(sommitaY - restTestaY, 0.05)
+        let lato = altezzaTesta * 0.62
         let piano = SCNPlane(width: CGFloat(lato), height: CGFloat(lato))
         piano.firstMaterial = materiale
         let nodoVolto = SCNNode(geometry: piano)
-        nodoVolto.position = SCNVector3(0, Float(altezzaChar * 0.012), Float(altezzaChar * 0.050))
+        nodoVolto.position = SCNVector3(0, Float(altezzaTesta * 0.42), Float(lato * 0.72))
         nodoVolto.name = "voltoFoto"
         testa.addChildNode(nodoVolto)
     }
@@ -195,6 +204,8 @@ final class PersonaggioRig {
         var restPelviPadre: simd_double4x4
         var piantaY: Double
         var altezzaChar: Double
+        var restTestaY: Double
+        var sommitaY: Double
         var braccio: Double
         var avambraccio: Double
         var coscia: Double
@@ -264,6 +275,8 @@ final class PersonaggioRig {
             restPelviPadre: restPelviPadre,
             piantaY: minimoY,
             altezzaChar: massimoY - minimoY,
+            restTestaY: posRest("head").y,
+            sommitaY: massimoY,
             braccio: simd_distance(posRest("upperarm_l"), posRest("lowerarm_l")),
             avambraccio: simd_distance(posRest("lowerarm_l"), posRest("hand_l")),
             coscia: simd_distance(posRest("thigh_l"), posRest("calf_l")),

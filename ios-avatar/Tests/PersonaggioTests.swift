@@ -176,9 +176,14 @@ final class PersonaggioTests: XCTestCase {
         XCTAssertNotNil(piano, "la geometria del volto deve essere un piano")
         if let piano {
             let lato = Double(piano.width)
-            dentro(lato, 0.10, 0.08, "lato del volto (unita' glTF)")
+            // altezzaTesta (osso head -> sommita') ~0.21 nel glTF, lato = 62%
+            dentro(lato, 0.13, 0.06, "lato del volto (unita' glTF)")
             XCTAssertFalse(nodoVolto.geometry?.firstMaterial?.isDoubleSided ?? true,
                            "il volto non deve vedersi da dietro la testa")
+            // il volto sta SUL viso: il piano e' ben sopra l'attacco del collo
+            // (il nodo head nasce al collo; prima del fix y era ~0.02)
+            XCTAssertGreaterThan(Double(nodoVolto.position.y), 0.04,
+                                 "il volto deve stare sul viso, non sopra il collo")
         }
     }
 
