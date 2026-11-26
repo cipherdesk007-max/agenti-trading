@@ -10,6 +10,7 @@ import XCTest
 
 final class PersonaggioTests: XCTestCase {
 
+    @MainActor
     private func nuovo() throws -> PersonaggioRig {
         guard PersonaggioRig.disponibile else {
             throw XCTSkip("file CC0 del personaggio non nel bundle (CI: scaricali prima di xcodegen)")
@@ -26,6 +27,7 @@ final class PersonaggioTests: XCTestCase {
         XCTAssertLessThanOrEqual(abs(valore - centro), tol, "\(nome): \(valore) atteso ~\(centro)")
     }
 
+    @MainActor
     func testPersonaggioCaricaESiReggeInPiedi() throws {
         let rig = try nuovo()
         let m = rig.applica(0, movimento: .curl)
@@ -35,6 +37,7 @@ final class PersonaggioTests: XCTestCase {
         XCTAssertLessThanOrEqual(m.ancoraDx, 5.0, "presa del bersaglio (ancora)")
     }
 
+    @MainActor
     func testPushUpManiBasseEPuntaAlSuolo() throws {
         let rig = try nuovo()
         let m = rig.applica(0.5, movimento: .pushUp)
@@ -44,6 +47,7 @@ final class PersonaggioTests: XCTestCase {
         XCTAssertLessThanOrEqual(m.ancoraDx, 7.0, "mano vicino al bersaglio")
     }
 
+    @MainActor
     func testPullUpSaleConLaSbarra() throws {
         let rig = try nuovo()
         let sotto = rig.applica(0, movimento: .pullUp)
@@ -55,6 +59,7 @@ final class PersonaggioTests: XCTestCase {
         dentro(su.pelviY, 140.7, 4.0, "bacino che sale")
     }
 
+    @MainActor
     func testSquatScendeSenzaAffondare() throws {
         let rig = try nuovo()
         let m = rig.applica(1.6, movimento: .squat)
@@ -63,6 +68,7 @@ final class PersonaggioTests: XCTestCase {
         dentro(m.manoY, 116.2, 4.0, "mani avanti per bilanciarsi")
     }
 
+    @MainActor
     func testCurlAlzaLaMano() throws {
         let rig = try nuovo()
         let giu = rig.applica(0, movimento: .curl)
@@ -72,6 +78,7 @@ final class PersonaggioTests: XCTestCase {
         XCTAssertLessThanOrEqual(su.ancoraDx, 3.5, "presa")
     }
 
+    @MainActor
     func testRowTiraIlGomitoIndietro() throws {
         let rig = try nuovo()
         let m = rig.applica(1.2, movimento: .row)
@@ -79,6 +86,7 @@ final class PersonaggioTests: XCTestCase {
         XCTAssertLessThanOrEqual(m.ancoraDx, 3.0, "presa")
     }
 
+    @MainActor
     func testBenchManoScendeSulPettorale() throws {
         let rig = try nuovo()
         let m = rig.applica(2.0, movimento: .bench)
@@ -87,6 +95,7 @@ final class PersonaggioTests: XCTestCase {
         dentro(m.pelviY, 39.5, 4.0, "bacino disteso sulla panca")
     }
 
+    @MainActor
     func testLateralRaiseBraccioOrizzontale() throws {
         let rig = try nuovo()
         let m = rig.applica(1.1, movimento: .lateralRaise)
@@ -94,6 +103,7 @@ final class PersonaggioTests: XCTestCase {
         XCTAssertLessThanOrEqual(m.ancoraDx, 4.5, "presa")
     }
 
+    @MainActor
     func testLungePassoAvanti() throws {
         let rig = try nuovo()
         let m = rig.applica(1.4, movimento: .lunge)
@@ -101,6 +111,7 @@ final class PersonaggioTests: XCTestCase {
         dentro(m.puntaY, -1.7, 4.0, "passo che resta a terra")
     }
 
+    @MainActor
     func testPlankAvambraccioETacco() throws {
         let rig = try nuovo()
         let m = rig.applica(0, movimento: .plank)
@@ -110,6 +121,7 @@ final class PersonaggioTests: XCTestCase {
         XCTAssertLessThanOrEqual(m.ancoraDx, 10.0, "presa del plank")
     }
 
+    @MainActor
     func testCustomBraccioSopraLaTesta() throws {
         let rig = try nuovo()
         let m = rig.applica(0.3, movimento: .custom)
@@ -117,6 +129,7 @@ final class PersonaggioTests: XCTestCase {
         XCTAssertLessThan(m.pelviY, 100.0, "resta in piedi")
     }
 
+    @MainActor
     func testStopRiportaARiposo() throws {
         let rig = try nuovo()
         _ = rig.applica(1.4, movimento: .curl)

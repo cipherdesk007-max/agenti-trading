@@ -30,6 +30,7 @@ struct MisureContatto: Equatable, Sendable {
     var puntaZ: Double = 0
 }
 
+@MainActor
 final class PersonaggioRig {
 
     let scene = SCNScene()
