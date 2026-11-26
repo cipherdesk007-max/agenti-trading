@@ -124,7 +124,7 @@ final class PersonaggioRig {
                 // angoli del box locale del nodo: trasformati in mondo danno
                 // l'altezza del personaggio in posa di riposo (bind pose)
                 let (lmin, lmax) = nodo.boundingBox
-                let mat = PersonaggioRig.d4x4(nodo.worldTransform)
+                let mat = PersonaggioRig.d4x4(nodo.simdWorldTransform)
                 for x in [Double(lmin.x), Double(lmax.x)] {
                     for y in [Double(lmin.y), Double(lmax.y)] {
                         for z in [Double(lmin.z), Double(lmax.z)] {
@@ -153,7 +153,7 @@ final class PersonaggioRig {
 
         func posRest(_ nome: String) -> SIMD3<Double> {
             guard let nodo = nodi[nome] else { return .zero }
-            let m = PersonaggioRig.d4x4(nodo.worldTransform)
+            let m = PersonaggioRig.d4x4(nodo.simdWorldTransform)
             return SIMD3<Double>(m.columns.3.x, m.columns.3.y, m.columns.3.z)
         }
         func distRest(_ a: String, _ b: String) -> Double {
@@ -162,7 +162,7 @@ final class PersonaggioRig {
 
         restPelvi = posRest("pelvis")
         if let padre = nodi["pelvis"]?.parent {
-            restPelviPadre = PersonaggioRig.d4x4(padre.worldTransform)
+            restPelviPadre = PersonaggioRig.d4x4(padre.simdWorldTransform)
         }
         piantaY = minimoY
         altezzaChar = massimoY - minimoY
@@ -206,7 +206,7 @@ final class PersonaggioRig {
     }
 
     private static func f4x4(_ m: simd_double4x4) -> simd_float4x4 {
-        func col(_ c: simd_float4) -> simd_float4 {
+        func col(_ c: SIMD4<Double>) -> simd_float4 {
             simd_float4(Float(c.x), Float(c.y), Float(c.z), Float(c.w))
         }
         return simd_float4x4(columns: (col(m.columns.0), col(m.columns.1), col(m.columns.2), col(m.columns.3)))
@@ -355,8 +355,8 @@ final class PersonaggioRig {
             d["foot_l"] = (0, 0)
             d["foot_r"] = (0, 0)
         } else {
-            let gambaL = d["thigh_l"]!.0 + d["calf_l"]!.0
-            let gambaR = d["thigh_r"]!.0 + d["calf_r"]!.0
+            let gambaL = (d["thigh_l"]?.dx ?? 0) + (d["calf_l"]?.dx ?? 0)
+            let gambaR = (d["thigh_r"]?.dx ?? 0) + (d["calf_r"]?.dx ?? 0)
             d["foot_l"] = (-(Double(p.bodyPitch) + gambaL), 0)
             d["foot_r"] = (-(Double(p.bodyPitch) + gambaR), 0)
         }
