@@ -15,6 +15,8 @@ final class AppStore {
     var demoExerciseId: UUID? { didSet { save() } }
     var sessionIds: [UUID] = [] { didSet { save() } }
     var use3D = true { didSet { save() } }
+    var usePersonalAvatar = false { didSet { save() } }
+    var avatarPersonaleEstensione: String? { didSet { save() } }
     var autoGalleryFace = false { didSet { save() } }
     var faceMesh: FaceMeshData? { didSet { save() } }
 
@@ -27,6 +29,12 @@ final class AppStore {
     private var dataURL: URL { documents.appendingPathComponent("dati.json") }
     private var photoURL: URL { documents.appendingPathComponent("foto-riferimento.jpg") }
 
+    /// Dove vive il modello 3D importato dall'utente (beta).
+    var urlAvatarPersonale: URL? {
+        guard let e = avatarPersonaleEstensione else { return nil }
+        return documents.appendingPathComponent("avatar-personale.\(e)")
+    }
+
     struct Snapshot: Codable {
         var measurements: Measurements
         var appearance: Appearance
@@ -38,6 +46,8 @@ final class AppStore {
         var demoExerciseId: UUID?
         var sessionIds: [UUID]
         var use3D: Bool?
+        var usePersonalAvatar: Bool?
+        var avatarPersonaleEstensione: String?
         var autoGalleryFace: Bool?
         var faceMesh: FaceMeshData?
     }
@@ -63,6 +73,8 @@ final class AppStore {
             demoExerciseId = snap.demoExerciseId
             sessionIds = snap.sessionIds
             use3D = snap.use3D ?? true
+            usePersonalAvatar = snap.usePersonalAvatar ?? false
+            avatarPersonaleEstensione = snap.avatarPersonaleEstensione
             autoGalleryFace = snap.autoGalleryFace ?? false
             faceMesh = snap.faceMesh
         } else {
@@ -70,6 +82,12 @@ final class AppStore {
         }
         photoData = try? Data(contentsOf: photoURL)
         ricaricaVolto()
+        // coerenza: il flag senza il file non vale (il modello non entra
+        // nei backup, dopo un ripristino va reimportato)
+        if let url = urlAvatarPersonale, !FileManager.default.fileExists(atPath: url.path) {
+            avatarPersonaleEstensione = nil
+            usePersonalAvatar = false
+        }
     }
 
     /// Ridisegna il volto ritagliato partendo dal file locale.
@@ -81,9 +99,9 @@ final class AppStore {
 
     private func seed() {
         trackers = [
-            CustomTracker(name: "Acqua", symbol: "💧", unit: "L", goal: 2, step: 0.25),
-            CustomTracker(name: "Sonno", symbol: "😴", unit: "h", goal: 8, step: 0.5),
-            CustomTracker(name: "Passi", symbol: "🚶", unit: "passi", goal: 10000, step: 500)
+            CustomTracker(name: "Acqua", symbol: "", unit: "L", goal: 2, step: 0.25),
+            CustomTracker(name: "Sonno", symbol: "", unit: "h", goal: 8, step: 0.5),
+            CustomTracker(name: "Passi", symbol: "", unit: "passi", goal: 10000, step: 500)
         ]
         exercises = [
             Exercise(name: "Trazioni (pull-up)", muscle: .dorso, equipment: "Sbarra", movement: .pullUp, defaultSets: 4, defaultReps: 8),
@@ -112,6 +130,8 @@ final class AppStore {
             demoExerciseId: demoExerciseId,
             sessionIds: sessionIds,
             use3D: use3D,
+            usePersonalAvatar: usePersonalAvatar,
+            avatarPersonaleEstensione: avatarPersonaleEstensione,
             autoGalleryFace: autoGalleryFace,
             faceMesh: faceMesh
         )
@@ -131,6 +151,8 @@ final class AppStore {
             demoExerciseId: demoExerciseId,
             sessionIds: sessionIds,
             use3D: use3D,
+            usePersonalAvatar: usePersonalAvatar,
+            avatarPersonaleEstensione: avatarPersonaleEstensione,
             autoGalleryFace: autoGalleryFace,
             faceMesh: faceMesh
         )
@@ -154,8 +176,14 @@ final class AppStore {
         demoExerciseId = snap.demoExerciseId
         sessionIds = snap.sessionIds
         use3D = snap.use3D ?? true
+        usePersonalAvatar = snap.usePersonalAvatar ?? false
+        avatarPersonaleEstensione = snap.avatarPersonaleEstensione
         autoGalleryFace = snap.autoGalleryFace ?? false
         faceMesh = snap.faceMesh
+        if let url = urlAvatarPersonale, !FileManager.default.fileExists(atPath: url.path) {
+            avatarPersonaleEstensione = nil
+            usePersonalAvatar = false
+        }
         return true
     }
 
@@ -168,10 +196,47 @@ final class AppStore {
         sessionIds = []
         demoExerciseId = nil
         use3D = true
+        usePersonalAvatar = false
+        avatarPersonaleEstensione = nil
         autoGalleryFace = false
         faceMesh = nil
         clearPhoto()
         seed()
+    }
+
+    /// Copia il modello 3D scelto dentro l'app e lo attiva. Ritorna nil se
+    /// tutto è andato bene, altrimenti il messaggio di errore da mostrare.
+    @discardableResult
+    func importaAvatarPersonale(from url: URL) -> String? {
+        guard let e = AvatarPersonale.estensioneValida(url) else {
+            return "Formato non supportato: servono .usdz, .usda, .dae oppure .obj (il .glTF non si apre su iPhone)."
+        }
+        let scoped = url.startAccessingSecurityScopedResource()
+        defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+        for vecchia in AvatarPersonale.estensioniValide where vecchia != e {
+            try? FileManager.default.removeItem(at: documents.appendingPathComponent("avatar-personale.\(vecchia)"))
+        }
+        let dest = documents.appendingPathComponent("avatar-personale.\(e)")
+        do {
+            if FileManager.default.fileExists(atPath: dest.path) {
+                try FileManager.default.removeItem(at: dest)
+            }
+            try FileManager.default.copyItem(at: url, to: dest)
+        } catch {
+            return "Copia non riuscita: il file non si è potuto salvare nell'app."
+        }
+        avatarPersonaleEstensione = e
+        usePersonalAvatar = true
+        return nil
+    }
+
+    /// Toglie il modello 3D importato (il manichino torna quello di sempre).
+    func rimuoviAvatarPersonale() {
+        if let url = urlAvatarPersonale {
+            try? FileManager.default.removeItem(at: url)
+        }
+        avatarPersonaleEstensione = nil
+        usePersonalAvatar = false
     }
 
     var fitness: Double {
@@ -256,4 +321,4 @@ final class AppStore {
     func todayValue(_ t: CustomTracker) -> Double {
         Calendar.current.isDateInToday(t.lastReset) ? t.value : 0
     }
-}
+} 

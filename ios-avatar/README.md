@@ -76,6 +76,7 @@ ios-avatar/
 │   ├── HomeView.swift            # avatar 3D (2D solo come vista alternativa) + banner aggiornamenti
 │   ├── AvatarRig.swift           # rig loftato: IK mani ancora (sbarra/terra), caviglia per scarpe piatte, testa scolpita, demo 30 fps
 │   ├── AvatarSceneView.swift     # wrapper SceneKit (rotazione/zoom, demo animata)
+│   ├── AvatarPersonale.swift     # avatar personale (beta): import .usdz/.dae da SISTEMA, inquadramento automatico
 │   ├── FaceScanView.swift        # scansione viso TrueDepth (ARKit) → mesh locale
 │   ├── MeasurementsEditorView.swift  # "Le mie misure" + aspetto
 │   ├── PhotoCard.swift           # foto di riferimento solo-locale (PHPicker)

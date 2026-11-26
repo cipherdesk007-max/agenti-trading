@@ -8,6 +8,7 @@ struct SystemView: View {
     @State private var shareURL: URL?
     @State private var showShare = false
     @State private var showImport = false
+    @State private var showImportaAvatar = false
     @State private var alertMessage: String?
     @State private var showResetAlert = false
 
@@ -19,6 +20,37 @@ struct SystemView: View {
                 Text("Aggiornamenti".uppercased()).foregroundStyle(Theme.accent)
             } footer: {
                 Text("Il controllo legge solo il numero di versione pubblicato su GitHub: nessun tuo dato lascia l'iPhone. Il bottone scarica l'ultima build dell'IPA da importare in LiveContainer.")
+            }
+
+            Section {
+                if store.avatarPersonaleEstensione != nil {
+                    LabeledContent("Modello importato", value: ".\(store.avatarPersonaleEstensione ?? "")")
+                    Toggle("Usa al posto del manichino", isOn: Binding(
+                        get: { store.usePersonalAvatar },
+                        set: { v in
+                            store.usePersonalAvatar = v
+                            haptic()
+                        }
+                    ))
+                    Button("Rimuovi modello", role: .destructive) {
+                        store.rimuoviAvatarPersonale()
+                        haptic(.light)
+                    }
+                } else {
+                    Text("Nessun modello importato.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Button {
+                    haptic()
+                    showImportaAvatar = true
+                } label: {
+                    Label("Importa avatar 3D (.usdz, .dae…)", systemImage: "cube.transparent")
+                }
+            } header: {
+                Text("Avatar personale · beta".uppercased()).foregroundStyle(Theme.accent)
+            } footer: {
+                Text("Sperimentale: un tuo modello 3D (es. un avatar .usdz) sostituisce il manichino nell'Home e ruota col dito, ma gli esercizi non lo animano ancora. Il file non entra nei backup: dopo un ripristino reimportalo. Il .glTF non si apre su iPhone senza conversione.")
             }
 
             Section {
@@ -106,6 +138,19 @@ struct SystemView: View {
                 let scoped = url.startAccessingSecurityScopedResource()
                 defer { if scoped { url.stopAccessingSecurityScopedResource() } }
                 alertMessage = store.importBackup(from: url) ? "Backup importato: dati ripristinati." : "File non valido: backup non importato."
+                haptic(.medium)
+            case .failure:
+                alertMessage = "Importazione annullata."
+            }
+        }
+        .fileImporter(isPresented: $showImportaAvatar, allowedContentTypes: AvatarPersonale.tipiFile) { result in
+            switch result {
+            case .success(let url):
+                if let errore = store.importaAvatarPersonale(from: url) {
+                    alertMessage = errore
+                } else {
+                    alertMessage = "Avatar personale importato: lo vedi nell'Home, ruota col dito."
+                }
                 haptic(.medium)
             case .failure:
                 alertMessage = "Importazione annullata."

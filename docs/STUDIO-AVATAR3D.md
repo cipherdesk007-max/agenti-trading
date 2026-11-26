@@ -76,3 +76,42 @@ manichino stilizzato, non una scultura. Da 1.1.7 ha anche mani complete
 2. Accettare di perdere la personalizzazione fine del corpo (B e C).
 3. Se il volto-foto selfie/current deve restare (in B e C si sovrappone alla
    testa del modello: da studiare caso per caso).
+
+## Mandato del 26/11 sera: motore nuovo in fasi, fase 1 consegnata
+
+Il proprietario ha scelto: niente piu' solo manichino procedurale, si passa
+all'architettura professionale (modello reale con scheletro e skinning,
+animazioni skeletal, volto foto sul modello nuovo, tasto di importazione
+del suo .usdz, aggiornamenti col link IPA copiabile per LiveContainer).
+Il lavoro va a FASI, una build verde per fase (regole AGENTS.md: modifiche
+piccole, una run CI a turno).
+
+- **Fase 1 (build 1.1.8, consegnata)**: tasto "Importa avatar 3D" in
+  SISTEMA (.usdz/.usda/.dae/.obj, SceneKit nativo, il modello sostituisce
+  il manichino nell'Home ruotando col dito; onestà: gli esercizi non lo
+  animano ancora) + copia link IPA (banner e SISTEMA).
+- **Fase 2 (in corso)**: personaggio CC0 rigged dentro l'app, guidato dalle
+  pose già calibrate del rig. Personaggio scelto: Quaternius Universal Base
+  Characters (maschio e femmina "Superhero"): licenza CC0 verificata dentro
+  il pack (License_Standard.txt), scheletro Unreal standard a 65 giunti
+  (root/pelvis/spine_01..03/neck_01/Head/clavicle_l/upperarm_l/lowerarm_l/
+  hand_l + dita/thigh_l/calf_l/foot_l/ball_l), occhi inclusi.
+  Download: il flusso itch.io chiede "payment method" via API e non è
+  automizzabile; si usa il mirror GitHub (release hkht-dev/
+  b2k-poc-android tag quaternius-packs-2026-10-20, zip identici al pack).
+  La CI (passo SPERIMENTALE, non blocca la build, da rimuovere a fine
+  fase) installa Blender headless, converte i glTF in .dae (via collaudata
+  per SceneKit/SCNSkinner) e .usd e pubblica tutto sul branch
+  bozza-modello-3d con le texture. Poi: studio numerico offline del DAE
+  (assi di riposo dei giunti) PRIMA di toccare Swift, mapping
+  keyframe→ossa per tutti gli esercizi, e solo allora il personaggio
+  sostituisce il manichino quando l'utente lo sceglie.
+- **Fase 3**: volto-foto sulla testa del personaggio (texture/UV da
+  verificare caso per caso) e scala degli ossi dalle misure dell'utente
+  (a blocchi: la personalizzazione fine resta del manichino).
+- **Onestà dichiarata**: le animazioni da palestra gratis di qualità NON
+  esistono (le pose restano le nostre, già calibrate sui contatti), il
+  personaggio CC0 è stilizzato non "da vetrina", e il percorso C (modello
+  comprato su TurboSquid/Fab, 30-150 € + animazioni) resta aperto se il
+  proprietario vuole quel look: la fase 2 rende il motore pronto anche
+  per quel file

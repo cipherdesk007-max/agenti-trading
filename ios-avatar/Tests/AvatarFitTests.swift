@@ -322,4 +322,69 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertEqual(VersionePubblicata.confronta("1.1", "1.1.0"), .orderedSame)
         XCTAssertEqual(VersionePubblicata.confronta("1.1.4", "1.1.4"), .orderedSame)
     }
-}
+
+    // MARK: - avatar personale (beta)
+
+    func testEstensioniAvatarPersonale() {
+        XCTAssertEqual(AvatarPersonale.estensioniValide, ["usdz", "usda", "dae", "obj"])
+        XCTAssertNotNil(AvatarPersonale.estensioneValida(URL(fileURLWithPath: "/tmp/avatar.usdz")))
+        XCTAssertNotNil(AvatarPersonale.estensioneValida(URL(fileURLWithPath: "/tmp/avatar.DAE")))
+        XCTAssertNil(AvatarPersonale.estensioneValida(URL(fileURLWithPath: "/tmp/avatar.stl")))
+        XCTAssertFalse(AvatarPersonale.tipiFile.isEmpty)
+    }
+
+    func testSferaDiContorno() {
+        // modelli di qualunque formato: l'inquadramento si calcola dai
+        // nodi geometrici, non da campi speciali della scena
+        let scena = SCNScene()
+        let vuota = sferaDiContorno(scena)
+        XCTAssertEqual(vuota.raggio, 0, accuracy: 0.0001)
+
+        let nodo = SCNNode(geometry: SCNBox(width: 2, height: 2, length: 2, chamferRadius: 0))
+        scena.rootNode.addChildNode(nodo)
+        let sfera = sferaDiContorno(scena)
+        XCTAssertEqual(sfera.centro.x, 0, accuracy: 0.01)
+        XCTAssertEqual(sfera.centro.y, 0, accuracy: 0.01)
+        XCTAssertEqual(sfera.centro.z, 0, accuracy: 0.01)
+        XCTAssertEqual(sfera.raggio, 1, accuracy: 0.01)
+
+        nodo.position = SCNVector3(0, 10, 0)
+        let spostato = sferaDiContorno(scena)
+        XCTAssertEqual(spostato.centro.y, 10, accuracy: 0.01)
+        XCTAssertEqual(spostato.raggio, 1, accuracy: 0.01)
+    }
+
+    @MainActor
+    func testImportaEUsaAvatarPersonale() throws {
+        let store = AppStore()
+        defer { store.rimuoviAvatarPersonale() }
+
+        let file = FileManager.default.temporaryDirectory
+            .appendingPathComponent("avatarfit-test-\(UUID().uuidString).usdz")
+        try Data([0x50, 0x4b, 0x03, 0x04]).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        XCTAssertNil(store.importaAvatarPersonale(from: file), "l'import di un .usdz valido deve riuscire")
+        XCTAssertEqual(store.avatarPersonaleEstensione, "usdz")
+        XCTAssertNotNil(store.urlAvatarPersonale)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: store.urlAvatarPersonale?.path ?? ""))
+        XCTAssertTrue(store.usePersonalAvatar)
+
+        // persistenza: una nuova istanza rilegge dati.json e ritrova il file
+        let store2 = AppStore()
+        XCTAssertEqual(store2.avatarPersonaleEstensione, "usdz")
+        XCTAssertTrue(store2.usePersonalAvatar)
+
+        // estensione fuori elenco rifiutata
+        let file2 = FileManager.default.temporaryDirectory
+            .appendingPathComponent("avatarfit-test-\(UUID().uuidString).stl")
+        try Data("x".utf8).write(to: file2)
+        defer { try? FileManager.default.removeItem(at: file2) }
+        XCTAssertNotNil(store.importaAvatarPersonale(from: file2), "lo .stl va rifiutato")
+
+        store.rimuoviAvatarPersonale()
+        XCTAssertNil(store.avatarPersonaleEstensione)
+        XCTAssertNil(store.urlAvatarPersonale)
+        XCTAssertFalse(store.usePersonalAvatar)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: store.urlAvatarPersonale?.path ?? "/nessuno"))
+    }
+

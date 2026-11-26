@@ -1,5 +1,25 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.8 (build 11)
+
+- **Avatar personale (beta)**: in SISTEMA si importa un proprio modello 3D
+  (.usdz, .usda, .dae o .obj, con SceneKit nativo) e lo si usa al posto del
+  manichino nell'Home: ruota col dito, si inquadra da solo qualunque siano
+  le unità di misura del file e mostra le animazioni contenute nel file.
+  Onestà dichiarata: gli esercizi NON animano ancora il modello importato
+  (è la fase 2 del piano in docs/STUDIO-AVATAR3D.md) e il file non entra
+  nei backup: dopo un ripristino va reimportato.
+- **Copia link IPA per LiveContainer**: il banner aggiornamenti su Home e
+  la scheda AGGIORNAMENTI in SISTEMA ora hanno il bottone che copia il
+  link diretto dell'IPA, da incollare in LiveContainer › Installa da URL
+  (il link è anche visibile come testo selezionabile).
+- **Esperimento in CI (nessun effetto in app)**: la CI converte con Blender
+  il personaggio CC0 rigged di Quaternius (Universal Base Characters,
+  licenza CC0 verificata dentro il pacchetto) in .dae e .usd e li pubblica
+  sul branch bozza-modello-3d: è la preparazione della fase 2, guidare lo
+  scheletro di un personaggio vero con le pose già calibrate. Il passo non
+  blocca la build.
+
 ## 1.1.7 (build 10)
 
 - **Scarpe piatte a terra (caviglia V4)**: nelle pose di contatto le scarpe
@@ -146,4 +166,4 @@
 - Prima versione: avatar parametrico 3D/2D, scansione viso TrueDepth, demo 3D
   degli esercizi, workout attivo con serie/recupero/1RM, libreria esercizi
   espandibile, tracker personalizzabili, contatore no-smoke con traguardi di
-  salute, timeline 24h, backup export/import JSON, crash log in Sistema.
+  salute, timeline 24h, backup export/import JSON, crash log in Sistema

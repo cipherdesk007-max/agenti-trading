@@ -19,7 +19,9 @@ struct HomeView: View {
                 let avatarH = min(320, max(230, geo.size.height * 0.36))
                 VStack(spacing: 12) {
                     ZStack {
-                        if store.use3D {
+                        if let urlAvatar = store.urlAvatarPersonale, store.usePersonalAvatar, store.use3D {
+                            AvatarPersonaleScena(url: urlAvatar)
+                        } else if store.use3D {
                             AvatarSceneView(
                                 measurements: store.measurements,
                                 appearance: store.appearance,
@@ -203,4 +205,4 @@ struct StatChip: View {
                 .stroke(tint.opacity(0.25), lineWidth: 1)
         }
     }
-}
+
