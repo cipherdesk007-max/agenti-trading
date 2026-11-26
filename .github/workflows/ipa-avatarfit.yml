@@ -1,0 +1,304 @@
+name: IPA AvatarFit (Personal OS)
+
+# Build + test + IPA non firmato dell'app in ios-avatar/, sulla falsariga di
+# ios-build.yml ma su branch dedicato: bozza-ipa e screenshot restano del
+# progetto di trading (AGENTS.md: non toccarli a mano).
+on:
+  push:
+    branches: [vibe/avatarfit-ios-3061f8]
+    paths:
+      - "ios-avatar/**"
+      - ".github/workflows/ipa-avatarfit.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ipa-avatarfit
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash -e -o pipefail {0}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Personaggio CC0 (Quaternius) nel bundle
+        run: |
+          # ogni punto di rottura ha il suo ::error:: leggibile anche nelle
+          # annotazioni pubbliche: la run #30 e' fallita qui senza dettagli
+          mkdir -p ios-avatar/Resources/Personaggio
+          if ! curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o /tmp/ubc.zip \
+               "https://github.com/hkht-dev/b2k-poc-android/releases/download/quaternius-packs-2026-10-20/Universal.Base.Characters.Standard.zip"; then
+            echo "::error::download del pack Quaternius fallito (release hkht-dev ancora pubblica?)"
+            exit 1
+          fi
+          ls -la /tmp/ubc.zip
+          mkdir -p /tmp/ubcx
+          if ! unzip -q /tmp/ubc.zip -d /tmp/ubcx; then
+            echo "::error::unzip del pack fallito (zip danneggiato?)"
+            exit 1
+          fi
+          SRC="/tmp/ubcx/Universal Base Characters[Standard]/Base Characters/Godot - UE"
+          if [ ! -d "$SRC" ]; then
+            echo "::error::cartella del pack non trovata dopo l'estrazione"
+            find /tmp/ubcx -maxdepth 3 | head -10
+            exit 1
+          fi
+          # NB: nello zip NON esistono i file con nome *_png.png: sono gli URI
+          # spezzati del glTF (T_Hair_1_Normal.png -> T_Hair_1_Normal_png.png,
+          # T_Eye_Normal.png -> T_Eye_Normal_png.png): si copiano rinominati
+          for f in Superhero_Male_FullBody.gltf Superhero_Male_FullBody.bin \
+                   T_Superhero_Male_Normal.png T_Superhero_Male_Dark.png \
+                   T_Superhero_Male_Roughness.png T_Hair_1_BaseColor.png \
+                   T_Hair_1_Normal.png T_Eye_Normal.png T_Eye_Brown.png; do
+            if [ ! -s "$SRC/$f" ]; then
+              echo "::error::file mancante nel pack: $f"
+              exit 1
+            fi
+            cp "$SRC/$f" ios-avatar/Resources/Personaggio/
+          done
+          cp ios-avatar/Resources/Personaggio/T_Hair_1_Normal.png ios-avatar/Resources/Personaggio/T_Hair_1_Normal_png.png
+          cp ios-avatar/Resources/Personaggio/T_Eye_Normal.png ios-avatar/Resources/Personaggio/T_Eye_Normal_png.png
+          # Il glTF porta due strati di colore vertici e nessuno dei due
+          # funziona con GLTFSceneKit/SceneKit: COLOR_1 non e' standard e il
+          # caricatore lo rifiuta (run #37 rossa: il personaggio non si
+          # caricava MAI, l'app ricadeva in silenzio sul manichino);
+          # COLOR_0 e uchar4 e SceneKit non lo converte ("unsupported
+          # conversion uchar4 -> float4", run #38). Verificato nel .bin del
+          # pack: COLOR_0 e' bianco pieno (255 ovunque) su tutti i vertici,
+          # quindi moltiplicare il colore base per 1.0 non cambia niente
+          # nell'aspetto. Si tolgono entrambi: TEXCOORD, JOINTS e WEIGHTS
+          # restano, la pelle (texture) e lo skinning non cambiano.
+          python3 - <<'PYEOF'
+          import json
+          p = 'ios-avatar/Resources/Personaggio/Superhero_Male_FullBody.gltf'
+          with open(p) as f:
+            d = json.load(f)
+          rimossi = 0
+          restanti = set()
+          for mesh in d.get('meshes', []):
+            for prim in mesh.get('primitives', []):
+                attrs = prim.get('attributes', {})
+                for colore in ('COLOR_0', 'COLOR_1'):
+                    if colore in attrs:
+                        del attrs[colore]
+                        rimossi += 1
+                restanti.update(attrs.keys())
+          if rimossi == 0:
+            print('::error::nessun colore vertici nel glTF: il pack Quaternius è cambiato?')
+            raise SystemExit(1)
+          with open(p, 'w') as f:
+            json.dump(d, f, indent=1)
+          print(' COLOR_0/COLOR_1 rimossi da primitives:', rimossi, '| attributi rimasti:', sorted(restanti))
+          if 'JOINTS_0' not in restanti or 'WEIGHTS_0' not in restanti:
+            print('::error::skinning (JOINTS/WEIGHTS) assente dopo la pulizia')
+            raise SystemExit(1)
+          if rimossi != 6:
+            print('::error::attesi 6 attributi colore (3 mesh x 2), trovati', rimossi)
+            raise SystemExit(1)
+          PYEOF
+          if [ ! -s "/tmp/ubcx/Universal Base Characters[Standard]/License_Standard.txt" ]; then
+            echo "::error::licenza CC0 mancante nel pack"
+            exit 1
+          fi
+          cp "/tmp/ubcx/Universal Base Characters[Standard]/License_Standard.txt" ios-avatar/Resources/Personaggio/LICENZA-CC0-Quaternius.txt
+          ls -la ios-avatar/Resources/Personaggio
+
+      - name: Regole di codice su ios-avatar (niente try!/fatalError/as!)
+        run: |
+          if grep -rnE 'try!|fatalError| as!' ios-avatar/Sources ios-avatar/Tests; then
+            echo "::error::Violazione regole AGENTS.md in ios-avatar"
+            exit 1
+          fi
+          echo "Regole OK"
+
+      - name: Select Xcode 26
+        run: |
+          ls -d /Applications/Xcode*.app
+          XC=$(ls -d /Applications/Xcode_26*.app 2>/dev/null | sort -V | tail -1)
+          test -n "$XC" || { echo "Xcode 26 non disponibile su questo runner"; exit 1; }
+          sudo xcode-select -s "$XC/Contents/Developer"
+          xcodebuild -version
+
+      - name: Install XcodeGen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Generate Xcode project
+        run: |
+          cd ios-avatar
+          xcodegen generate --spec project.yml
+          ls AvatarFit.xcodeproj
+
+      - name: Run unit tests (simulatore) — bloccanti, se falliscono niente IPA
+        run: |
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in data if "iOS" in k), reverse=True)
+          for runtime in ios:
+              for d in data[runtime]:
+                  if d.get("isAvailable") and d["name"].startswith("iPhone"):
+                      print(d["udid"]); sys.exit(0)
+          sys.exit(1)')
+          echo "Simulatore: $UDID"
+          cd ios-avatar
+          diag() {
+            # righe interessanti, senza timestamp/pid (i log ripetuti di
+            # SceneKit riempivano tutte le annotazioni della run #38:
+            # 10 copie dello stesso "uchar4" e il motivo vero non si vedeva)
+            grep -aiE 'error|fail|unable|ineligible|not found|could not|crash' "$1" \
+              | sed -E -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:.]+[^ ]+ +[A-Za-z_.-]*\[[0-9:]*\] //' \
+                       -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:.]+[^ ]+ //' \
+              | awk '!visto[$0]++' | tail -40 > /tmp/diag.txt || true
+            if [ -s /tmp/diag.txt ]; then
+              while IFS= read -r l; do echo "::error::$l"; done < /tmp/diag.txt
+            else
+              tail -30 "$1" | while IFS= read -r l; do echo "::error::$l"; done
+            fi
+          }
+          xcodebuild \
+            -project AvatarFit.xcodeproj \
+            -scheme AvatarFit \
+            -destination "id=$UDID" \
+            -derivedDataPath "$PWD/DerivedDataTests" \
+            CODE_SIGNING_ALLOWED=NO \
+            build-for-testing > /tmp/xcbuild.log 2>&1 || { diag /tmp/xcbuild.log; exit 65; }
+          xcodebuild \
+            -project AvatarFit.xcodeproj \
+            -scheme AvatarFit \
+            -destination "id=$UDID" \
+            -derivedDataPath "$PWD/DerivedDataTests" \
+            -only-testing:AvatarFitTests \
+            CODE_SIGNING_ALLOWED=NO \
+            test-without-building > /tmp/xctest.log 2>&1 || { diag /tmp/xctest.log; exit 65; }
+
+      - name: Build unsigned Release app
+        run: |
+          cd ios-avatar
+          xcodebuild \
+            -project AvatarFit.xcodeproj \
+            -scheme AvatarFit \
+            -configuration Release \
+            -sdk iphoneos \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$PWD/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            PROVISIONING_PROFILE_SPECIFIER="" \
+            CURRENT_PROJECT_VERSION="$GITHUB_RUN_NUMBER" \
+            clean build
+
+      - name: Package unsigned IPA
+        run: |
+          APP_PATH="ios-avatar/DerivedData/Build/Products/Release-iphoneos/AvatarFit.app"
+          test -d "$APP_PATH"
+          mkdir -p ios-avatar/Package/Payload
+          ditto "$APP_PATH" "ios-avatar/Package/Payload/AvatarFit.app"
+          cd ios-avatar/Package
+          zip -qry AvatarFit.ipa Payload
+          unzip -t AvatarFit.ipa
+          mv AvatarFit.ipa "$GITHUB_WORKSPACE/AvatarFit-unsigned.ipa"
+
+      - name: Verifica struttura IPA
+        run: |
+          unzip -l AvatarFit-unsigned.ipa | grep -E "Payload/AvatarFit.app/(Info.plist|AvatarFit)$"
+          unzip -l AvatarFit-unsigned.ipa | grep "Superhero_Male_FullBody.gltf"
+          unzip -l AvatarFit-unsigned.ipa | grep "LICENZA-CC0-Quaternius.txt"
+          plutil -p ios-avatar/DerivedData/Build/Products/Release-iphoneos/AvatarFit.app/Info.plist | grep -E "CFBundleIdentifier|CFBundleShortVersionString" || true
+          ls -la AvatarFit-unsigned.ipa
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: AvatarFit-unsigned
+          path: AvatarFit-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: IPA sul branch bozza-ipa-avatarfit (un commit, sovrascritto)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -m1 'MARKETING_VERSION:' ios-avatar/project.yml | sed -E 's/.*"([^"]+)".*/\1/')
+          D=$(mktemp -d)
+          cp AvatarFit-unsigned.ipa "$D/AvatarFit.ipa"
+          printf '{\n  "versione": "%s",\n  "build": %s,\n  "data": "%s",\n  "url": "https://github.com/cipherdesk007-max/agenti-trading/raw/bozza-ipa-avatarfit/AvatarFit.ipa"\n}' "$VERSION" "$GITHUB_RUN_NUMBER" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$D/versione.json"
+          cd "$D"
+          git init -q -b bozza-ipa-avatarfit
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add AvatarFit.ipa versione.json
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" commit -qm "AvatarFit IPA $VERSION build $GITHUB_RUN_NUMBER ($GITHUB_SHA)"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/bozza-ipa-avatarfit
+
+      - name: Screenshot demo UI (avatar di prova) sul branch bozza-screenshot-avatarfit
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          APP="ios-avatar/DerivedDataTests/Build/Products/Debug-iphonesimulator/AvatarFit.app"
+          test -d "$APP" || { echo "::error::app del simulatore non trovata"; exit 1; }
+          UDID=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          data = json.load(sys.stdin)["devices"]
+          ios = sorted((k for k in data if "iOS" in k), reverse=True)
+          for runtime in ios:
+              for d in data[runtime]:
+                  if d.get("isAvailable") and d["name"].startswith("iPhone"):
+                      print(d["udid"]); sys.exit(0)
+          sys.exit(1)')
+          echo "Simulatore: $UDID"
+          xcrun simctl boot "$UDID" >/dev/null 2>&1 || true
+          xcrun simctl bootstatus "$UDID" >/dev/null 2>&1 || true
+          xcrun simctl install "$UDID" "$APP"
+          DATA=$(xcrun simctl get_app_container "$UDID" com.avatarfit.app data)
+          mkdir -p "$DATA/Documents/AvatarFit"
+          cp ios-avatar/Demo/avatar-demo.json "$DATA/Documents/AvatarFit/dati.json"
+          base64 < "$DATA/Documents/AvatarFit/dati.json" > dati-prima.b64
+          python3 - "$DATA/Documents/AvatarFit/dati.json" <<'PY'
+          import json, sys, time
+          path = sys.argv[1]
+          d = json.load(open(path))
+          now = time.time() - 978307200  # reference date Apple
+          def fix(o):
+              if isinstance(o, dict):
+                  for k, v in list(o.items()):
+                      if k in ("date", "quitDate", "lastReset") and isinstance(v, (int, float)) and not isinstance(v, bool) and v < 0:
+                          o[k] = now + v * 3600  # marker negativi = ore fa
+                      else:
+                          fix(v)
+              elif isinstance(o, list):
+                  for x in o:
+                      fix(x)
+          fix(d)
+          json.dump(d, open(path, "w"))
+          print("date demo aggiornate")
+          PY
+          for T in home giornata nosmoke workout tracker sistema; do
+            xcrun simctl terminate "$UDID" com.avatarfit.app >/dev/null 2>&1 || true
+            sleep 1
+            xcrun simctl launch "$UDID" com.avatarfit.app "--tab=$T" >/dev/null
+            sleep 5
+            xcrun simctl io "$UDID" screenshot "screen-$T.png" || echo "::error::screenshot $T fallito"
+          done
+          sleep 2
+          xcrun simctl io "$UDID" screenshot "screen-home-b.png" || true
+          base64 < "$DATA/Documents/AvatarFit/dati.json" > dati-dopo.b64
+          xcrun simctl terminate "$UDID" com.avatarfit.app >/dev/null 2>&1 || true
+          ls -la screen-*.png
+          test -s screen-home.png || { echo "::error::nessuno screenshot prodotto"; exit 1; }
+          D=$(mktemp -d)
+          cp screen-*.png dati-prima.b64 dati-dopo.b64 "$D/"
+          cd "$D"
+          git init -q -b bozza-screenshot-avatarfit
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add screen-*.png dati-prima.b64 dati-dopo.b64
+          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" commit -qm "AvatarFit screenshot demo ($GITHUB_SHA)"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/bozza-screenshot-avatarfit
+          echo "Screenshot pubblicati su bozza-screenshot-avatarfit"

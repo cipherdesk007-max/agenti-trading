@@ -694,3 +694,45 @@ verificato e ciò che no.
   dispatch manuale: 403 per me).
 - `docs/GUIDA.pdf` da generare (no generatore PDF in sandbox).
 - Pubblicazione della release v1.5.0 (build 156+fix → 166 test): a mano, non mia.
+
+# Sessione 26/11/2026 · AvatarFit 1.1.9: fase 2 personaggio CC0 guidato dalle pose
+
+## Cosa ho fatto (ios-avatar/, branch vibe/avatarfit-ios-3061f8, PR #1)
+
+- PersonaggioRig.swift nuovo: carica il glTF CC0 Quaternius Superhero Male con
+  GLTFSceneKit (SPM, MIT, tag 0.4.1) e ne guida lo scheletro con le pose di
+  AvatarRig. Driver = port 1:1 della simulazione Python validata PRIMA di
+  scrivere Swift (rotazioni locali POST-moltiplicate, bersaglio bacino nel
+  frame del padre per l'armature −90°, IK Newton 3-dof con doppia
+  inizializzazione per il ramo negativo dell'abduzione, piede piatto V4
+  tranne trazioni). Unità: il glTF è in metri, "unita" K = altezza/(maxY-minY)
+  della bounding box SceneKit a riposo (96.18 cm/unità a 175 cm, verificato
+  contro gli accessor del glTF).
+- I file CC0 NON stanno nel repo (binari + peso): la CI li scarica ad ogni
+  build dal mirror hkht-dev/b2k-poc-android dentro Resources/Personaggio
+  (9 file: gltf, bin, 7 texture, + licenza CC0) prima di xcodegen; la
+  verifica IPA ora pretende Superhero_Male_FullBody.gltf nel bundle.
+  Lo step Blender sperimentale è stato rimosso (falliva: URI immagine
+  spezzati _png.png; i file con quei nomi esistono già nel pack).
+- HomeView: priorità avatar personale > personaggio > manichino > 2D;
+  SystemView: selettore "Personaggio 3D (beta)" con onestà nel footer;
+  AppStore: flag usePersonaggio (default on) salvato nei backup.
+- PersonaggioTests.swift: 12 test che riproducono i numeri della simulazione
+  (mano alla sbarra nelle trazioni, mano bassa nelle flessioni/plank, piedi
+  che non affondano nello squat/affondo, mano sul pettorale in panca) con
+  tolleranza 3-4 cm.
+- Versione 1.1.9, pipeline invariata (una run per push).
+
+## Verificato / non verificato (onesto)
+
+- Verificato in sandbox: la simulazione (mano-bersaglio max 8.2 cm su tutti
+  gli esercizi); il glTF apre con i 9 file previsti; tag SPM 0.4.1 esiste.
+- Verificato SOLO dalla CI: compilazione Swift 6 di PersonaggioRig, i 12
+  test sul simulatore, il personaggio dentro l'IPA e gli screenshot.
+- Da verificare sul TELEFONO: che il render sia bello (la sim verifica i
+  numeri, non l'estetica), che a 60 fps non scatti, e che la skin segue
+  le ossa su dispositivo (SCNSkinner via GLTFSceneKit è la via standard
+  ma su GPU reale va guardato).
+- NON fatto (fase 3): viso-foto sul personaggio, misure sugli ossi,
+  auto-camera, bagliore muscolare selettivo (quello che c'è illumina il
+  corpo intero).

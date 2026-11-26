@@ -1,0 +1,146 @@
+import Foundation
+@preconcurrency import SceneKit
+import SwiftUI
+import UIKit
+import UniformTypeIdentifiers
+
+// MARK: - Avatar personale (beta)
+//
+// Il proprietario può importare un suo modello 3D (es. un avatar .usdz)
+// e vederlo al posto del manichino nell'Home. Onestà dichiarata: gli
+// esercizi NON animano ancora il modello importato, il passo dopo del
+// piano (docs/STUDIO-AVATAR3D.md) è guidarne lo scheletro con le pose già
+// calibrate del rig. Il file resta solo su questo iPhone e NON entra nei
+// backup: dopo un ripristino va reimportato da SISTEMA.
+
+/// Estensioni che SceneKit apre da file e che l'app accetta.
+enum AvatarPersonale {
+    static let estensioniValide = ["usdz", "usda", "dae", "obj"]
+
+    /// Tipi per il selettore file (appoggio .data se il sistema non
+    /// conoscesse una delle estensioni).
+    static var tipiFile: [UTType] {
+        let tipi = estensioniValide.compactMap { UTType(filenameExtension: $0) }
+        return tipi.isEmpty ? [.data] : tipi
+    }
+
+    /// Estensione del file se è tra le valide, altrimenti nil.
+    static func estensioneValida(_ url: URL) -> String? {
+        let e = url.pathExtension.lowercased()
+        return estensioniValide.contains(e) ? e : nil
+    }
+}
+
+/// Sfera che contiene tutta la geometria della scena: serve a inquadrare
+/// modelli arrivati da qualunque programma, con qualunque unità di misura
+/// (il glTF è in metri, il rig dell'app in centimetri). Calcolata a mano
+/// nodo per nodo: niente sorprese su cosa SceneKit include nel bounding.
+func sferaDiContorno(_ scena: SCNScene) -> (centro: SCNVector3, raggio: CGFloat) {
+    var minimo = SCNVector3(0, 0, 0)
+    var massimo = SCNVector3(0, 0, 0)
+    var trovato = false
+
+    func misura(_ nodo: SCNNode) {
+        guard nodo.geometry != nil else {
+            for figlio in nodo.childNodes { misura(figlio) }
+            return
+        }
+        let (lmin, lmax) = nodo.boundingBox
+        let m = simd_float4x4(nodo.worldTransform)
+        for x in [lmin.x, lmax.x] {
+            for y in [lmin.y, lmax.y] {
+                for z in [lmin.z, lmax.z] {
+                    let p = m * simd_float4(x, y, z, 1)
+                    let v = SCNVector3(p.x, p.y, p.z)
+                    if !trovato {
+                        minimo = v
+                        massimo = v
+                        trovato = true
+                    }
+                    if v.x < minimo.x { minimo.x = v.x }
+                    if v.y < minimo.y { minimo.y = v.y }
+                    if v.z < minimo.z { minimo.z = v.z }
+                    if v.x > massimo.x { massimo.x = v.x }
+                    if v.y > massimo.y { massimo.y = v.y }
+                    if v.z > massimo.z { massimo.z = v.z }
+                }
+            }
+        }
+        for figlio in nodo.childNodes { misura(figlio) }
+    }
+    misura(scena.rootNode)
+
+    guard trovato else { return (SCNVector3(0, 0, 0), 0) }
+    let centro = SCNVector3(
+        (minimo.x + massimo.x) / 2,
+        (minimo.y + massimo.y) / 2,
+        (minimo.z + massimo.z) / 2
+    )
+    let lato = max(max(massimo.x - minimo.x, massimo.y - minimo.y), massimo.z - minimo.z)
+    return (centro, CGFloat(lato) / 2)
+}
+
+/// SCNView del modello importato: camera che inquadra la sfera di
+/// contorno, luci di default (molti .dae/.usdz arrivano senza luci),
+/// animazioni del file (se ce ne sono) lasciate girare.
+struct AvatarPersonaleView: UIViewRepresentable {
+    var url: URL
+
+    func makeUIView(context: Context) -> SCNView {
+        let view = SCNView()
+        view.backgroundColor = .clear
+        view.antialiasingMode = .multisampling4X
+        view.allowsCameraControl = true
+        view.autoenablesDefaultLighting = true
+        if let scena = try? SCNScene(url: url, options: nil) {
+            let (centro, raggio) = sferaDiContorno(scena)
+            if raggio > 0.0001 {
+                let camera = SCNCamera()
+                camera.fieldOfView = 46
+                camera.zNear = Double(raggio) * 0.01
+                camera.zFar = Double(raggio) * 80
+                let nodoCamera = SCNNode()
+                nodoCamera.camera = camera
+                nodoCamera.position = SCNVector3(
+                    centro.x,
+                    centro.y + Float(raggio) * 0.35,
+                    centro.z + Float(raggio) * 2.6
+                )
+                let guardare = SCNNode()
+                guardare.position = centro
+                scena.rootNode.addChildNode(guardare)
+                nodoCamera.constraints = [SCNLookAtConstraint(target: guardare)]
+                scena.rootNode.addChildNode(nodoCamera)
+                view.pointOfView = nodoCamera
+            }
+            scena.isPaused = false
+            view.scene = scena
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: SCNView, context: Context) {}
+}
+
+/// Contenitore: messaggio chiaro se il file non si lascia aprire.
+struct AvatarPersonaleScena: View {
+    var url: URL
+    @State private var illeggibile = false
+
+    var body: some View {
+        AvatarPersonaleView(url: url)
+            .overlay {
+                if illeggibile {
+                    Label("Modello non leggibile: reimportalo da SISTEMA.", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .padding(8)
+                        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
+                }
+            }
+            .onAppear {
+                illeggibile = (try? SCNScene(url: url, options: nil)) == nil
+            }
+    }
+}
+

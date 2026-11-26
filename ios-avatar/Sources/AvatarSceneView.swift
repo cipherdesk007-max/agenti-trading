@@ -1,0 +1,82 @@
+import Foundation
+import SwiftUI
+import UIKit
+@preconcurrency import SceneKit
+
+struct AvatarSceneView: UIViewRepresentable {
+    var measurements: Measurements
+    var appearance: Appearance
+    var fitness: Double
+    var facePhoto: UIImage?
+    var demoMovement: MovementType?
+    var demoMuscles: [MuscleGroup]
+
+    func makeUIView(context: Context) -> SCNView {
+        let view = SCNView()
+        view.backgroundColor = .clear
+        view.antialiasingMode = .multisampling4X
+        view.allowsCameraControl = true
+        view.autoenablesDefaultLighting = false
+        let rig = AvatarRig(
+            measurements: measurements,
+            appearance: appearance,
+            fitness: fitness,
+            faceMesh: nil,
+            facePhoto: facePhoto
+        )
+        context.coordinator.rig = rig
+        view.scene = rig.scene
+        view.pointOfView = rig.cameraNode
+        if let movement = demoMovement {
+            rig.play(movement, muscles: demoMuscles)
+            context.coordinator.lastMovement = movement
+            context.coordinator.lastMuscles = demoMuscles
+        }
+        return view
+    }
+
+    func updateUIView(_ uiView: SCNView, context: Context) {
+        let c = context.coordinator
+        let signature = "\(measurements)|\(appearance)|\(fitness)|foto:\(facePhoto != nil)"
+        if signature != c.lastSignature {
+            let rig = AvatarRig(
+                measurements: measurements,
+                appearance: appearance,
+                fitness: fitness,
+                faceMesh: nil,
+                facePhoto: facePhoto
+            )
+            c.rig = rig
+            uiView.scene = rig.scene
+            uiView.pointOfView = rig.cameraNode
+            c.lastSignature = signature
+            if let movement = demoMovement {
+                rig.play(movement, muscles: demoMuscles)
+            }
+            c.lastMovement = demoMovement
+            c.lastMuscles = demoMuscles
+        } else if demoMovement != c.lastMovement {
+            if let movement = demoMovement {
+                c.rig?.play(movement, muscles: demoMuscles)
+            } else {
+                c.rig?.stop()
+            }
+            c.lastMovement = demoMovement
+            c.lastMuscles = demoMuscles
+        } else if demoMuscles != c.lastMuscles {
+            c.rig?.setHighlight(demoMuscles)
+            c.lastMuscles = demoMuscles
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    final class Coordinator {
+        var rig: AvatarRig?
+        var lastSignature = ""
+        var lastMovement: MovementType?
+        var lastMuscles: [MuscleGroup] = []
+    }
+}
