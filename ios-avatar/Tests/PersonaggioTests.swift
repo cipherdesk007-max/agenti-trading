@@ -16,13 +16,13 @@ final class PersonaggioTests: XCTestCase {
             throw XCTSkip("file CC0 del personaggio non nel bundle (CI: scaricali prima di xcodegen)")
         }
         guard let rig = PersonaggioRig(measurements: Measurements()) else {
-            XCTFail("il glTF c'è ma non si carica. CrashLog: " + CrashLog.tail(6))
+            XCTFail("il glTF c'Ã¨ ma non si carica. CrashLog: " + CrashLog.tail(6))
             throw XCTSkip("rig non creato")
         }
         return rig
     }
 
-    /// una misura dentro la banda centro ± tol
+    /// una misura dentro la banda centro Â± tol
     private func dentro(_ valore: Double, _ centro: Double, _ tol: Double, _ nome: String) {
         XCTAssertLessThanOrEqual(abs(valore - centro), tol, "\(nome): \(valore) atteso ~\(centro)")
     }
@@ -30,7 +30,10 @@ final class PersonaggioTests: XCTestCase {
     @MainActor
     func testPersonaggioCaricaESiReggeInPiedi() throws {
         let rig = try nuovo()
-        let m = rig.applica(0, movimento: .curl)
+        // t=0 Ã¨ la FINE del ciclo (mano alta della chiaveultima prima del
+        // wrap): la posa "in piedi mano bassa" va campionata a metÃ  della
+        // prima discesa, t=0.75 (verificato con la simulazione numerica)
+        let m = rig.applica(0.75, movimento: .curl)
         dentro(m.pelviY, 91.3, 3.5, "bacino in piedi")
         dentro(m.puntaY, 1.5, 3.5, "pianta a terra in piedi")
         dentro(m.manoY, 92.5, 3.5, "mano lungo il fianco")
@@ -71,7 +74,9 @@ final class PersonaggioTests: XCTestCase {
     @MainActor
     func testCurlAlzaLaMano() throws {
         let rig = try nuovo()
-        let giu = rig.applica(0, movimento: .curl)
+        // t=0 = mano alta (fine ciclo, wrap sull'ultima chiave): la discesa
+        // completa si vede a t=0.75 (simulazione: manoY 93.4 ~ 92.5)
+        let giu = rig.applica(0.75, movimento: .curl)
         dentro(giu.manoY, 92.5, 3.5, "mano bassa del curl")
         let su = rig.applica(1.4, movimento: .curl)
         dentro(su.manoY, 126.5, 4.0, "mano alta del curl")
