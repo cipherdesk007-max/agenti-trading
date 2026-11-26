@@ -66,6 +66,38 @@ jobs:
           done
           cp ios-avatar/Resources/Personaggio/T_Hair_1_Normal.png ios-avatar/Resources/Personaggio/T_Hair_1_Normal_png.png
           cp ios-avatar/Resources/Personaggio/T_Eye_Normal.png ios-avatar/Resources/Personaggio/T_Eye_Normal_png.png
+          # Il glTF porta COLOR_1, un semantico non standard che GLTFSceneKit
+          # rifiuta ("user defined semantic is not supported: COLOR_1", run
+          # #37 rossa): il personaggio non caricava MAI e l'app ricadeva sul
+          # manichino. Si toglie solo COLOR_1 dai primitives (il secondo
+          # strato di colore vertici, non usato dai materiali): COLOR_0,
+          # TEXCOORD, JOINTS e WEIGHTS restano, cosi' la pelle e lo skinning
+          # non cambiano. Verificato: attributeMap di GLTFSceneKit 0.4.1
+          # accetta tutto quello che resta.
+          python3 - <<'PYEOF'
+          import json
+          p = 'ios-avatar/Resources/Personaggio/Superhero_Male_FullBody.gltf'
+          with open(p) as f:
+            d = json.load(f)
+          rimossi = 0
+          restanti = set()
+          for mesh in d.get('meshes', []):
+            for prim in mesh.get('primitives', []):
+                attrs = prim.get('attributes', {})
+                if 'COLOR_1' in attrs:
+                    del attrs['COLOR_1']
+                    rimossi += 1
+                restanti.update(attrs.keys())
+          if rimossi == 0:
+            print('::error::nessun COLOR_1 nel glTF: il pack Quaternius è cambiato?')
+            raise SystemExit(1)
+          with open(p, 'w') as f:
+            json.dump(d, f, indent=1)
+          print('COLOR_1 rimosso da', rimossi, 'primitives; attributi rimasti:', sorted(restanti))
+          if 'JOINTS_0' not in restanti or 'WEIGHTS_0' not in restanti:
+            print('::error::skinning (JOINTS/WEIGHTS) assente dopo la pulizia')
+            raise SystemExit(1)
+          PYEOF
           if [ ! -s "/tmp/ubcx/Universal Base Characters[Standard]/License_Standard.txt" ]; then
             echo "::error::licenza CC0 mancante nel pack"
             exit 1

@@ -106,7 +106,18 @@ piccole, una run CI a turno).
   mano-bersaglio max 8.2 cm su tutti gli esercizi (pushUp 4.3, pullUp
   2.8, curl 2.4, plank 6.4); test unitari che riproducono quei numeri
   con tolleranza ~3-4 cm (per differenza di incorniciamento della
-  bounding box). **Fase 2 (originale, per storia)**: Personaggio scelto: Quaternius Universal Base
+  bounding box).
+- **Correzione del 26/11 (run #30-#37 rosse)**: il personaggio non si
+  caricava MAI, né in CI né sul telefono ("user defined semantic is not
+  supported: COLOR_1"): il glTF porta un secondo strato di colore vertici
+  che GLTFSceneKit 0.4.1 rifiuta (la sua attributeMap copre solo COLOR_0;
+  verificato nel sorgente). Sul telefono nessuno se n'era accorto perché
+  l'app ricade in silenzio sul manichino: sembrava che "non fosse
+  cambiato niente". Fix: il passo CI che prepara il pack toglie COLOR_1
+  dai primitives (COLOR_0, TEXCOORD, JOINTS/WEIGHTS restano: aspetto e
+  skinning identici), con guardia d'errore se il pack un domani
+  cambiasse. **Fase 2 (originale, per storia)**: Personaggio scelto:
+  Quaternius Universal Base
   Characters (maschio e femmina "Superhero"): licenza CC0 verificata dentro
   il pack (License_Standard.txt), scheletro Unreal standard a 65 giunti
   (root/pelvis/spine_01..03/neck_01/Head/clavicle_l/upperarm_l/lowerarm_l/
