@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 @preconcurrency import GLTFSceneKit
 @preconcurrency import SceneKit
 import UIKit
