@@ -1,5 +1,27 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.3 (build 5)
+
+- **Rig 3D riscritto da zero** (eccezione voluta dal proprietario alla regola
+  "niente riscritture"): il manichino ora è costruito con mesh loftate
+  (busto svasato vita/petto, arti con gonfiaggio muscolare, bacino, deltoidi,
+  pettorali, trapezio, testa con cranio/mascella/naso/orecchie/capelli,
+  scarpe visibili) invece di box e capsule generiche.
+- **Pose degli esercizi riprogettate frame per frame** su un renderer di
+  riferimento: ogni keyframe ha contatti verificati (mani a terra, punte dei
+  piedi a terra, sbarra in mano, schiena appoggiata alla panca) e verso del
+  corpo corretto (flessioni e plank proni, panca supina) - nell versione
+  precedente i piedi galleggiavano e in alcuni casi il volto guardava
+  dalla parte sbagliata.
+- Movimenti coperti: push-up, trazioni (3 fasi con sbarra fissata
+  all'altezza giusta), squat, curl, rematore, panca (panca sotto la schiena
+  + bilanciere che segue le mani), alzate laterali, affondi, plank, lento
+  con manubri (movimento libero). Appoggio automatico dei piedi per le pose
+  in piedi; cicli chiusi (l'animazione non ripassa più da pose neutre).
+- Test nuovi: coerenza della mesh loftata, ciclo dei keyframe chiuso,
+  appoggio dei piedi a terra; nessun test esistente modificato.
+
+## 1.1.2 (build 4)
 ## 1.1.2 (build 4)
 
 - **Volto dell'avatar da galleria (Memoji o selfie)**: iOS non espone le Memoji

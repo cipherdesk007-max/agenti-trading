@@ -74,7 +74,7 @@ ios-avatar/
 │   ├── AppStore.swift            # store @Observable, JSON locale, backup, fitness
 │   ├── Theme.swift               # pure black + neon ciano/oro, card HUD, aptici
 │   ├── HomeView.swift            # avatar 3D + demo esercizio + chip + foto
-│   ├── AvatarRig.swift           # rig biomeccanico: pose, keyframe esercizi, glow
+│   ├── AvatarRig.swift           # rig loftato: pose con contatti verificati, keyframe, glow
 │   ├── AvatarSceneView.swift     # wrapper SceneKit (rotazione/zoom, demo animata)
 │   ├── FaceScanView.swift        # scansione viso TrueDepth (ARKit) → mesh locale
 │   ├── MeasurementsEditorView.swift  # "Le mie misure" + aspetto

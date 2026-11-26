@@ -1,4 +1,5 @@
 import XCTest
+@preconcurrency import SceneKit
 @testable import AvatarFit
 
 final class AvatarFitTests: XCTestCase {
@@ -143,5 +144,47 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertEqual(grande?.size.width ?? 0, 30, accuracy: 1)
         // immagine senza contenuto: nessun ritaglio
         XCTAssertNil(RitaglioViso.cerchio(UIImage()))
+    }
+
+    func testLoftGeometriaCoerente() {
+        // un tubo a 3 anelli e 12 segmenti deve avere 36 vertici e 432 indici
+        let anelli = [
+            AnelloLoft(t: 0, rx: 5, rz: 4),
+            AnelloLoft(t: 0.5, rx: 6, rz: 5),
+            AnelloLoft(t: 1, rx: 4, rz: 3)
+        ]
+        let geo = AvatarRig.loft(da: SCNVector3(0, 0, 0), a: SCNVector3(0, 20, 0), anelli: anelli, bulge: 0.2, segmenti: 12, materiale: SCNMaterial())
+        XCTAssertEqual(geo.sources.count, 2)  // vertici + normali
+        XCTAssertGreaterThanOrEqual(geo.sources.first?.vectorCount ?? 0, 36)
+        XCTAssertFalse(geo.elements.isEmpty)
+        XCTAssertEqual(geo.elements.first?.primitiveCount ?? 0, (3 - 1) * 12 * 2)  // 48 triangoli
+    }
+
+    func testPosaCiclica() {
+        // l'animazione deve chiudere il cerchio: il fotogramma dopo l'ultimo
+        // riparte dall'ultima posa, non da .idle
+        let keys = [
+            Keyframe(pose: Pose(elbow: 0), duration: 1.0),
+            Keyframe(pose: Pose(elbow: 1), duration: 1.0)
+        ]
+        let p = AvatarRig.posaA(2.02, keys: keys, total: 2.0)
+        XCTAssertGreaterThan(p.elbow, 0.9, "il ciclo deve ripartire dalla Fine, non da idle")
+        let dentro = AvatarRig.posaA(1.5, keys: keys, total: 2.0)
+        XCTAssertEqual(dentro.elbow, 0.5, accuracy: 0.05)
+    }
+
+    func testAppoggioPiediATerra() {
+        // da fermo il bacino sta esattamente sopra lo scarpone: caviglia = altezza scarpa
+        let rig = AvatarRig(measurements: Measurements(), appearance: Appearance(), fitness: 0.4, faceMesh: nil)
+        let h = max(Measurements().heightCm, 120)
+        let legLen = min(max(Measurements().legCm, h * 0.30), h * 0.58)
+        let footH = max(h * 0.04 + CGFloat(42 - 36) * 0.06, 2)
+        let atteso = 3.5 + legLen + footH
+        XCTAssertEqual(rig.altezzaPelvi(.idle), atteso, accuracy: 0.01)
+        // una posa appesa ha l'altezza esplicita, scalata sul corpo
+        XCTAssertEqual(rig.altezzaPelvi(Pose(pelvisY: 104)), 104, accuracy: 0.001)
+        // gambe flesse: il bacino scende in base alla gamba piu' corta (squat)
+        let squat = Pose(hip: -1.15, knee: -1.45)
+        XCTAssertLessThan(rig.altezzaPelvi(squat), atteso - 25)
     }
 }
