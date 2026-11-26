@@ -16,13 +16,13 @@ final class PersonaggioTests: XCTestCase {
             throw XCTSkip("file CC0 del personaggio non nel bundle (CI: scaricali prima di xcodegen)")
         }
         guard let rig = PersonaggioRig(measurements: Measurements()) else {
-            XCTFail("il glTF c'Ã¨ ma non si carica. CrashLog: " + CrashLog.tail(6))
+            XCTFail("il glTF c'è ma non si carica. CrashLog: " + CrashLog.tail(6))
             throw XCTSkip("rig non creato")
         }
         return rig
     }
 
-    /// una misura dentro la banda centro Â± tol
+    /// una misura dentro la banda centro ± tol
     private func dentro(_ valore: Double, _ centro: Double, _ tol: Double, _ nome: String) {
         XCTAssertLessThanOrEqual(abs(valore - centro), tol, "\(nome): \(valore) atteso ~\(centro)")
     }
@@ -30,8 +30,8 @@ final class PersonaggioTests: XCTestCase {
     @MainActor
     func testPersonaggioCaricaESiReggeInPiedi() throws {
         let rig = try nuovo()
-        // t=0 Ã¨ la FINE del ciclo (mano alta della chiaveultima prima del
-        // wrap): la posa "in piedi mano bassa" va campionata a metÃ  della
+        // t=0 è la FINE del ciclo (mano alta della chiaveultima prima del
+        // wrap): la posa "in piedi mano bassa" va campionata a metà della
         // prima discesa, t=0.75 (verificato con la simulazione numerica)
         let m = rig.applica(0.75, movimento: .curl)
         dentro(m.pelviY, 91.3, 3.5, "bacino in piedi")

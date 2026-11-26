@@ -1,12 +1,12 @@
-# CHANGELOG Â· AvatarFit
+# CHANGELOG · AvatarFit
 
 ## 1.1.9 (build della CI)
 
 - **Fix del caricamento personaggio**: il glTF di Quaternius porta due
   strati di colore vertici che non funzionano con GLTFSceneKit/SceneKit:
-  COLOR_1 non Ã¨ standard e il caricatore lo rifiutava (run CI #30-#37
+  COLOR_1 non è standard e il caricatore lo rifiutava (run CI #30-#37
   rosse: il personaggio non si caricava mai e l'app tornava in silenzio
-  al manichino, sembrava "che non fosse cambiato niente"); COLOR_0 Ã¨
+  al manichino, sembrava "che non fosse cambiato niente"); COLOR_0 è
   uchar4 e SceneKit non lo converteva ("unsupported conversion
   uchar4 -> float4", run #38 rossa). La CI adesso toglie entrambi dai
   primitives prima di compilare. Verificato nel .bin del pack: COLOR_0
@@ -18,23 +18,23 @@
   driver verificato nella simulazione numerica (distanza mano-bersaglio
   dichiarata max ~8 cm su tutti gli esercizi, riprodotta nei test unitari
   che confrontano le posizioni con la simulazione). Caricamento con
-  GLTFSceneKit (MIT) da pacchetto SPM. PrioritÃ  nell'Home: avatar
-  personale > personaggio > manichino; in SISTEMA c'Ã¨ il selettore e senza
+  GLTFSceneKit (MIT) da pacchetto SPM. Priorità nell'Home: avatar
+  personale > personaggio > manichino; in SISTEMA c'è il selettore e senza
   i file del personaggio si ricade sul manichino senza crash. La CI scarica
   i file CC0 nel bundle prima di compilare (il vecchio esperimento Blender
-  Ã¨ stato tolto: la conversione falliva sugli URI immagine spezzati del
+  è stato tolto: la conversione falliva sugli URI immagine spezzati del
   glTF, ora si usa il glTF originale).
 - Fix test del personaggio: i due test del curl campionavano a t=0,
-  che nel driver Ã¨ la fine del ciclo (mano alta ~130 cm) e non la
+  che nel driver è la fine del ciclo (mano alta ~130 cm) e non la
   posa in piedi/mano bassa: ora campionano a t=0.75 (manoY ~93.4,
   dentro la banda attesa); era l'unico rosso rimasto della run #39,
-  il driver era giÃ  corretto su tutti gli esercizi (verifica sim:
+  il driver era già corretto su tutti gli esercizi (verifica sim:
   0 violazioni su 33 asserzioni, inclusi push-up/plank/panca/squat/
   affondi/trazioni rimasti a lungo sospetti); documentato anche il
   bug di segno che aveva reso infida la simulazione Python.
-- OnestÃ  dichiarata: su questo personaggio NON sono ancora implementati
+- Onestà dichiarata: su questo personaggio NON sono ancora implementati
   viso-foto, effetto delle misure sulle ossa, auto-camera e bagliore
-  muscolare selettivo (il bagliore sul corpo intero c'Ã¨); il manichino
+  muscolare selettivo (il bagliore sul corpo intero c'è); il manichino
   resta disponibile disattivando il selettore.
 
 ## 1.1.8 (build 11)
@@ -42,19 +42,19 @@
 - **Avatar personale (beta)**: in SISTEMA si importa un proprio modello 3D
   (.usdz, .usda, .dae o .obj, con SceneKit nativo) e lo si usa al posto del
   manichino nell'Home: ruota col dito, si inquadra da solo qualunque siano
-  le unitÃ  di misura del file e mostra le animazioni contenute nel file.
-  OnestÃ  dichiarata: gli esercizi NON animano ancora il modello importato
-  (Ã¨ la fase 2 del piano in docs/STUDIO-AVATAR3D.md) e il file non entra
+  le unità di misura del file e mostra le animazioni contenute nel file.
+  Onestà dichiarata: gli esercizi NON animano ancora il modello importato
+  (è la fase 2 del piano in docs/STUDIO-AVATAR3D.md) e il file non entra
   nei backup: dopo un ripristino va reimportato.
 - **Copia link IPA per LiveContainer**: il banner aggiornamenti su Home e
   la scheda AGGIORNAMENTI in SISTEMA ora hanno il bottone che copia il
-  link diretto dell'IPA, da incollare in LiveContainer âº Installa da URL
-  (il link Ã¨ anche visibile come testo selezionabile).
+  link diretto dell'IPA, da incollare in LiveContainer › Installa da URL
+  (il link è anche visibile come testo selezionabile).
 - **Esperimento in CI (nessun effetto in app)**: la CI converte con Blender
   il personaggio CC0 rigged di Quaternius (Universal Base Characters,
   licenza CC0 verificata dentro il pacchetto) in .dae e .usd e li pubblica
-  sul branch bozza-modello-3d: Ã¨ la preparazione della fase 2, guidare lo
-  scheletro di un personaggio vero con le pose giÃ  calibrate. Il passo non
+  sul branch bozza-modello-3d: è la preparazione della fase 2, guidare lo
+  scheletro di un personaggio vero con le pose già calibrate. Il passo non
   blocca la build.
 
 ## 1.1.7 (build 10)
@@ -87,25 +87,25 @@
   intero resta alla portata dell'ancora.
 - **Una testa sola**: la mesh TrueDepth copre solo la faccia e senza
   retro: sul 3D sembrava una seconda testa sotto i capelli. La scansione
-  resta salvata ma non si mostra piÃ¹ sul rig; il volto visibile Ã¨ quello
-  scolpito, con la foto selfie applicata via maschera sfumata quando c'Ã¨
+  resta salvata ma non si mostra più sul rig; il volto visibile è quello
+  scolpito, con la foto selfie applicata via maschera sfumata quando c'è
   (ora la foto va sul 3D anche se esiste una scansione).
 - Riferimento estetico (Sketchfab dell'utente) e studi su progetti open
-  source per il futuro: il passo dopo sarÃ  un personaggio rigged vero
+  source per il futuro: il passo dopo sarà un personaggio rigged vero
   (scheletro + animazioni), la direzione type MakeHuman/BVH/glTF.
 
 ## 1.1.5 (build 7)
 
-- **Niente piÃ¹ 2D dietro il 3D**: il disegno 2D era sempre disegnato sotto la
-  vista 3D e si vedeva intorno al manichino, che cosÃ¬ sembrava sbagliato e
-  non ruotante. Ora il 2D Ã¨ solo una vista alternativa (bottone 2D/3D),
+- **Niente più 2D dietro il 3D**: il disegno 2D era sempre disegnato sotto la
+  vista 3D e si vedeva intorno al manichino, che così sembrava sbagliato e
+  non ruotante. Ora il 2D è solo una vista alternativa (bottone 2D/3D),
   mai un sottofondo.
 - **Demo animata affidabile**: l'animazione degli esercizi non partiva (il
   manichino restava fermo in posa neutra e la sbarra non compariva): i
   keyframe ora sono guidati da un task a 30 fps sul main actor,
   indipendente dal clock delle SCNAction. Ogni avvio demo lascia una riga
   "demo avviata: <esercizio>" nella diagnostica di SISTEMA.
-- **Testa scansionata completata**: la mesh TrueDepth non ha capelli nÃ©
+- **Testa scansionata completata**: la mesh TrueDepth non ha capelli né
   orecchie, la testa risultava nuda: ora si aggiungono calotta, nuca e
   orecchie parametriche sopra la scansione.
 - **Volto-foto sul 3D**: il piano della foto finiva DENTRO il cranio e con
@@ -114,26 +114,26 @@
 
 ## 1.1.4 (build 6)
 
-- **Fix del 3D invisibile (il bug per cui "il 3D non va")**: il corpo Ã¨
+- **Fix del 3D invisibile (il bug per cui "il 3D non va")**: il corpo è
   costruito in centimetri e la camera sta a 2,2 volte l'altezza, ma i piani
   depth di default di SceneKit tagliano a zFar = 100: tutta la scena finiva
   oltre il piano di taglio e restava invisibile, sotto si vedeva il
   disegno 2D di riserva (per questo non girava nulla). Ora zNear/zFar sono
   espliciti e la camera vede tutto il manichino.
 - **Controllo aggiornamenti in-app**: Home mostra un banner quando sul
-  canale c'Ã¨ una build piÃ¹ recente, la scheda SISTEMA ha la sezione
+  canale c'è una build più recente, la scheda SISTEMA ha la sezione
   AGGIORNAMENTI con versione installata, ultima build pubblicata e bottone
   che scarica l'IPA (il numero di versione arriva da versione.json che la
   CI pubblica accanto all'IPA; nessun dato utente lascia l'iPhone).
 - Confronto versioni numerico per componenti ("1.2.10" > "1.2.9"),
   parsing tollerante, testo privacy in SISTEMA aggiornato (unica rete:
-  il controllo versione). Nuovi test: visibilitÃ  camera, parsing
+  il controllo versione). Nuovi test: visibilità camera, parsing
   versione, confronto versioni.
 
 ## 1.1.3 (build 5)
 
 - **Rig 3D riscritto da zero** (eccezione voluta dal proprietario alla regola
-  "niente riscritture"): il manichino ora Ã¨ costruito con mesh loftate
+  "niente riscritture"): il manichino ora è costruito con mesh loftate
   (busto svasato vita/petto, arti con gonfiaggio muscolare, bacino, deltoidi,
   pettorali, trapezio, testa con cranio/mascella/naso/orecchie/capelli,
   scarpe visibili) invece di box e capsule generiche.
@@ -147,7 +147,7 @@
   all'altezza giusta), squat, curl, rematore, panca (panca sotto la schiena
   + bilanciere che segue le mani), alzate laterali, affondi, plank, lento
   con manubri (movimento libero). Appoggio automatico dei piedi per le pose
-  in piedi; cicli chiusi (l'animazione non ripassa piÃ¹ da pose neutre).
+  in piedi; cicli chiusi (l'animazione non ripassa più da pose neutre).
 - Test nuovi: coerenza della mesh loftata, ciclo dei keyframe chiuso,
   appoggio dei piedi a terra; nessun test esistente modificato.
 
@@ -155,7 +155,7 @@
 ## 1.1.2 (build 4)
 
 - **Volto dell'avatar da galleria (Memoji o selfie)**: iOS non espone le Memoji
-  alle app di terze parti, quindi la via Ã¨ salvarle in Foto; l'app ora puÃ²
+  alle app di terze parti, quindi la via è salvarle in Foto; l'app ora può
   prendere il volto dalla galleria in due modi: scelta manuale (selettore
   di sistema, nessun permesso richiesto) e **lettura automatica**
   (accesso alla libreria Foto, chiesto una volta, uso in sola lettura): prende l'ultimo selfie
@@ -169,17 +169,17 @@
   permesso nuovo in Info.plist per l'accesso alla libreria Foto, uso locale
   (nessun invio, nessun upload).
 - Messaggi della scansione viso aggiornati: se la scansione TrueDepth non
-  parte (puÃ² succedere dentro LiveContainer) ora dicono esplicitamente di usare
+  parte (può succedere dentro LiveContainer) ora dicono esplicitamente di usare
   il volto da galleria.
 - Test: selezione della foto (l'ultimo selfie vince sull'ultima foto del
-  rullino, la piÃ¹ recente vince tra selfie, lista vuota = nessuna scelta) e
+  rullino, la più recente vince tra selfie, lista vuota = nessuna scelta) e
   ritaglio circolare (lato minore, immagine vuota = niente ritaglio).
 
 ## 1.1.1 (build 3)
 
 - Demo e screenshot della UI in CI: l'app accetta l'argomento di lancio
   `--tab=<home|giornata|nosmoke|workout|tracker|sistema>` (valore sconosciuto
-  o assente â Home); il workflow scatta le schermate delle 6 schede sul
+  o assente → Home); il workflow scatta le schermate delle 6 schede sul
   simulatore con l'avatar di prova (dati versionati in `Demo/avatar-demo.json`,
   decodifica protetta da test bloccante) e le pubblica sul branch
   `bozza-screenshot-avatarfit`, insieme a una copia b64 di dati.json prima e
@@ -187,16 +187,16 @@
 
 ## 1.1.0 (build 2)
 
-- **1RM a corpo libero non piÃ¹ zero**: per gli esercizi a corpo libero il carico
+- **1RM a corpo libero non più zero**: per gli esercizi a corpo libero il carico
   totale ora include la frazione del peso corporeo (trazioni 100%, piegamenti
-  ~64%, squat/affondi ~65%, plank ~50%, piÃ¹ eventuale zavorra). "1RM stimato
+  ~64%, squat/affondi ~65%, plank ~50%, più eventuale zavorra). "1RM stimato
   ora" e "Record 1RM" mostrano il valore con corpo incluso, con etichetta
   esplicita; lo stepper mostra "Carico extra" e il peso del corpo stimato.
   Il defaultWeight del prossimo workout resta il solo carico extra.
 - **Recupero auto-avviato anche tra un esercizio e il prossimo** e vibrazione
   quando il timer di recupero arriva a zero.
 - Test: frazioni del peso corporeo per tipo di movimento, carico effettivo,
-  1RM a corpo libero non piÃ¹ zero.
+  1RM a corpo libero non più zero.
 
 ## 1.0.0 (build 1)
 
