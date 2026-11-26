@@ -658,7 +658,7 @@ final class PersonaggioRig {
         let camera = SCNCamera()
         camera.fieldOfView = 46
         camera.zNear = 0.02
-        camera.zFar = Float(h * 20)
+        camera.zFar = h * 20
         cameraNode.camera = camera
         cameraNode.position = SCNVector3(0, Float(h * 0.58), Float(h * 2.2))
         let bersaglio = SCNNode()
