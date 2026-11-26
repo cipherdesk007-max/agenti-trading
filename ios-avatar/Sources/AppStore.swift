@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import UIKit
 
 @Observable
 @MainActor
@@ -14,9 +15,13 @@ final class AppStore {
     var demoExerciseId: UUID? { didSet { save() } }
     var sessionIds: [UUID] = [] { didSet { save() } }
     var use3D = true { didSet { save() } }
+    var autoGalleryFace = false { didSet { save() } }
     var faceMesh: FaceMeshData? { didSet { save() } }
 
     private(set) var photoData: Data?
+
+    /// Volto dell'avatar ritagliato in cerchio, solo in RAM (il file resta foto-riferimento.jpg).
+    private(set) var faceImage: UIImage?
 
     private let documents: URL
     private var dataURL: URL { documents.appendingPathComponent("dati.json") }
@@ -33,6 +38,7 @@ final class AppStore {
         var demoExerciseId: UUID?
         var sessionIds: [UUID]
         var use3D: Bool?
+        var autoGalleryFace: Bool?
         var faceMesh: FaceMeshData?
     }
 
@@ -57,11 +63,20 @@ final class AppStore {
             demoExerciseId = snap.demoExerciseId
             sessionIds = snap.sessionIds
             use3D = snap.use3D ?? true
+            autoGalleryFace = snap.autoGalleryFace ?? false
             faceMesh = snap.faceMesh
         } else {
             seed()
         }
         photoData = try? Data(contentsOf: photoURL)
+        ricaricaVolto()
+    }
+
+    /// Ridisegna il volto ritagliato partendo dal file locale.
+    private func ricaricaVolto() {
+        faceImage = photoData
+            .flatMap { UIImage(data: $0) }
+            .flatMap { RitaglioViso.cerchio($0) }
     }
 
     private func seed() {
@@ -97,6 +112,7 @@ final class AppStore {
             demoExerciseId: demoExerciseId,
             sessionIds: sessionIds,
             use3D: use3D,
+            autoGalleryFace: autoGalleryFace,
             faceMesh: faceMesh
         )
         guard let data = try? JSONEncoder().encode(snap) else { return }
@@ -115,6 +131,7 @@ final class AppStore {
             demoExerciseId: demoExerciseId,
             sessionIds: sessionIds,
             use3D: use3D,
+            autoGalleryFace: autoGalleryFace,
             faceMesh: faceMesh
         )
         guard let data = try? JSONEncoder().encode(snap) else { return nil }
@@ -137,6 +154,7 @@ final class AppStore {
         demoExerciseId = snap.demoExerciseId
         sessionIds = snap.sessionIds
         use3D = snap.use3D ?? true
+        autoGalleryFace = snap.autoGalleryFace ?? false
         faceMesh = snap.faceMesh
         return true
     }
@@ -150,6 +168,7 @@ final class AppStore {
         sessionIds = []
         demoExerciseId = nil
         use3D = true
+        autoGalleryFace = false
         faceMesh = nil
         clearPhoto()
         seed()
@@ -167,10 +186,12 @@ final class AppStore {
     func setPhoto(_ data: Data) {
         photoData = data
         try? data.write(to: photoURL)
+        ricaricaVolto()
     }
 
     func clearPhoto() {
         photoData = nil
+        faceImage = nil
         try? FileManager.default.removeItem(at: photoURL)
     }
 

@@ -1,15 +1,22 @@
+import PhotosUI
 import SwiftUI
 import UIKit
 
 struct PhotoCard: View {
     @Environment(AppStore.self) private var store
+    @State private var showPicker = false
     @State private var showCamera = false
-    @State private var cameraError: String?
+    @State private var sincronizza = false
+    @State private var messaggio: String?
+
+    private var immagine: UIImage? {
+        store.faceImage
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Label("Foto di riferimento (automatica)", systemImage: "camera.fill")
+                Label("Volto dell'avatar (Memoji o selfie)", systemImage: "person.crop.circle.badge.checkmark")
                     .font(.headline)
                 Spacer()
                 if store.photoData != nil {
@@ -20,48 +27,164 @@ struct PhotoCard: View {
                     }
                 }
             }
-            if let data = store.photoData, let uiImage = UIImage(data: data) {
-                Image(uiImage: uiImage)
+            if let immagine {
+                Image(uiImage: immagine)
                     .resizable()
                     .scaledToFill()
                     .frame(height: 140)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                Text("Questo volto è ora applicato sulla testa dell'avatar (3D e 2D) in Home. Resta solo dentro la sandbox dell'app: nessuna galleria svuotata, nessun invio.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             } else {
-                Text("L'app scatta da sé una foto con la fotocamera frontale: non pesca dalla galleria e non la carica da nessuna parte, resta solo dentro la sandbox dell'app.")
+                Text("iOS non lascia leggere le Memoji alle app di terze parti: salvala tu in Foto (Messaggi > Memoji > sticker > tieni premuto > Salva in Immagini) oppure usa uno selfie. Poi scegli qui sotto, oppure attiva la lettura automatica: l'app prende da sola l'ultimo selfie della galleria.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+
+            Button {
+                haptic(.medium)
+                showPicker = true
+            } label: {
+                Label("Scegli dalla galleria", systemImage: "photo.on.rectangle")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(Theme.accent)
+
+            Toggle(isOn: Binding(
+                get: { store.autoGalleryFace },
+                set: { nuovo in
+                    store.autoGalleryFace = nuovo
+                    if nuovo { sincronizzaAdesso() }
+                }
+            )) {
+                Label("Automatica dalla galleria", systemImage: "arrow.triangle.2.circlepath")
+                    .font(.subheadline)
+            }
+            .tint(Theme.gold)
+
+            if sincronizza {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Text("Cerco l'ultimo selfie nella galleria…")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
             Button {
                 haptic(.medium)
                 if UIImagePickerController.isSourceTypeAvailable(.camera),
                    UIImagePickerController.isCameraDeviceAvailable(.front) {
                     showCamera = true
                 } else {
-                    cameraError = "Fotocamera frontale non disponibile in questo contesto (simulatore o limitazioni del container). La scansione viso TrueDepth resta il modo migliore per avere il tuo viso reale sull'avatar."
+                    messaggio = "Fotocamera frontale non disponibile in questo contesto (simulatore o limitazioni del container). La via che funziona sempre è dall'album: salva un selfie o il tuo Memoji in Foto e attiva la lettura automatica, oppure sceglici tu dalla galleria."
                 }
             } label: {
-                Label(store.photoData == nil ? "Scatta foto ora" : "Riscatta foto", systemImage: "camera.viewfinder")
+                Label("Scatta selfie (registrata in locale)", systemImage: "camera.viewfinder")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.bordered)
-            .tint(Theme.gold)
+            .tint(Theme.accent)
         }
         .card()
         .padding(.horizontal)
-        .sheet(isPresented: $showCamera) {
-            CameraPicker { image in
-                if let data = image.jpegData(compressionQuality: 0.8) {
-                    store.setPhoto(data)
+        .onAppear {
+            if store.autoGalleryFace {
+                sincronizzaAdesso()
+            }
+        }
+        .sheet(isPresented: $showPicker) {
+            GalleriaPicker { immagineScelta in
+                // la scelta manuale vince: la lettura automatica si spegne
+                store.autoGalleryFace = false
+                if let dati = immagineScelta.jpegData(compressionQuality: 0.85) {
+                    store.setPhoto(dati)
+                    haptic(.medium)
                 }
             }
         }
-        .alert("Fotocamera", isPresented: Binding(
-            get: { cameraError != nil },
-            set: { if !$0 { cameraError = nil } }
+        .sheet(isPresented: $showCamera) {
+            CameraPicker { immagineScelta in
+                store.autoGalleryFace = false
+                if let dati = immagineScelta.jpegData(compressionQuality: 0.8) {
+                    store.setPhoto(dati)
+                }
+            }
+        }
+        .alert("Galleria", isPresented: Binding(
+            get: { messaggio != nil },
+            set: { if !$0 { messaggio = nil } }
         )) {
+            Button("Apri Impostazioni") {
+                if let url = URL(string: UIApplication.openSettingsURLString) {
+                    UIApplication.shared.open(url)
+                }
+            }
             Button("OK", role: .cancel) {}
         } message: {
-            Text(cameraError ?? "")
+            Text(messaggio ?? "")
+        }
+    }
+
+    private func sincronizzaAdesso() {
+        guard !sincronizza else { return }
+        sincronizza = true
+        Task { @MainActor in
+            let esito = await GalleriaFoto.sincronizza()
+            sincronizza = false
+            switch esito {
+            case .foto(let dati):
+                store.setPhoto(dati)
+                haptic(.medium)
+            case .nessunaFoto:
+                messaggio = "Nessuna immagine in galleria: scatta uno selfie o salva il tuo Memoji in Foto e riprova."
+            case .permessoNegato:
+                store.autoGalleryFace = false
+                messaggio = "Permesso Foto negato: senza accesso in lettura l'app non può prendere l'ultimo selfie. Attiva Foto in Impostazioni (con LiveContainer può servire darlo all'app contenitore) e riprova."
+            case .errore:
+                messaggio = "Lettura della foto non riuscita (immagine non più disponibile o in iCloud senza rete). Riprova più tardi o sceglici tu dalla galleria."
+            }
+        }
+    }
+}
+
+struct GalleriaPicker: UIViewControllerRepresentable {
+    var onImage: (UIImage) -> Void
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var configurazione = PHPickerConfiguration()
+        configurazione.filter = .images
+        configurazione.selectionLimit = 1
+        let picker = PHPickerViewController(configuration: configurazione)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(onImage: onImage)
+    }
+
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        let onImage: (UIImage) -> Void
+
+        init(onImage: @escaping (UIImage) -> Void) {
+            self.onImage = onImage
+        }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            picker.dismiss(animated: true)
+            guard let provider = results.first?.itemProvider,
+                  provider.canLoadObject(ofClass: UIImage.self) else { return }
+            let consegna = onImage
+            Task { @MainActor in
+                if let immagine = try? await provider.loadObject(ofClass: UIImage.self) as? UIImage {
+                    consegna(immagine)
+                }
+            }
         }
     }
 }

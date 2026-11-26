@@ -109,4 +109,39 @@ final class AvatarFitTests: XCTestCase {
         e2.history = [ExerciseLog(date: Date(), weight: load, reps: 12)]
         XCTAssertGreaterThan(e2.best1RM, 40)
     }
+
+    func testSceltaFotoPreferisceUltimoSelfie() {
+        // lista vuota: nessuna scelta
+        XCTAssertNil(SceltaFoto.migliore([ ]))
+        let adesso = Date()
+        let selfieVecchio = FotoCandidata(id: "a", data: adesso.addingTimeInterval(-3600), selfie: true)
+        let fotoRecente = FotoCandidata(id: "b", data: adesso, selfie: false)
+        // esiste un selfie: vince anche se la foto del rullino è più recente
+        XCTAssertEqual(SceltaFoto.migliore([selfieVecchio, fotoRecente])?.id, "a")
+        // tra due selfie vince il più recente
+        let selfieNuovo = FotoCandidata(id: "c", data: adesso.addingTimeInterval(-60), selfie: true)
+        XCTAssertEqual(SceltaFoto.migliore([selfieVecchio, selfieNuovo, fotoRecente])?.id, "c")
+        // senza selfie: l'ultima foto del rullino
+        XCTAssertEqual(SceltaFoto.migliore([fotoRecente])?.id, "b")
+    }
+
+    func testRitaglioVisoCerchio() {
+        let formato = UIGraphicsImageRendererFormat()
+        formato.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 100, height: 60), format: formato)
+        let immagine = renderer.image { contesto in
+            UIColor.red.setFill()
+            contesto.fill(CGRect(x: 0, y: 0, width: 100, height: 60))
+        }
+        // lato minore, quadrata
+        let cerchio = RitaglioViso.cerchio(immagine)
+        XCTAssertNotNil(cerchio)
+        XCTAssertEqual(cerchio?.size.width ?? 0, 60, accuracy: 1)
+        XCTAssertEqual(cerchio?.size.height ?? 0, 60, accuracy: 1)
+        // il lato massimo viene rispettato
+        let grande = RitaglioViso.cerchio(immagine, latoMax: 30)
+        XCTAssertEqual(grande?.size.width ?? 0, 30, accuracy: 1)
+        // immagine senza contenuto: nessun ritaglio
+        XCTAssertNil(RitaglioViso.cerchio(UIImage()))
+    }
 }

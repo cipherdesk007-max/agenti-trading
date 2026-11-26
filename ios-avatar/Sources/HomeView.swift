@@ -22,7 +22,8 @@ struct HomeView: View {
                         Avatar2DView(
                             measurements: store.measurements,
                             appearance: store.appearance,
-                            fitness: store.fitness
+                            fitness: store.fitness,
+                            facePhoto: store.faceMesh == nil ? store.faceImage : nil
                         )
                         if store.use3D {
                             AvatarSceneView(
@@ -30,6 +31,7 @@ struct HomeView: View {
                                 appearance: store.appearance,
                                 fitness: store.fitness,
                                 faceMesh: store.faceMesh,
+                                facePhoto: store.faceMesh == nil ? store.faceImage : nil,
                                 demoMovement: demoExercise?.movement,
                                 demoMuscles: demoExercise.map { [$0.muscle] } ?? []
                             )

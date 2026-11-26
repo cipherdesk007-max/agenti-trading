@@ -1,10 +1,12 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 struct Avatar2DView: View {
     let measurements: Measurements
     let appearance: Appearance
     let fitness: Double
+    var facePhoto: UIImage? = nil
 
     var body: some View {
         GeometryReader { geo in
@@ -40,10 +42,21 @@ struct Avatar2DView: View {
                         Circle()
                             .fill(skin)
                             .frame(width: headW, height: headW * 1.15)
-                        Circle()
-                            .fill(hair)
-                            .frame(width: headW * 1.02, height: headW * 0.62)
-                            .offset(y: -headW * 0.28)
+                        if let facePhoto {
+                            // volto dalla galleria (Memoji o selfie): copre la testa,
+                            // il cappello di capelli parametrico resta disegnato solo senza foto
+                            Image(uiImage: facePhoto)
+                                .resizable()
+                                .scaledToFill()
+                                .frame(width: headW * 1.02, height: headW * 1.02)
+                                .clipShape(Circle())
+                                .offset(y: headW * 0.04)
+                        } else {
+                            Circle()
+                                .fill(hair)
+                                .frame(width: headW * 1.02, height: headW * 0.62)
+                                .offset(y: -headW * 0.28)
+                        }
                     }
                     .frame(height: headW * 1.15)
                     Rectangle()

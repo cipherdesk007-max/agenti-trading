@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import UIKit
 @preconcurrency import SceneKit
 
 struct AvatarSceneView: UIViewRepresentable {
@@ -7,6 +8,7 @@ struct AvatarSceneView: UIViewRepresentable {
     var appearance: Appearance
     var fitness: Double
     var faceMesh: FaceMeshData?
+    var facePhoto: UIImage?
     var demoMovement: MovementType?
     var demoMuscles: [MuscleGroup]
 
@@ -20,7 +22,8 @@ struct AvatarSceneView: UIViewRepresentable {
             measurements: measurements,
             appearance: appearance,
             fitness: fitness,
-            faceMesh: faceMesh
+            faceMesh: faceMesh,
+            facePhoto: facePhoto
         )
         context.coordinator.rig = rig
         view.scene = rig.scene
@@ -35,13 +38,14 @@ struct AvatarSceneView: UIViewRepresentable {
 
     func updateUIView(_ uiView: SCNView, context: Context) {
         let c = context.coordinator
-        let signature = "\(measurements)|\(appearance)|\(fitness)|face:\(faceMesh != nil)"
+        let signature = "\(measurements)|\(appearance)|\(fitness)|face:\(faceMesh != nil)|foto:\(facePhoto != nil)"
         if signature != c.lastSignature {
             let rig = AvatarRig(
                 measurements: measurements,
                 appearance: appearance,
                 fitness: fitness,
-                faceMesh: faceMesh
+                faceMesh: faceMesh,
+                facePhoto: facePhoto
             )
             c.rig = rig
             uiView.scene = rig.scene

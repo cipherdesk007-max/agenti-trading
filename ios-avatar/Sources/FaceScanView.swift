@@ -17,7 +17,7 @@ struct FaceScanSheet: View {
                         Label("Viso acquisito: l'avatar 3D usa la tua mesh reale", systemImage: "checkmark.circle.fill")
                             .foregroundStyle(.green)
                     } else {
-                        Text("Guarda la fotocamera frontale e resta fermo: acquisisco la geometria del viso con TrueDepth. La scansione resta solo su questo iPhone.")
+                        Text("Guarda la fotocamera frontale e resta fermo: acquisisco la geometria del viso con TrueDepth. La scansione resta solo su questo iPhone. Se non parte (dentro LiveContainer puo' capitare), usa il volto da galleria in Home: salva un selfie o il tuo Memoji in Foto e attiva la lettura automatica.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -59,7 +59,7 @@ struct FaceScanSheet: View {
             }
             .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { now in
                 if !captured && scanError == nil && now >= scanDeadline {
-                    scanError = "Nessun viso rilevato dopo 15 secondi. Controlla che la fotocamera frontale sia libera, che ci sia luce suficiente e che il viso sia centrato. In LiveContainer la scansione puo' essere limitata: in quel caso l'avatar resta con la testa parametrica dalle tue misure."
+                    scanError = "Nessun viso rilevato dopo 15 secondi. Controlla che la fotocamera frontale sia libera, che ci sia luce suficiente e che il viso sia centrato. In LiveContainer la scansione puo' essere limitata: in quel caso vai in Home, salva un selfie o il tuo Memoji in Foto e attiva 'Automatica dalla galleria': il volto finisce sull'avatar senza scansione."
                 }
             }
         }

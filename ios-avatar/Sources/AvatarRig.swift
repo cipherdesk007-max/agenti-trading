@@ -1,4 +1,5 @@
 import Foundation
+import UIKit
 @preconcurrency import SceneKit
 
 struct Pose: Equatable {
@@ -127,16 +128,16 @@ final class AvatarRig {
     private let shoulderWidth: CGFloat
     private let glow = UIColor(hex: 0x00E5FF)
 
-    init(measurements m: Measurements, appearance a: Appearance, fitness f: Double, faceMesh: FaceMeshData?) {
+    init(measurements m: Measurements, appearance a: Appearance, fitness f: Double, faceMesh: FaceMeshData?, facePhoto: UIImage? = nil) {
         bodyH = max(m.heightCm, 120)
         shoulderWidth = max(m.shoulderCm / .pi, bodyH * 0.15)
         scene.background.contents = UIColor.clear
         scene.rootNode.addChildNode(root)
-        build(measurements: m, appearance: a, fitness: f, faceMesh: faceMesh)
+        build(measurements: m, appearance: a, fitness: f, faceMesh: faceMesh, facePhoto: facePhoto)
         addLightsAndCamera()
     }
 
-    private func build(measurements m: Measurements, appearance a: Appearance, fitness f: Double, faceMesh: FaceMeshData?) {
+    private func build(measurements m: Measurements, appearance a: Appearance, fitness f: Double, faceMesh: FaceMeshData?, facePhoto: UIImage?) {
         let h = bodyH
         let headR = max(m.headCm / (2 * .pi), h * 0.05)
         let neckLen = h * 0.035
@@ -229,6 +230,19 @@ final class AvatarRig {
             geo(headJoint, SCNSphere(radius: headR), matSkin, v3(0, 0, 0))
             let hairNode = geo(headJoint, SCNSphere(radius: headR * 1.04), matHair, v3(0, headR * 0.28, -headR * 0.18))
             hairNode.scale = v3(1, 0.72, 1)
+        }
+        // Volto dalla galleria (Memoji o selfie, ritagliato in cerchio): disco davanti alla testa,
+        // luce costante perche' la foto deve restare leggibile, invisibile vista da dietro.
+        if let volto = facePhoto {
+            let materialeVolto = SCNMaterial()
+            materialeVolto.diffuse.contents = volto
+            materialeVolto.lightingModel = .constant
+            materialeVolto.isDoubleSided = false
+            let piano = SCNPlane(width: headR * 1.45, height: headR * 1.45)
+            piano.firstMaterial = materialeVolto
+            let nodoVolto = SCNNode(geometry: piano)
+            nodoVolto.position = v3(0, -headR * 0.06, headR * 0.82)
+            headJoint.addChildNode(nodoVolto)
         }
 
         let shoulderY = abdomenH + chestH * 0.75

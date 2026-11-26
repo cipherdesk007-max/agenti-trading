@@ -42,6 +42,17 @@ dispositivo**: nessuna rete, nessun server, nessun account.
   file picker: utile quando aggiorni l'ipa su LiveContainer), conteggi dei dati
   locali, azzeramento completo. Feedback **aptico** sui pulsanti principali.
 
+## Volto dell'avatar: Memoji o selfie dalla galleria
+
+iOS non lascia leggere le Memoji alle app di terze parti (nessuna API pubblica).
+La via supportata: salva il tuo Memoji o uno selfie in Foto, poi in Home usa
+"Volto dell'avatar (Memoji o selfie)": scelta manuale con il selettore di
+sistema, oppure attiva "Automatica dalla galleria" e l'app prende da sola
+l'ultimo selfie (in mancanza, l'ultima immagine del rullino). Il volto viene
+ritagliato in cerchio e applicato alla testa dell'avatar 3D e 2D. La scansione
+TrueDepth resta available dove il container la permette; se esiste una mesh
+scansionata, ha la precedenza sulla foto. Tutto resta nella sandbox dell'app.
+
 ## Privacy e dati
 
 - Tutto in locale: `Documents/AvatarFit/dati.json` (misure, aspetto, mesh viso,

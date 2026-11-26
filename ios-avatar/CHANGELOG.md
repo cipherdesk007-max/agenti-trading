@@ -1,5 +1,27 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.2 (build 4)
+
+- **Volto dell'avatar da galleria (Memoji o selfie)**: iOS non espone le Memoji
+  alle app di terze parti, quindi la via è salvarle in Foto; l'app ora può
+  prendere il volto dalla galleria in due modi: scelta manuale (selettore
+  di sistema, nessun permesso richiesto) e **lettura automatica**
+  (permesso Foto in sola lettura, chiesto una volta): prende l'ultimo selfie
+  e, se non esiste, l'ultima immagine del rullino. La foto viene ritagliata in
+  cerchio e applicata come volto dell'avatar, in 3D (disco davanti alla testa)
+  e in 2D; se la mesh TrueDepth esiste, resta lei la precedenza.
+- La scelta manuale o lo selfie scattato spegnono la lettura automatica
+  (l'ultima azione dell'utente vince); la card mostra il volto attivo e come
+  rimuoverlo.
+- Permesso nuovo in Info.plist: sola lettura della libreria Foto, uso locale
+  (nessun invio, nessun upload).
+- Messaggi della scansione viso aggiornati: se la scansione TrueDepth non
+  parte (può succedere dentro LiveContainer) ora dicono esplicitamente di usare
+  il volto da galleria.
+- Test: selezione della foto (l'ultimo selfie vince sull'ultima foto del
+  rullino, la più recente vince tra selfie, lista vuota = nessuna scelta) e
+  ritaglio circolare (lato minore, immagine vuota = niente ritaglio).
+
 ## 1.1.1 (build 3)
 
 - Demo e screenshot della UI in CI: l'app accetta l'argomento di lancio
