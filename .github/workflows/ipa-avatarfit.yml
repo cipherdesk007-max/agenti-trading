@@ -66,14 +66,16 @@ jobs:
           done
           cp ios-avatar/Resources/Personaggio/T_Hair_1_Normal.png ios-avatar/Resources/Personaggio/T_Hair_1_Normal_png.png
           cp ios-avatar/Resources/Personaggio/T_Eye_Normal.png ios-avatar/Resources/Personaggio/T_Eye_Normal_png.png
-          # Il glTF porta COLOR_1, un semantico non standard che GLTFSceneKit
-          # rifiuta ("user defined semantic is not supported: COLOR_1", run
-          # #37 rossa): il personaggio non caricava MAI e l'app ricadeva sul
-          # manichino. Si toglie solo COLOR_1 dai primitives (il secondo
-          # strato di colore vertici, non usato dai materiali): COLOR_0,
-          # TEXCOORD, JOINTS e WEIGHTS restano, cosi' la pelle e lo skinning
-          # non cambiano. Verificato: attributeMap di GLTFSceneKit 0.4.1
-          # accetta tutto quello che resta.
+          # Il glTF porta due strati di colore vertici e nessuno dei due
+          # funziona con GLTFSceneKit/SceneKit: COLOR_1 non e' standard e il
+          # caricatore lo rifiuta (run #37 rossa: il personaggio non si
+          # caricava MAI, l'app ricadeva in silenzio sul manichino);
+          # COLOR_0 e uchar4 e SceneKit non lo converte ("unsupported
+          # conversion uchar4 -> float4", run #38). Verificato nel .bin del
+          # pack: COLOR_0 e' bianco pieno (255 ovunque) su tutti i vertici,
+          # quindi moltiplicare il colore base per 1.0 non cambia niente
+          # nell'aspetto. Si tolgono entrambi: TEXCOORD, JOINTS e WEIGHTS
+          # restano, la pelle (texture) e lo skinning non cambiano.
           python3 - <<'PYEOF'
           import json
           p = 'ios-avatar/Resources/Personaggio/Superhero_Male_FullBody.gltf'
@@ -84,18 +86,22 @@ jobs:
           for mesh in d.get('meshes', []):
             for prim in mesh.get('primitives', []):
                 attrs = prim.get('attributes', {})
-                if 'COLOR_1' in attrs:
-                    del attrs['COLOR_1']
-                    rimossi += 1
+                for colore in ('COLOR_0', 'COLOR_1'):
+                    if colore in attrs:
+                        del attrs[colore]
+                        rimossi += 1
                 restanti.update(attrs.keys())
           if rimossi == 0:
-            print('::error::nessun COLOR_1 nel glTF: il pack Quaternius è cambiato?')
+            print('::error::nessun colore vertici nel glTF: il pack Quaternius è cambiato?')
             raise SystemExit(1)
           with open(p, 'w') as f:
             json.dump(d, f, indent=1)
-          print('COLOR_1 rimosso da', rimossi, 'primitives; attributi rimasti:', sorted(restanti))
+          print(' COLOR_0/COLOR_1 rimossi da primitives:', rimossi, '| attributi rimasti:', sorted(restanti))
           if 'JOINTS_0' not in restanti or 'WEIGHTS_0' not in restanti:
             print('::error::skinning (JOINTS/WEIGHTS) assente dopo la pulizia')
+            raise SystemExit(1)
+          if rimossi != 6:
+            print('::error::attesi 6 attributi colore (3 mesh x 2), trovati', rimossi)
             raise SystemExit(1)
           PYEOF
           if [ ! -s "/tmp/ubcx/Universal Base Characters[Standard]/License_Standard.txt" ]; then
@@ -146,7 +152,13 @@ jobs:
           echo "Simulatore: $UDID"
           cd ios-avatar
           diag() {
-            grep -aiE 'error|fail|unable|ineligible|not found|could not|crash' "$1" | tail -50 > /tmp/diag.txt || true
+            # righe interessanti, senza timestamp/pid (i log ripetuti di
+            # SceneKit riempivano tutte le annotazioni della run #38:
+            # 10 copie dello stesso "uchar4" e il motivo vero non si vedeva)
+            grep -aiE 'error|fail|unable|ineligible|not found|could not|crash' "$1" \
+              | sed -E -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:.]+[^ ]+ +[A-Za-z_.-]*\[[0-9:]*\] //' \
+                       -e 's/^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9:.]+[^ ]+ //' \
+              | awk '!visto[$0]++' | tail -40 > /tmp/diag.txt || true
             if [ -s /tmp/diag.txt ]; then
               while IFS= read -r l; do echo "::error::$l"; done < /tmp/diag.txt
             else

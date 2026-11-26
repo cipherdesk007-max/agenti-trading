@@ -107,16 +107,22 @@ piccole, una run CI a turno).
   2.8, curl 2.4, plank 6.4); test unitari che riproducono quei numeri
   con tolleranza ~3-4 cm (per differenza di incorniciamento della
   bounding box).
-- **Correzione del 26/11 (run #30-#37 rosse)**: il personaggio non si
+- **Correzione del 26/11 (run #30-#38 rosse)**: il personaggio non si
   caricava MAI, né in CI né sul telefono ("user defined semantic is not
-  supported: COLOR_1"): il glTF porta un secondo strato di colore vertici
-  che GLTFSceneKit 0.4.1 rifiuta (la sua attributeMap copre solo COLOR_0;
-  verificato nel sorgente). Sul telefono nessuno se n'era accorto perché
-  l'app ricade in silenzio sul manichino: sembrava che "non fosse
-  cambiato niente". Fix: il passo CI che prepara il pack toglie COLOR_1
-  dai primitives (COLOR_0, TEXCOORD, JOINTS/WEIGHTS restano: aspetto e
-  skinning identici), con guardia d'errore se il pack un domani
-  cambiasse. **Fase 2 (originale, per storia)**: Personaggio scelto:
+  supported: COLOR_1"): il glTF porta due strati di colore vertici e
+  GLTFSceneKit 0.4.1 rifiuta COLOR_1 (la sua attributeMap copre solo
+  COLOR_0; verificato nel sorgente). Sul telefono nessuno se n'era
+  accorto perché l'app ricade in silenzio sul manichino: sembrava che
+  "non fosse cambiato niente". Tolti COLOR_1, il caricamento partiva
+  ma SceneKit non converte COLOR_0 (uchar4 -> float4, run #38, con 10
+  copie dello stesso log che riempivano tutte le annotazioni CI,
+  nascondendo il resto). Verificato nel .bin del pack: COLOR_0 è bianco
+  pieno (255) su tutti i vertici di tutte le mesh = moltiplicare il
+  colore base per 1.0, quindi toglierlo NON cambia l'aspetto. Fix
+  finale: il passo CI toglie COLOR_0 e COLOR_1 dai primitives
+  (TEXCOORD, JOINTS/WEIGHTS restano: texture e skinning identici), con
+  guardia d'errore se il pack un domani cambiasse; diag() della CI ora
+  deduplica i log ripetuti così il motivo vero resta visibile. **Fase 2 (originale, per storia)**: Personaggio scelto:
   Quaternius Universal Base
   Characters (maschio e femmina "Superhero"): licenza CC0 verificata dentro
   il pack (License_Standard.txt), scheletro Unreal standard a 65 giunti

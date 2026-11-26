@@ -2,15 +2,16 @@
 
 ## 1.1.9 (build della CI)
 
-- **Fix del caricamento personaggio**: il glTF di Quaternius porta anche
-  l'attributo COLOR_1 (secondo strato di colore vertici), che NON è standard
-  e GLTFSceneKit rifiuta. Per questo il personaggio non si è mai caricato
-  (run CI dalla #30 alla #37 rosse, e sul telefono l'app tornava in silenzio
-  al manichino). La CI adesso toglie COLOR_1 dai primitives prima di
-  compilare: COLOR_0, texture e skinning (JOINTS/WEIGHTS) restano intatti,
-  l'aspetto del personaggio non cambia. Verificato sul codice di
-  GLTFSceneKit 0.4.1: tutti gli attributi rimasti sono nella sua mappa
-  dei semantici supportati.
+- **Fix del caricamento personaggio**: il glTF di Quaternius porta due
+  strati di colore vertici che non funzionano con GLTFSceneKit/SceneKit:
+  COLOR_1 non è standard e il caricatore lo rifiutava (run CI #30-#37
+  rosse: il personaggio non si caricava mai e l'app tornava in silenzio
+  al manichino, sembrava "che non fosse cambiato niente"); COLOR_0 è
+  uchar4 e SceneKit non lo converteva ("unsupported conversion
+  uchar4 -> float4", run #38 rossa). La CI adesso toglie entrambi dai
+  primitives prima di compilare. Verificato nel .bin del pack: COLOR_0
+  era bianco pieno (255) su tutti i vertici, quindi la pelle e lo
+  skinning (texture, JOINTS/WEIGHTS) restano identici.
 - **Personaggio 3D (fase 2)**: nell'Home gli esercizi animano un personaggio
   rigged vero, CC0 1.0 (Quaternius Universal Base Characters, Superhero
   Male), al posto del manichino: scheletro glTF guidato con lo stesso
