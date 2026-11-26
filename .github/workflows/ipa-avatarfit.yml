@@ -31,18 +31,45 @@ jobs:
 
       - name: Personaggio CC0 (Quaternius) nel bundle
         run: |
+          # ogni punto di rottura ha il suo ::error:: leggibile anche nelle
+          # annotazioni pubbliche: la run #30 e' fallita qui senza dettagli
           mkdir -p ios-avatar/Resources/Personaggio
-          curl -fsSL --retry 3 -o /tmp/ubc.zip "https://github.com/hkht-dev/b2k-poc-android/releases/download/quaternius-packs-2026-10-20/Universal.Base.Characters.Standard.zip"
+          if ! curl -fsSL --retry 5 --retry-all-errors --retry-delay 5 -o /tmp/ubc.zip \
+               "https://github.com/hkht-dev/b2k-poc-android/releases/download/quaternius-packs-2026-10-20/Universal.Base.Characters.Standard.zip"; then
+            echo "::error::download del pack Quaternius fallito (release hkht-dev ancora pubblica?)"
+            exit 1
+          fi
+          ls -la /tmp/ubc.zip
           mkdir -p /tmp/ubcx
-          unzip -q /tmp/ubc.zip -d /tmp/ubcx
+          if ! unzip -q /tmp/ubc.zip -d /tmp/ubcx; then
+            echo "::error::unzip del pack fallito (zip danneggiato?)"
+            exit 1
+          fi
           SRC="/tmp/ubcx/Universal Base Characters[Standard]/Base Characters/Godot - UE"
+          if [ ! -d "$SRC" ]; then
+            echo "::error::cartella del pack non trovata dopo l'estrazione"
+            find /tmp/ubcx -maxdepth 3 | head -10
+            exit 1
+          fi
+          # NB: nello zip NON esistono i file con nome *_png.png: sono gli URI
+          # spezzati del glTF (T_Hair_1_Normal.png -> T_Hair_1_Normal_png.png,
+          # T_Eye_Normal.png -> T_Eye_Normal_png.png): si copiano rinominati
           for f in Superhero_Male_FullBody.gltf Superhero_Male_FullBody.bin \
                    T_Superhero_Male_Normal.png T_Superhero_Male_Dark.png \
                    T_Superhero_Male_Roughness.png T_Hair_1_BaseColor.png \
-                   T_Hair_1_Normal_png.png T_Eye_Normal_png.png T_Eye_Brown.png; do
-            test -s "$SRC/$f"
+                   T_Hair_1_Normal.png T_Eye_Normal.png T_Eye_Brown.png; do
+            if [ ! -s "$SRC/$f" ]; then
+              echo "::error::file mancante nel pack: $f"
+              exit 1
+            fi
             cp "$SRC/$f" ios-avatar/Resources/Personaggio/
           done
+          cp ios-avatar/Resources/Personaggio/T_Hair_1_Normal.png ios-avatar/Resources/Personaggio/T_Hair_1_Normal_png.png
+          cp ios-avatar/Resources/Personaggio/T_Eye_Normal.png ios-avatar/Resources/Personaggio/T_Eye_Normal_png.png
+          if [ ! -s "/tmp/ubcx/Universal Base Characters[Standard]/License_Standard.txt" ]; then
+            echo "::error::licenza CC0 mancante nel pack"
+            exit 1
+          fi
           cp "/tmp/ubcx/Universal Base Characters[Standard]/License_Standard.txt" ios-avatar/Resources/Personaggio/LICENZA-CC0-Quaternius.txt
           ls -la ios-avatar/Resources/Personaggio
 
