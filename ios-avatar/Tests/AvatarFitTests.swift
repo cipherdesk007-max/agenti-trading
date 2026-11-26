@@ -298,4 +298,12 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertEqual(VersionePubblicata.confronta("1.1", "1.1.0"), .orderedSame)
         XCTAssertEqual(VersionePubblicata.confronta("1.1.4", "1.1.4"), .orderedSame)
     }
+
+    @MainActor func testManoCompletaEOmbra() {
+        // la mano non e' piu' una pallina: palmo + 4 dita + pollice,
+        // e sopra la pedana c'e' l'ombra di contatto
+        let rig = AvatarRig(measurements: Measurements(), appearance: Appearance(), fitness: 0.4, faceMesh: nil)
+        XCTAssertGreaterThanOrEqual(rig.pezziManoSinistra, 6, "la mano non ha palmo, dita e pollice")
+        XCTAssertTrue(rig.ombraPresente, "manca l'ombra di contatto")
+    }
 }

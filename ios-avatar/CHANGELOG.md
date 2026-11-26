@@ -1,5 +1,19 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.7 (build 10)
+
+- **Mani vere sul manichino**: niente piu' palline come mani; ogni mano ha
+  palmo piatto, quattro dita piegate (curvatura progressiva) e pollice
+  opposto. Nei movimenti di presa (trazioni, panca, manubri) si vede la
+  differenza: le dita avvolgono l'attrezzo invece di toccarlo con una sfera.
+- **Ombra di contatto**: ellisse sfumata sopra la pedana (materiale
+  costante, non toccata dalle luci): la figura sembra appoggiata e non
+  fluttuante, anche quando e' sospesa alla sbarra.
+- Studio dell'avatar 3D documentato in docs/STUDIO-AVATAR3D.md: cosa c'e'
+  online a pagamento e gratis (TurboSquid, Sketchfab, Quaternius, MakeHuman,
+  Mixamo), cosa dicono le licenze e i tre percorsi possibili per arrivare
+  a un personaggio di qualità da modello venduto.
+
 ## 1.1.6 (build 9)
 
 - **Build 9**: corretto il test dell'IK: i bersagli fuori portata non

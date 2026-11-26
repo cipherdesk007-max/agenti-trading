@@ -217,6 +217,7 @@ final class AvatarRig {
 
     private var sbarraFissa: SCNNode?
     private var sbarraMani: SCNNode?
+    private var ombraTerra: SCNNode?
     private var pancaNodo: SCNNode?
     private var manubri: [SCNNode] = []
     private var demoTask: Task<Void, Never>?
@@ -400,9 +401,18 @@ final class AvatarRig {
             let upperGeo = geo(spalla, AvatarRig.loftArto(da: v3(0, 0, 0), a: v3(0, -upperLen, 0), raggio: armR, bulge: 0.26, materiale: matSkin), matSkin, v3(0, 0, 0))
             let gomito = joint(spalla, v3(0, -upperLen, 0))
             let foreGeo = geo(gomito, AvatarRig.loftArto(da: v3(0, 0, 0), a: v3(0, -foreLen, 0), raggio: armR * 0.82, bulge: 0.09, materiale: matSkin), matSkin, v3(0, 0, 0))
-            _ = geo(gomito, SCNSphere(radius: armR * 0.8), matSkin, v3(0, 0, 0))
-            _ = geo(gomito, SCNSphere(radius: armR * 0.78), matSkin, v3(0, -foreLen * 1.1, 0))
+            _ = geo(gomito, SCNSphere(radius: armR * 0.82), matSkin, v3(0, 0, 0))
             let mano = joint(gomito, v3(0, -foreLen, 0))
+            // mano: polso + palmo piatto + quattro dita piegate + pollice
+            let palmoL = foreLen * 0.30
+            let palmoW = armR * 1.9
+            _ = geo(mano, SCNBox(width: palmoW, height: palmoL, length: armR * 1.15, chamferRadius: armR * 0.30), matSkin, v3(0, -palmoL * 0.5, 0))
+            for (indice, scarto) in [-0.66, -0.22, 0.22, 0.66].enumerated() {
+                let dito = geo(mano, SCNCapsule(capRadius: armR * 0.26, height: palmoL * 0.85), matSkin, v3(CGFloat(scarto) * palmoW, -palmoL * 1.05, 0))
+                dito.eulerAngles = v3(0.38 + CGFloat(indice) * 0.10, 0, 0)
+            }
+            let pollice = geo(mano, SCNCapsule(capRadius: armR * 0.30, height: palmoL * 0.65), matSkin, v3(CGFloat(-lato) * palmoW * 0.52, -palmoL * 0.35, armR * 0.62))
+            pollice.eulerAngles = v3(0.85, 0, CGFloat(-lato) * 0.5)
             if lato < 0 {
                 spallaL = spalla
                 gomitoL = gomito
@@ -459,6 +469,43 @@ final class AvatarRig {
         let ring = geo(root, SCNTorus(ringRadius: platformR, pipeRadius: 0.5), ringMat, v3(0, 0.2, 0))
         let spin = SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 6)
         ring.runAction(SCNAction.repeatForever(spin))
+
+        // ---- ombra di contatto sopra la pedana ----
+        let ombra = geo(root, SCNPlane(width: shoulderW * 2.2, height: vitaW * 3.0), AvatarRig.materialeOmbra(), v3(0, 0.3, 0))
+        ombra.eulerAngles = v3(-.pi / 2, 0, 0)
+        ombraTerra = ombra
+    }
+
+    /// Ombra morbida a terra: ellisse con gradiente radiale, materiale
+    /// costante (ignora le luci della scena), per dare profondita' alla
+    /// figura sopra la pedana.
+    nonisolated static func materialeOmbra() -> SCNMaterial {
+        let lato: CGFloat = 256
+        let formato = UIGraphicsImageRendererFormat.default()
+        formato.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: lato, height: lato), format: formato)
+        let immagine = renderer.image { contesto in
+            var posizioni: [CGFloat] = [0, 0.45, 1.0]
+            let centro = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.55)
+            let mezzo = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.22)
+            let bordo = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0)
+            guard let gradiente = CGGradient(
+                colorsSpace: CGColorSpaceCreateDeviceRGB(),
+                colors: [centro, mezzo, bordo] as CFArray,
+                locations: &posizioni
+            ) else { return }
+            contesto.cgContext.drawRadialGradient(
+                gradiente,
+                startCenter: CGPoint(x: lato / 2, y: lato / 2), startRadius: 0,
+                endCenter: CGPoint(x: lato / 2, y: lato / 2), endRadius: lato / 2,
+                options: []
+            )
+        }
+        let materiale = SCNMaterial()
+        materiale.diffuse.contents = immagine
+        materiale.lightingModel = .constant
+        materiale.writesToDepthBuffer = false
+        return materiale
     }
 
     static func faceGeometry(from face: FaceMeshData) -> SCNGeometry? {
@@ -668,6 +715,17 @@ final class AvatarRig {
         let tetagomito = tetaspalla - p.elbow
         let gomito = puntoBraccio(sp, angolo: tetaspalla, lunghezza: upperLen)
         return puntoBraccio(gomito, angolo: tetagomito, lunghezza: foreLen)
+    }
+
+    /// Pezzi che compongono la mano sinistra (palmo, dita, pollice):
+    /// esposti perche' i test possano verificare che la mano sia completa.
+    var pezziManoSinistra: Int {
+        manoL.childNodes.count
+    }
+
+    /// L'ombra di contatto sotto la pedana esiste (per i test).
+    var ombraPresente: Bool {
+        ombraTerra != nil
     }
 
     /// Quanto la posa metterebbe le mani fuori dalla portata dell'ancora
