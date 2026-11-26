@@ -16,7 +16,7 @@ final class PersonaggioTests: XCTestCase {
             throw XCTSkip("file CC0 del personaggio non nel bundle (CI: scaricali prima di xcodegen)")
         }
         guard let rig = PersonaggioRig(measurements: Measurements()) else {
-            XCTFail("il glTF c'è ma non si carica: scheletro o geometria non riconosciuti")
+            XCTFail("il glTF c'è ma non si carica. CrashLog: " + CrashLog.tail(6))
             throw XCTSkip("rig non creato")
         }
         return rig

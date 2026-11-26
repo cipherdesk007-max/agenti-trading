@@ -162,7 +162,8 @@ final class PersonaggioRig {
         var minimoY = Double.greatestFiniteMagnitude
         var massimoY = -Double.greatestFiniteMagnitude
         func visita(_ nodo: SCNNode, padre: String?) {
-            let nome = nodo.name ?? "_\(catena.count)"
+            // nomi minuscoli: il driver usa "pelvis", "upperarm_r"...
+            let nome = (nodo.name ?? "_\(catena.count)").lowercased()
             nodi[nome] = nodo
             restLocale[nome] = PersonaggioRig.d4x4(nodo.simdTransform)
             catena.append((nome, padre))
@@ -189,11 +190,11 @@ final class PersonaggioRig {
 
         guard nodi["pelvis"] != nil, nodi["upperarm_r"] != nil, nodi["upperarm_l"] != nil,
               nodi["hand_r"] != nil, nodi["hand_l"] != nil, nodi["ball_r"] != nil else {
-            CrashLog.append("scheletro del personaggio non trovato nel file glTF")
+            CrashLog.append("scheletro non trovato nel glTF; nodi: " + nodi.keys.sorted().joined(separator: ","))
             return nil
         }
         guard minimoY < massimoY, massimoY > 0.8, massimoY < 3.0 else {
-            CrashLog.append("personaggio senza geometria visibile o scala inattesa")
+            CrashLog.append("scala inattesa: minY=\(minimoY) maxY=\(massimoY)")
             return nil
         }
         func posRest(_ nome: String) -> SIMD3<Double> {
