@@ -53,12 +53,12 @@ enum EsitoGalleria: Sendable {
 }
 
 /// Lettura automatica dalla galleria: prende l'ultimo selfie e, se non esiste,
-/// l'ultima foto del rullino. Serve il permesso di LETTURA, chiesto una volta sola.
-/// Le foto restano dentro la sandbox dell'app: nessuna rete, nessun server.
+/// l'ultima foto del rullino. Serve l'accesso alla libreria Foto (uso: solo lettura),
+/// chiesto una volta sola. Le foto restano dentro la sandbox dell'app: nessuna rete, nessun server.
 @MainActor
 enum GalleriaFoto {
     static func sincronizza() async -> EsitoGalleria {
-        let permesso = await PHPhotoLibrary.requestAuthorization(for: .readOnly)
+        let permesso = await PHPhotoLibrary.requestAuthorization(for: .readWrite)
         switch permesso {
         case .authorized, .limited:
             break

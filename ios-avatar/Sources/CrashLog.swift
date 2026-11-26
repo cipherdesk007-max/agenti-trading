@@ -18,7 +18,7 @@ enum CrashLog {
         guard let url else { return }
         let text = line + "\n"
         if let handle = try? FileHandle(forWritingTo: url) {
-            try? handle.seekToEnd()
+            _ = try? handle.seekToEnd()
             try? handle.write(contentsOf: Data(text.utf8))
             try? handle.close()
         } else {

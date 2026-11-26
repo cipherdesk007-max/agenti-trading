@@ -6,14 +6,15 @@
   alle app di terze parti, quindi la via è salvarle in Foto; l'app ora può
   prendere il volto dalla galleria in due modi: scelta manuale (selettore
   di sistema, nessun permesso richiesto) e **lettura automatica**
-  (permesso Foto in sola lettura, chiesto una volta): prende l'ultimo selfie
+  (accesso alla libreria Foto, chiesto una volta, uso in sola lettura): prende l'ultimo selfie
   e, se non esiste, l'ultima immagine del rullino. La foto viene ritagliata in
   cerchio e applicata come volto dell'avatar, in 3D (disco davanti alla testa)
   e in 2D; se la mesh TrueDepth esiste, resta lei la precedenza.
 - La scelta manuale o lo selfie scattato spegnono la lettura automatica
   (l'ultima azione dell'utente vince); la card mostra il volto attivo e come
   rimuoverlo.
-- Permesso nuovo in Info.plist: sola lettura della libreria Foto, uso locale
+- Warning preesistente in CrashLog sistemato (risultato try? non usato) e
+  permesso nuovo in Info.plist per l'accesso alla libreria Foto, uso locale
   (nessun invio, nessun upload).
 - Messaggi della scansione viso aggiornati: se la scansione TrueDepth non
   parte (può succedere dentro LiveContainer) ora dicono esplicitamente di usare

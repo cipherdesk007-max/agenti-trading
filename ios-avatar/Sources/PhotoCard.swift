@@ -2,6 +2,10 @@ import PhotosUI
 import SwiftUI
 import UIKit
 
+extension Notification.Name {
+    static let avatarFitFotoScelta = Notification.Name("AvatarFitFotoScelta")
+}
+
 struct PhotoCard: View {
     @Environment(AppStore.self) private var store
     @State private var showPicker = false
@@ -95,15 +99,18 @@ struct PhotoCard: View {
                 sincronizzaAdesso()
             }
         }
-        .sheet(isPresented: $showPicker) {
-            GalleriaPicker { immagineScelta in
-                // la scelta manuale vince: la lettura automatica si spegne
-                store.autoGalleryFace = false
-                if let dati = immagineScelta.jpegData(compressionQuality: 0.85) {
-                    store.setPhoto(dati)
-                    haptic(.medium)
-                }
+        .onReceive(NotificationCenter.default.publisher(for: .avatarFitFotoScelta)) { nota in
+            guard let immagineScelta = nota.object as? UIImage else { return }
+            // la scelta manuale vince: la lettura automatica si spegne
+            store.autoGalleryFace = false
+            if let dati = immagineScelta.jpegData(compressionQuality: 0.85) {
+                store.setPhoto(dati)
+                haptic(.medium)
             }
+        }
+        .sheet(isPresented: $showPicker) {
+            // l'immagine scelta arriva con la notifica .avatarFitFotoScelta (onReceive qui sopra)
+            GalleriaPicker()
         }
         .sheet(isPresented: $showCamera) {
             CameraPicker { immagineScelta in
@@ -151,8 +158,6 @@ struct PhotoCard: View {
 }
 
 struct GalleriaPicker: UIViewControllerRepresentable {
-    var onImage: (UIImage) -> Void
-
     func makeUIViewController(context: Context) -> PHPickerViewController {
         var configurazione = PHPickerConfiguration()
         configurazione.filter = .images
@@ -165,24 +170,21 @@ struct GalleriaPicker: UIViewControllerRepresentable {
     func updateUIViewController(_ uiViewController: PHPickerViewController, context: Context) {}
 
     func makeCoordinator() -> Coordinator {
-        Coordinator(onImage: onImage)
+        Coordinator()
     }
 
     final class Coordinator: NSObject, PHPickerViewControllerDelegate {
-        let onImage: (UIImage) -> Void
-
-        init(onImage: @escaping (UIImage) -> Void) {
-            self.onImage = onImage
-        }
 
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             picker.dismiss(animated: true)
             guard let provider = results.first?.itemProvider,
                   provider.canLoadObject(ofClass: UIImage.self) else { return }
-            let consegna = onImage
-            Task { @MainActor in
-                if let immagine = try? await provider.loadObject(ofClass: UIImage.self) as? UIImage {
-                    consegna(immagine)
+            // il completion handler di loadObject e' @Sendable: qui si cattura SOLO UIImage (Sendable),
+            // il passaggio alla vista avviene con una notifica consegnata sul MainActor
+            provider.loadObject(ofClass: UIImage.self) { oggetto, _ in
+                guard let immagine = oggetto as? UIImage else { return }
+                DispatchQueue.main.async {
+                    NotificationCenter.default.post(name: .avatarFitFotoScelta, object: immagine)
                 }
             }
         }
