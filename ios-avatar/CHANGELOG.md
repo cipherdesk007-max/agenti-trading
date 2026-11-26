@@ -1,5 +1,24 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.9 (build della CI)
+
+- **Personaggio 3D (fase 2)**: nell'Home gli esercizi animano un personaggio
+  rigged vero, CC0 1.0 (Quaternius Universal Base Characters, Superhero
+  Male), al posto del manichino: scheletro glTF guidato con lo stesso
+  driver verificato nella simulazione numerica (distanza mano-bersaglio
+  dichiarata max ~8 cm su tutti gli esercizi, riprodotta nei test unitari
+  che confrontano le posizioni con la simulazione). Caricamento con
+  GLTFSceneKit (MIT) da pacchetto SPM. Priorità nell'Home: avatar
+  personale > personaggio > manichino; in SISTEMA c'è il selettore e senza
+  i file del personaggio si ricade sul manichino senza crash. La CI scarica
+  i file CC0 nel bundle prima di compilare (il vecchio esperimento Blender
+  è stato tolto: la conversione falliva sugli URI immagine spezzati del
+  glTF, ora si usa il glTF originale).
+- Onestà dichiarata: su questo personaggio NON sono ancora implementati
+  viso-foto, effetto delle misure sulle ossa, auto-camera e bagliore
+  muscolare selettivo (il bagliore sul corpo intero c'è); il manichino
+  resta disponibile disattivando il selettore.
+
 ## 1.1.8 (build 11)
 
 - **Avatar personale (beta)**: in SISTEMA si importa un proprio modello 3D

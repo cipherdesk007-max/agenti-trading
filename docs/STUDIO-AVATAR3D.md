@@ -90,8 +90,23 @@ piccole, una run CI a turno).
   SISTEMA (.usdz/.usda/.dae/.obj, SceneKit nativo, il modello sostituisce
   il manichino nell'Home ruotando col dito; onestà: gli esercizi non lo
   animano ancora) + copia link IPA (banner e SISTEMA).
-- **Fase 2 (in corso)**: personaggio CC0 rigged dentro l'app, guidato dalle
-  pose già calibrate del rig. Personaggio scelto: Quaternius Universal Base
+- **Fase 2 (build 1.1.9, consegnata)**: personaggio CC0 rigged dentro
+  l'app, guidato dalle pose già calibrate del rig. Scelta tecnica finale:
+  niente conversione Blender (gli URI immagine spezzati del glTF
+  _png.png rompevano l'import; i file con quel nome esistono già nel
+  pacchetto), il glTF originale si carica con GLTFSceneKit (MIT, SPM)
+  che supporta SCNSkinner. Driver: i delta di rotazione sono POST-
+  moltiplicati sui locali di riposo (L' = L·Rx(dx)·Rz(dz)); bacino con
+  bersaglio in unità glTF trasformato nel frame del padre (l'armature è
+  ruotata −90°); braccia risolte con IK numerico 3-gradi (Newton con
+  pseudo-inversa 3x3, due inizializzazioni per sbloccare il ramo
+  negativo dell'abduzione delle trazioni); piede piatto nelle pose a
+  terra (coppia V4) tranne le trazioni dove i piedi penzolano. Numeri
+  verificati nella simulazione Python prima del port Swift: distanza
+  mano-bersaglio max 8.2 cm su tutti gli esercizi (pushUp 4.3, pullUp
+  2.8, curl 2.4, plank 6.4); test unitari che riproducono quei numeri
+  con tolleranza ~3-4 cm (per differenza di incorniciamento della
+  bounding box). **Fase 2 (originale, per storia)**: Personaggio scelto: Quaternius Universal Base
   Characters (maschio e femmina "Superhero"): licenza CC0 verificata dentro
   il pack (License_Standard.txt), scheletro Unreal standard a 65 giunti
   (root/pelvis/spine_01..03/neck_01/Head/clavicle_l/upperarm_l/lowerarm_l/

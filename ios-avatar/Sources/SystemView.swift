@@ -23,6 +23,20 @@ struct SystemView: View {
             }
 
             Section {
+                Toggle("Personaggio 3D (beta)", isOn: Binding(
+                    get: { store.usePersonaggio },
+                    set: { v in
+                        store.usePersonaggio = v
+                        haptic()
+                    }
+                ))
+            } header: {
+                Text("Avatar · beta".uppercased()).foregroundStyle(Theme.accent)
+            } footer: {
+                Text("Personaggio rigged CC0 (Quaternius Superhero Male, licenza CC0 1.0 nel bundle): i 10 esercizi lo animano con il driver verificato dallo studio 3D (distanza mano-bersaglio max ~8 cm). Non ancora implementati su di lui: viso-foto, effetto misure sulle ossa, auto-camera e bagliore muscolare. Il manichino resta disponibile disattivando questa opzione.")
+            }
+
+            Section {
                 if store.avatarPersonaleEstensione != nil {
                     LabeledContent("Modello importato", value: ".\(store.avatarPersonaleEstensione ?? "")")
                     Toggle("Usa al posto del manichino", isOn: Binding(

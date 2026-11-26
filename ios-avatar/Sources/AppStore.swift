@@ -16,6 +16,7 @@ final class AppStore {
     var sessionIds: [UUID] = [] { didSet { save() } }
     var use3D = true { didSet { save() } }
     var usePersonalAvatar = false { didSet { save() } }
+    var usePersonaggio = true { didSet { save() } }
     var avatarPersonaleEstensione: String? { didSet { save() } }
     var autoGalleryFace = false { didSet { save() } }
     var faceMesh: FaceMeshData? { didSet { save() } }
@@ -47,6 +48,7 @@ final class AppStore {
         var sessionIds: [UUID]
         var use3D: Bool?
         var usePersonalAvatar: Bool?
+        var usePersonaggio: Bool?
         var avatarPersonaleEstensione: String?
         var autoGalleryFace: Bool?
         var faceMesh: FaceMeshData?
@@ -74,6 +76,7 @@ final class AppStore {
             sessionIds = snap.sessionIds
             use3D = snap.use3D ?? true
             usePersonalAvatar = snap.usePersonalAvatar ?? false
+            usePersonaggio = snap.usePersonaggio ?? true
             avatarPersonaleEstensione = snap.avatarPersonaleEstensione
             autoGalleryFace = snap.autoGalleryFace ?? false
             faceMesh = snap.faceMesh
@@ -131,6 +134,7 @@ final class AppStore {
             sessionIds: sessionIds,
             use3D: use3D,
             usePersonalAvatar: usePersonalAvatar,
+            usePersonaggio: usePersonaggio,
             avatarPersonaleEstensione: avatarPersonaleEstensione,
             autoGalleryFace: autoGalleryFace,
             faceMesh: faceMesh
@@ -152,6 +156,7 @@ final class AppStore {
             sessionIds: sessionIds,
             use3D: use3D,
             usePersonalAvatar: usePersonalAvatar,
+            usePersonaggio: usePersonaggio,
             avatarPersonaleEstensione: avatarPersonaleEstensione,
             autoGalleryFace: autoGalleryFace,
             faceMesh: faceMesh

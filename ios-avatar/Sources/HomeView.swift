@@ -21,6 +21,12 @@ struct HomeView: View {
                     ZStack {
                         if let urlAvatar = store.urlAvatarPersonale, store.usePersonalAvatar, store.use3D {
                             AvatarPersonaleScena(url: urlAvatar)
+                        } else if store.use3D, store.usePersonaggio, PersonaggioRig.disponibile {
+                            PersonaggioSceneView(
+                                measurements: store.measurements,
+                                demoMovement: demoExercise?.movement,
+                                demoMuscles: demoExercise.map { [$0.muscle] } ?? []
+                            )
                         } else if store.use3D {
                             AvatarSceneView(
                                 measurements: store.measurements,

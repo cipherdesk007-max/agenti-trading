@@ -29,6 +29,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
+      - name: Personaggio CC0 (Quaternius) nel bundle
+        run: |
+          mkdir -p ios-avatar/Resources/Personaggio
+          curl -fsSL --retry 3 -o /tmp/ubc.zip "https://github.com/hkht-dev/b2k-poc-android/releases/download/quaternius-packs-2026-10-20/Universal.Base.Characters.Standard.zip"
+          mkdir -p /tmp/ubcx
+          unzip -q /tmp/ubc.zip -d /tmp/ubcx
+          SRC="/tmp/ubcx/Universal Base Characters[Standard]/Base Characters/Godot - UE"
+          for f in Superhero_Male_FullBody.gltf Superhero_Male_FullBody.bin \
+                   T_Superhero_Male_Normal.png T_Superhero_Male_Dark.png \
+                   T_Superhero_Male_Roughness.png T_Hair_1_BaseColor.png \
+                   T_Hair_1_Normal_png.png T_Eye_Normal_png.png T_Eye_Brown.png; do
+            test -s "$SRC/$f"
+            cp "$SRC/$f" ios-avatar/Resources/Personaggio/
+          done
+          cp "/tmp/ubcx/Universal Base Characters[Standard]/License_Standard.txt" ios-avatar/Resources/Personaggio/LICENZA-CC0-Quaternius.txt
+          ls -la ios-avatar/Resources/Personaggio
+
       - name: Regole di codice su ios-avatar (niente try!/fatalError/as!)
         run: |
           if grep -rnE 'try!|fatalError| as!' ios-avatar/Sources ios-avatar/Tests; then
@@ -124,6 +141,8 @@ jobs:
       - name: Verifica struttura IPA
         run: |
           unzip -l AvatarFit-unsigned.ipa | grep -E "Payload/AvatarFit.app/(Info.plist|AvatarFit)$"
+          unzip -l AvatarFit-unsigned.ipa | grep "Superhero_Male_FullBody.gltf"
+          unzip -l AvatarFit-unsigned.ipa | grep "LICENZA-CC0-Quaternius.txt"
           plutil -p ios-avatar/DerivedData/Build/Products/Release-iphoneos/AvatarFit.app/Info.plist | grep -E "CFBundleIdentifier|CFBundleShortVersionString" || true
           ls -la AvatarFit-unsigned.ipa
 
@@ -142,7 +161,7 @@ jobs:
           VERSION=$(grep -m1 'MARKETING_VERSION:' ios-avatar/project.yml | sed -E 's/.*"([^"]+)".*/\1/')
           D=$(mktemp -d)
           cp AvatarFit-unsigned.ipa "$D/AvatarFit.ipa"
-          printf '{\n  "versione": "%s",\n  "build": %s,\n  "data": "%s",\n  "url": "https://github.com/cipherdesk007-max/agenti-trading/raw/bozza-ipa-avatarfit/AvatarFit.ipa"\n}\n' "$VERSION" "$GITHUB_RUN_NUMBER" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$D/versione.json"
+          printf '{\n  "versione": "%s",\n  "build": %s,\n  "data": "%s",\n  "url": "https://github.com/cipherdesk007-max/agenti-trading/raw/bozza-ipa-avatarfit/AvatarFit.ipa"\n}' "$VERSION" "$GITHUB_RUN_NUMBER" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$D/versione.json"
           cd "$D"
           git init -q -b bozza-ipa-avatarfit
           git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add AvatarFit.ipa versione.json
@@ -212,99 +231,3 @@ jobs:
           git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" commit -qm "AvatarFit screenshot demo ($GITHUB_SHA)"
           git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/bozza-screenshot-avatarfit
           echo "Screenshot pubblicati su bozza-screenshot-avatarfit"
-
-      - name: Personaggio CC0 (Quaternius) convertito con Blender - bozza-modello-3d
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          # Fase 2 dello studio 3D (docs/STUDIO-AVATAR3D.md): conversione
-          # SPERIMENTALE del personaggio CC0 rigged, non blocca la build.
-          # Da rimuovere quando il personaggio entra nel bundle dell'app.
-          mkdir -p /tmp/quaternius && cd /tmp/quaternius
-          BLENDER=/Applications/Blender.app/Contents/MacOS/Blender
-          if [ ! -x "$BLENDER" ]; then
-            brew install --cask blender
-          fi
-          "$BLENDER" --version > blender-version.txt 2>&1 || true
-          head -1 blender-version.txt
-
-          curl -sL --retry 3 -o ubc.zip "https://github.com/hkht-dev/b2k-poc-android/releases/download/quaternius-packs-2026-10-20/Universal.Base.Characters.Standard.zip"
-          unzip -q ubc.zip
-          cp "Universal Base Characters[Standard]/License_Standard.txt" LICENZA-CC0-Quaternius.txt
-
-          cat > converti.py <<'PY'
-          import bpy, os, shutil, sys
-          src, outdae, outusd = sys.argv[-3], sys.argv[-2], sys.argv[-1]
-          bpy.ops.wm.read_factory_settings(use_empty=True)
-          bpy.ops.import_scene.gltf(filepath=src)
-          outdir = os.path.dirname(outdae)
-          texdir = os.path.join(outdir, "textures")
-          os.makedirs(texdir, exist_ok=True)
-          base = os.path.dirname(src)
-          copiate = 0
-          for img in bpy.data.images:
-              sorgente = os.path.join(base, os.path.basename(bpy.path.abspath(img.filepath)))
-              if os.path.exists(sorgente):
-                  shutil.copy(sorgente, os.path.join(texdir, os.path.basename(sorgente)))
-                  copiate += 1
-          bpy.ops.wm.collada_export(filepath=outdae)
-          bpy.ops.wm.usd_export(filepath=outusd)
-          print("TEXTURES_COPIATE", copiate)
-          PY
-
-          SRC="Universal Base Characters[Standard]/Base Characters/Godot - UE"
-          for NOME in Superhero_Male_FullBody Superhero_Female_FullBody; do
-            mkdir -p "$NOME"
-            "$BLENDER" --background --python converti.py -- "$SRC/$NOME.gltf" "$NOME/$NOME.dae" "$NOME/$NOME.usdc" || true
-          done
-
-          # i riferimenti immagine del Collada diventano relativi alle
-          # texture copiate accanto al .dae
-          python3 - <<'PY'
-          import os, re, glob
-          for dae in glob.glob("*/[A-Z]*.dae") + glob.glob("*.dae"):
-              testo = open(dae, encoding="utf-8").read()
-              cartella = os.path.dirname(dae)
-              tdir = os.path.join(cartella, "textures")
-              nomi = set(os.listdir(tdir)) if os.path.isdir(tdir) else set()
-              def aggiusta(m):
-                  nome = os.path.basename(m.group(1).replace("\\", "/"))
-                  if nome not in nomi:
-                      return m.group(0)
-                  return "<init_from>textures/" + nome + "</init_from>"
-              nuovo = re.sub(r"<init_from>([^<]+)</init_from>", aggiusta, testo)
-              if nuovo != testo:
-                  open(dae, "w", encoding="utf-8").write(nuovo)
-          PY
-
-          {
-            echo "Personaggio CC0 Quaternius (Universal Base Characters Standard):"
-            echo "conversione sperimentale per la fase 2 dello studio avatar (docs/STUDIO-AVATAR3D.md)."
-            echo "Licenza CC0 1.0: vedere LICENZA-CC0-Quaternius.txt."
-            echo
-            head -2 blender-version.txt
-            echo
-            find Superhero_Male_FullBody Superhero_Female_FullBody -type f | sort
-            echo
-            for DAE in */*.dae; do
-              GIUNTI=$(grep -c 'type="JOINT"' "$DAE" || true)
-              SKIN=$(grep -c '<skin ' "$DAE" || true)
-              echo "$DAE: nodi JOINT $GIUNTI, elementi skin $SKIN"
-            done
-          } > rapportino.txt
-          cat rapportino.txt
-
-          test -s Superhero_Male_FullBody/Superhero_Male_FullBody.dae || {
-            echo "conversione DAE non riuscita (sperimentale: la build continua)"
-            exit 0
-          }
-
-          D=$(mktemp -d)
-          cp -R Superhero_Male_FullBody Superhero_Female_FullBody rapportino.txt LICENZA-CC0-Quaternius.txt "$D/"
-          cd "$D"
-          git init -q -b bozza-modello-3d
-          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" add -A
-          git -c user.name="cipherdesk007-max" -c user.email="cipherdesk007@gmail.com" commit -qm "Personaggio CC0 Quaternius convertito con Blender (sperimentale, $GITHUB_SHA)"
-          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:refs/heads/bozza-modello-3d
-          echo "Personaggio CC0 pubblicato su bozza-modello-3d"

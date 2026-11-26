@@ -11,6 +11,11 @@ settings:
     SWIFT_STRICT_CONCURRENCY: complete
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     DEAD_CODE_STRIPPING: YES
+packages:
+  # caricatore glTF per il personaggio CC0 (SCNSkinner supportato, MIT)
+  GLTFSceneKit:
+    url: https://github.com/magicien/GLTFSceneKit
+    from: 0.4.1
 targets:
   AvatarFit:
     type: application
@@ -19,11 +24,14 @@ targets:
     sources:
       - path: Sources
       - path: Resources
+        buildPhase: resources
+    dependencies:
+      - package: GLTFSceneKit
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.avatarfit.app
         PRODUCT_NAME: AvatarFit
-        MARKETING_VERSION: "1.1.8"
+        MARKETING_VERSION: "1.1.9"
         CURRENT_PROJECT_VERSION: "11"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
