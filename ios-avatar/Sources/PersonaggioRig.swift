@@ -112,7 +112,52 @@ final class PersonaggioRig {
         torsoH = max((thighLen + shinLen) * 0.62, bodyH * 0.22)
         gambaManichino = thighLen + shinLen
 
-        // snapshot dello scheletro a riposo, prima di toccare nulla
+        // snapshot dello scheletro a riposo in un helper statico: le funzioni
+        // locali (visita, posRest) non devono catturare self prima che tutte
+        // le proprieta' dell'init siano inizializzate (errore Swift: 'self'
+        // used in method call before all stored properties are initialized)
+        guard let scheletro = PersonaggioRig.caricaScheletroDa(scenaCaricata) else {
+            return nil
+        }
+        nodi = scheletro.nodi
+        restLocale = scheletro.restLocale
+        catena = scheletro.catena
+        restPelvi = scheletro.restPelvi
+        restPelviPadre = scheletro.restPelviPadre
+        piantaY = scheletro.piantaY
+        altezzaChar = scheletro.altezzaChar
+        unita = bodyH / altezzaChar
+        L1 = scheletro.braccio * unita
+        L2 = (scheletro.avambraccio + 0.05) * unita
+        cosciaChar = (scheletro.coscia + scheletro.stinco) * unita
+
+        scenaCaricata.background.contents = UIColor.clear
+        scene.rootNode.addChildNode(scenaCaricata.rootNode)
+        aggiungiLuciECamera()
+    }
+
+    /// Scheletro letto dal glTF a riposo: distanze in unita' glTF (non cm).
+    private struct ScheletroLetto {
+        var nodi: [String: SCNNode]
+        var restLocale: [String: simd_double4x4]
+        var catena: [(nome: String, padre: String?)]
+        var restPelvi: SIMD3<Double>
+        var restPelviPadre: simd_double4x4
+        var piantaY: Double
+        var altezzaChar: Double
+        var braccio: Double
+        var avambraccio: Double
+        var coscia: Double
+        var stinco: Double
+    }
+
+    /// Percorre il glTF e misura lo scheletro in posa di riposo (bind pose).
+    /// Statico perche' le funzioni locali visitano proprieta' della classe e
+    /// in init catturerebbero self non ancora inizializzato.
+    private static func caricaScheletroDa(_ scena: SCNScene) -> ScheletroLetto? {
+        var nodi: [String: SCNNode] = [:]
+        var restLocale: [String: simd_double4x4] = [:]
+        var catena: [(nome: String, padre: String?)] = []
         var minimoY = Double.greatestFiniteMagnitude
         var massimoY = -Double.greatestFiniteMagnitude
         func visita(_ nodo: SCNNode, padre: String?) {
@@ -139,7 +184,7 @@ final class PersonaggioRig {
                 visita(figlio, padre: nome)
             }
         }
-        visita(scenaCaricata.rootNode, padre: nil)
+        visita(scena.rootNode, padre: nil)
 
         guard nodi["pelvis"] != nil, nodi["upperarm_r"] != nil, nodi["upperarm_l"] != nil,
               nodi["hand_r"] != nil, nodi["hand_l"] != nil, nodi["ball_r"] != nil else {
@@ -150,30 +195,29 @@ final class PersonaggioRig {
             CrashLog.append("personaggio senza geometria visibile o scala inattesa")
             return nil
         }
-
         func posRest(_ nome: String) -> SIMD3<Double> {
             guard let nodo = nodi[nome] else { return .zero }
             let m = PersonaggioRig.d4x4(nodo.simdWorldTransform)
             return SIMD3<Double>(m.columns.3.x, m.columns.3.y, m.columns.3.z)
         }
-        func distRest(_ a: String, _ b: String) -> Double {
-            simd_distance(posRest(a), posRest(b))
-        }
-
-        restPelvi = posRest("pelvis")
+        let restPelvi = posRest("pelvis")
+        var restPelviPadre = matrix_identity_double4x4
         if let padre = nodi["pelvis"]?.parent {
             restPelviPadre = PersonaggioRig.d4x4(padre.simdWorldTransform)
         }
-        piantaY = minimoY
-        altezzaChar = massimoY - minimoY
-        unita = bodyH / altezzaChar
-        L1 = distRest("upperarm_l", "lowerarm_l") * unita
-        L2 = (distRest("lowerarm_l", "hand_l") + 0.05) * unita
-        cosciaChar = (distRest("thigh_l", "calf_l") + distRest("calf_l", "foot_l")) * unita
-
-        scenaCaricata.background.contents = UIColor.clear
-        scene.rootNode.addChildNode(scenaCaricata.rootNode)
-        aggiungiLuciECamera()
+        return ScheletroLetto(
+            nodi: nodi,
+            restLocale: restLocale,
+            catena: catena,
+            restPelvi: restPelvi,
+            restPelviPadre: restPelviPadre,
+            piantaY: minimoY,
+            altezzaChar: massimoY - minimoY,
+            braccio: simd_distance(posRest("upperarm_l"), posRest("lowerarm_l")),
+            avambraccio: simd_distance(posRest("lowerarm_l"), posRest("hand_l")),
+            coscia: simd_distance(posRest("thigh_l"), posRest("calf_l")),
+            stinco: simd_distance(posRest("calf_l"), posRest("foot_l"))
+        )
     }
 
     // MARK: matematica (port 1:1 della simulazione Python verificata)
