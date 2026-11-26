@@ -19,12 +19,6 @@ struct HomeView: View {
                 let avatarH = min(320, max(230, geo.size.height * 0.36))
                 VStack(spacing: 12) {
                     ZStack {
-                        Avatar2DView(
-                            measurements: store.measurements,
-                            appearance: store.appearance,
-                            fitness: store.fitness,
-                            facePhoto: store.faceMesh == nil ? store.faceImage : nil
-                        )
                         if store.use3D {
                             AvatarSceneView(
                                 measurements: store.measurements,
@@ -34,6 +28,15 @@ struct HomeView: View {
                                 facePhoto: store.faceMesh == nil ? store.faceImage : nil,
                                 demoMovement: demoExercise?.movement,
                                 demoMuscles: demoExercise.map { [$0.muscle] } ?? []
+                            )
+                        } else {
+                            // il disegno 2D è una VISTA alternativa, non un
+                            // sottofondo: sotto al 3D si vedeva e non ruotava
+                            Avatar2DView(
+                                measurements: store.measurements,
+                                appearance: store.appearance,
+                                fitness: store.fitness,
+                                facePhoto: store.faceMesh == nil ? store.faceImage : nil
                             )
                         }
                     }

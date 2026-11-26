@@ -1,5 +1,23 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.5 (build 7)
+
+- **Niente più 2D dietro il 3D**: il disegno 2D era sempre disegnato sotto la
+  vista 3D e si vedeva intorno al manichino, che così sembrava sbagliato e
+  non ruotante. Ora il 2D è solo una vista alternativa (bottone 2D/3D),
+  mai un sottofondo.
+- **Demo animata affidabile**: l'animazione degli esercizi non partiva (il
+  manichino restava fermo in posa neutra e la sbarra non compariva): i
+  keyframe ora sono guidati da un task a 30 fps sul main actor,
+  indipendente dal clock delle SCNAction. Ogni avvio demo lascia una riga
+  "demo avviata: <esercizio>" nella diagnostica di SISTEMA.
+- **Testa scansionata completata**: la mesh TrueDepth non ha capelli né
+  orecchie, la testa risultava nuda: ora si aggiungono calotta, nuca e
+  orecchie parametriche sopra la scansione.
+- **Volto-foto sul 3D**: il piano della foto finiva DENTRO il cranio e con
+  bordo da adesivo: ora sta appena davanti alla superficie con maschera
+  ovale a bordo sfumato. Nuovo test della maschera.
+
 ## 1.1.4 (build 6)
 
 - **Fix del 3D invisibile (il bug per cui "il 3D non va")**: il corpo è

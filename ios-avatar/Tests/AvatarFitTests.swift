@@ -173,6 +173,7 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertEqual(dentro.elbow, 0.5, accuracy: 0.05)
     }
 
+    @MainActor
     func testAppoggioPiediATerra() {
         // da fermo il bacino sta esattamente sopra lo scarpone: caviglia = altezza scarpa
         let rig = AvatarRig(measurements: Measurements(), appearance: Appearance(), fitness: 0.4, faceMesh: nil)
@@ -188,6 +189,7 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertLessThan(rig.altezzaPelvi(squat), atteso - 25)
     }
 
+    @MainActor
     func testCameraVedeIlCorpo() {
         // regressione della 1.1.4: il corpo è in centimetri e la camera
         // sta a 2,2h, i piani depth di default (zFar = 100) facevano
@@ -209,6 +211,22 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertEqual(v?.url, "https://esempio/AvatarFit.ipa")
         XCTAssertNil(VersionePubblicata.da("non è json"))
         XCTAssertNil(VersionePubblicata.da(#"{"versione":"1"}"#))
+    }
+
+    func testVoltoSfumato() {
+        // il volto-foto sul 3D deve avere la maschera ovale sfumata e
+        // restare quadrato in formato (il piano lo ritaglia lui)
+        let formato = UIGraphicsImageRendererFormat.default()
+        formato.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 64), format: formato)
+        let tonda = renderer.image { c in
+            UIColor.red.setFill()
+            c.fill(CGRect(x: 0, y: 0, width: 64, height: 64))
+        }
+        let sfumato = AvatarRig.voltoSfumato(tonda)
+        XCTAssertEqual(sfumato.size.width, 64, accuracy: 0.5)
+        XCTAssertEqual(sfumato.size.height, 64, accuracy: 0.5)
+        XCTAssertNotNil(sfumato.cgImage)
     }
 
     func testConfrontoVersioni() {

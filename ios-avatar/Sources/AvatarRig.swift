@@ -145,6 +145,7 @@ struct AnelloLoft {
     let rz: CGFloat
 }
 
+@MainActor
 final class AvatarRig {
     let scene = SCNScene()
     let root = SCNNode()
@@ -171,6 +172,7 @@ final class AvatarRig {
     private var sbarraMani: SCNNode?
     private var pancaNodo: SCNNode?
     private var manubri: [SCNNode] = []
+    private var demoTask: Task<Void, Never>?
 
     private let bodyH: CGFloat
     private let shoulderWidth: CGFloat
@@ -294,11 +296,24 @@ final class AvatarRig {
         _ = geo(spineNode, SCNCapsule(capRadius: neckR, height: max(colloAlto - torsoH * 0.90 + neckR, 1)), matSkin, v3(0, (torsoH * 0.90 + colloAlto) / 2, 0))
         let neckJoint = joint(spineNode, v3(0, colloAlto, 0))
         let headJoint = joint(neckJoint, v3(0, headR, 0))
+        var voltoScansionato = false
         if let faceMesh, let faceGeometry = AvatarRig.faceGeometry(from: faceMesh) {
             let head = geo(headJoint, faceGeometry, matSkin, v3(0, 0, 0))
             let scale = CGFloat(2 * headR) / 0.20
             head.scale = v3(scale, scale, scale)
             head.eulerAngles = v3(0, .pi, 0)
+            voltoScansionato = true
+        }
+        if voltoScansionato {
+            // la mesh TrueDepth non ha capelli né orecchie: si aggiungono
+            // quelli parametrici, cosi' la testa scansionata non resta nuda
+            for lato in [-1.0, 1.0] {
+                _ = geo(headJoint, SCNSphere(radius: headR * 0.15), matSkinScuro, v3(CGFloat(lato) * headR * 0.94, 0, 0))
+            }
+            let calotta = geo(headJoint, SCNSphere(radius: headR), matHair, v3(0, headR * 0.20, -headR * 0.26))
+            calotta.scale = v3(1.03, 1.02, 1.02)
+            let nuca = geo(headJoint, SCNSphere(radius: headR * 0.70), matHair, v3(0, headR * 0.52, -headR * 0.30))
+            nuca.scale = v3(1.0, 0.92, 1.0)
         } else {
             let cranio = geo(headJoint, SCNSphere(radius: headR * 0.96), matSkin, v3(0, 0, 0))
             cranio.scale = v3(1, 1.06, 0.96)
@@ -317,13 +332,16 @@ final class AvatarRig {
         // alla testa, luce costante perche' la foto deve restare leggibile.
         if let volto = facePhoto {
             let materialeVolto = SCNMaterial()
-            materialeVolto.diffuse.contents = volto
+            materialeVolto.diffuse.contents = AvatarRig.voltoSfumato(volto)
             materialeVolto.lightingModel = .constant
             materialeVolto.isDoubleSided = false
-            let piano = SCNPlane(width: headR * 1.45, height: headR * 1.45)
+            // appena davanti alla superficie della testa: all'altezza della
+            // vecchia z = 0.82 headR il piano finiva DENTRO il cranio
+            let lato = headR * 1.55
+            let piano = SCNPlane(width: lato, height: lato)
             piano.firstMaterial = materialeVolto
             let nodoVolto = SCNNode(geometry: piano)
-            nodoVolto.position = v3(0, -headR * 0.06, headR * 0.82)
+            nodoVolto.position = v3(0, -headR * 0.02, headR * 1.04)
             headJoint.addChildNode(nodoVolto)
         }
 
@@ -422,7 +440,49 @@ final class AvatarRig {
 
     /// Tubo a sezione ellittica con profili per anello: gambe, busto, avambracci.
     /// Normali calcolate per vertice e orientate verso l'esterno.
-    static func loft(da a: SCNVector3, a b: SCNVector3, anelli: [AnelloLoft], bulge: CGFloat, segmenti: Int, materiale: SCNMaterial) -> SCNGeometry {
+    /// Volto con maschera ovale a bordo sfumato: si fonde col cranio
+    /// invece di sembrare un adesivo ritagliato.
+    nonisolated static func voltoSfumato(_ volto: UIImage) -> UIImage {
+        let lato = max(volto.size.width, volto.size.height)
+        let formato = UIGraphicsImageRendererFormat.default()
+        formato.opaque = false
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: lato, height: lato), format: formato)
+        let maschera: CGImage? = {
+            guard let contestoMaschera = CGContext(
+                data: nil,
+                width: Int(lato.rounded()), height: Int(lato.rounded()),
+                bitsPerComponent: 8, bytesPerRow: 0,
+                space: CGColorSpaceCreateDeviceGray(),
+                bitmapInfo: CGImageAlphaInfo.none.rawValue
+            ) else { return nil }
+            var posizioni: [CGFloat] = [0, 0.66, 1.0]
+            let bianco = CGColor(gray: 1, alpha: 1)
+            let nero = CGColor(gray: 0, alpha: 1)
+            guard let gradiente = CGGradient(colorsSpace: CGColorSpaceCreateDeviceGray(), colors: [bianco, bianco, nero] as CFArray, locations: &posizioni) else { return nil }
+            contestoMaschera.saveGState()
+            contestoMaschera.translateBy(x: lato / 2, y: lato / 2)
+            contestoMaschera.scaleBy(x: 1, y: 1.08)
+            contestoMaschera.drawRadialGradient(
+                gradiente,
+                startCenter: .zero, startRadius: 0,
+                endCenter: .zero, endRadius: lato / 2,
+                options: []
+            )
+            contestoMaschera.restoreGState()
+            return contestoMaschera.makeImage()
+        }()
+        return renderer.image { contesto in
+            if let maschera {
+                contesto.cgContext.clip(
+                    to: CGRect(x: 0, y: 0, width: lato, height: lato),
+                    mask: maschera
+                )
+            }
+            volto.draw(in: CGRect(x: (lato - volto.size.width) / 2, y: (lato - volto.size.height) / 2, width: volto.size.width, height: volto.size.height))
+        }
+    }
+
+    nonisolated static func loft(da a: SCNVector3, a b: SCNVector3, anelli: [AnelloLoft], bulge: CGFloat, segmenti: Int, materiale: SCNMaterial) -> SCNGeometry {
         let ax = CGFloat(b.x - a.x), ay = CGFloat(b.y - a.y), az = CGFloat(b.z - a.z)
         let lunghezza = CGFloat(sqrt(Double(ax * ax + ay * ay + az * az)))
         if lunghezza < 0.0001 || anelli.count < 2 {
@@ -562,7 +622,7 @@ final class AvatarRig {
     }
 
     /// Interpolazione ciclica: l'ultimo fotogramma si ricollega al primo.
-    static func posaA(_ t: CGFloat, keys: [Keyframe], total: CGFloat) -> Pose {
+    nonisolated static func posaA(_ t: CGFloat, keys: [Keyframe], total: CGFloat) -> Pose {
         var time = t.truncatingRemainder(dividingBy: max(total, 0.001))
         if time < 0 { time += max(total, 0.001) }
         var acc: Double = 0
@@ -624,20 +684,29 @@ final class AvatarRig {
 
     func play(_ movement: MovementType, muscles: [MuscleGroup]) {
         stop()
+        CrashLog.append("demo avviata: \(movement.rawValue)")
         setHighlight(muscles)
         let keys = Keyframes.forMovement(movement)
         applyPose(keys.first?.pose ?? .riposo)
         mostraProp(movement)
-        let total = max(keys.reduce(0.0) { $0 + $1.duration }, 0.001)
-        let action = SCNAction.customAction(duration: total) { [weak self] _, elapsed in
-            guard let self else { return }
-            self.applyPose(AvatarRig.posaA(CGFloat(elapsed), keys: keys, total: CGFloat(total)))
+        let total = CGFloat(max(keys.reduce(0.0) { $0 + $1.duration }, 0.001))
+        // driver deterministico: un task a 30 fps aggiorna le pose sul main
+        // actor, indipendente dal clock delle SCNAction
+        demoTask?.cancel()
+        demoTask = Task { [weak self] in
+            let inizio = ProcessInfo.processInfo.systemUptime
+            while !Task.isCancelled {
+                guard let self else { return }
+                let t = CGFloat(ProcessInfo.processInfo.systemUptime - inizio)
+                self.applyPose(AvatarRig.posaA(t, keys: keys, total: total))
+                try? await Task.sleep(for: .seconds(0.033))
+            }
         }
-        root.runAction(SCNAction.repeatForever(action), forKey: "demo")
     }
 
     func stop() {
-        root.removeAction(forKey: "demo")
+        demoTask?.cancel()
+        demoTask = nil
         root.removeAction(forKey: "pulse")
         applyPose(.idle)
         clearHighlight()
