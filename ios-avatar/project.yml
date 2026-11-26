@@ -31,7 +31,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.avatarfit.app
         PRODUCT_NAME: AvatarFit
-        MARKETING_VERSION: "1.1.9"
+        MARKETING_VERSION: "1.1.10"
         CURRENT_PROJECT_VERSION: "11"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES

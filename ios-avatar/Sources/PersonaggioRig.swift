@@ -10,9 +10,11 @@ import UIKit
 // prende il posto del manichino nell'Home. Le pose calibrate di AvatarRig
 // guidano lo scheletro glTF con lo stesso driver verificato frame per frame
 // nella simulazione Python (distanza mano-bersaglio: max ~8 cm dichiarato su
-// tutti gli esercizi, riprodotta nei test unitari). Onestà dichiarata: volto
-// foto dell'utente, misure modulate sulle ossa, auto-camera e bagliore
-// muscolare in Metal NON sono ancora implementati su questo personaggio.
+// tutti gli esercizi, riprodotta nei test unitari). Dalla 1.1.10: volto-foto
+// con maschera sfumata sulla testa, proporzioni braccia/gambe dell'utente
+// modulate sulle ossa (clamp 0.85-1.15) e auto-camera che inquadra l'esercizio
+// campionando il ciclo. Onestà dichiarata: il bagliore muscolare resta sul
+// corpo intero (la mesh skinned è unica: la mappa muscolo->vertici non c'è).
 
 /// Minime misure di contatto dell'ultima posa applicata, in cm dal suolo del
 /// personaggio: servono ai test per verificare il driver senza passare dal
@@ -77,6 +79,15 @@ final class PersonaggioRig {
     private(set) var misure = MisureContatto()
     private let glow = UIColor(hex: 0x00E5FF)
 
+    // proporzioni dell'utente sulle ossa (1 = quelle del glTF)
+    private(set) var fattoreBraccia: Double = 1
+    private(set) var fattoreGambe: Double = 1
+    // auto-camera (cm): quota del centro inquadrato e distanza della camera
+    private(set) var quotaCamera: Double = 0
+    private(set) var distanzaCamera: Double = 0
+    private(set) var estensioneYCamera: Double = 0
+    private var bersaglioCamera: SCNNode?
+
     /// Esito del driver per una posa: delta di rotazione locale per osso,
     /// mondo FK risultante e bersagli (unità glTF e cm).
     private struct EsitoGuida {
@@ -87,7 +98,7 @@ final class PersonaggioRig {
         var ancora: (y: Double, z: Double)?
     }
 
-    init?(measurements m: Measurements) {
+    init?(measurements m: Measurements, facePhoto: UIImage? = nil) {
         guard let url = Bundle.main.url(forResource: "Superhero_Male_FullBody", withExtension: "gltf") else {
             return nil
         }
@@ -128,13 +139,51 @@ final class PersonaggioRig {
         piantaY = scheletro.piantaY
         altezzaChar = scheletro.altezzaChar
         unita = bodyH / altezzaChar
-        L1 = scheletro.braccio * unita
-        L2 = (scheletro.avambraccio + 0.05) * unita
-        cosciaChar = (scheletro.coscia + scheletro.stinco) * unita
+
+        // proporzioni dell'utente: braccia e gambe rispetto all'uomo di
+        // riferimento (175 cm, braccio 62, gamba 92); clamp per non deformare
+        // la skinning del glTF. Con le misure di default i fattori sono
+        // esattamente 1: i test del driver non cambiano.
+        let braccioDefault = 66.96 * (bodyH / 175)
+        fattoreBraccia = min(max(armLen / braccioDefault, 0.85), 1.15)
+        let gambaDefault = 92.0 * (bodyH / 175)
+        fattoreGambe = min(max(legLen / gambaDefault, 0.85), 1.15)
+        for osso in ["upperarm_l", "upperarm_r", "lowerarm_l", "lowerarm_r"] {
+            restLocale[osso]?.columns.3 *= SIMD4<Double>(fattoreBraccia, fattoreBraccia, fattoreBraccia, 1)
+        }
+        for osso in ["thigh_l", "thigh_r", "calf_l", "calf_r"] {
+            restLocale[osso]?.columns.3 *= SIMD4<Double>(fattoreGambe, fattoreGambe, fattoreGambe, 1)
+        }
+
+        L1 = scheletro.braccio * fattoreBraccia * unita
+        L2 = (scheletro.avambraccio + 0.05) * fattoreBraccia * unita
+        cosciaChar = (scheletro.coscia + scheletro.stinco) * fattoreGambe * unita
 
         scenaCaricata.background.contents = UIColor.clear
         scene.rootNode.addChildNode(scenaCaricata.rootNode)
         aggiungiLuciECamera()
+        if let volto = facePhoto {
+            aggiungiVolto(volto)
+        }
+    }
+
+    /// Volto dell'utente (maschera ovale sfumata, la stessa del manichino):
+    /// piano davanti alla testa, luce costante perche' la foto deve restare
+    /// leggibile. Il piano segue la testa del personaggio (figlio del nodo
+    /// head), quindi resta al posto giusto anche a collo piegato.
+    private func aggiungiVolto(_ volto: UIImage) {
+        guard let testa = nodi["head"] else { return }
+        let materiale = SCNMaterial()
+        materiale.diffuse.contents = AvatarRig.voltoSfumato(volto)
+        materiale.lightingModel = .constant
+        materiale.isDoubleSided = false
+        let lato = altezzaChar * 0.082
+        let piano = SCNPlane(width: CGFloat(lato), height: CGFloat(lato))
+        piano.firstMaterial = materiale
+        let nodoVolto = SCNNode(geometry: piano)
+        nodoVolto.position = SCNVector3(0, Float(altezzaChar * 0.012), Float(altezzaChar * 0.050))
+        nodoVolto.name = "voltoFoto"
+        testa.addChildNode(nodoVolto)
     }
 
     /// Scheletro letto dal glTF a riposo: distanze in unita' glTF (non cm).
@@ -568,6 +617,7 @@ final class PersonaggioRig {
         setHighlight(muscles)
         _ = applica(0, movimento: movement)
         usaAttrezzi(movement)
+        inquadra(movement)
         demoTask?.cancel()
         demoTask = Task { [weak self] in
             let inizio = ProcessInfo.processInfo.systemUptime
@@ -594,6 +644,7 @@ final class PersonaggioRig {
         manubri.removeAll()
         sbarraFissa?.removeFromParentNode()
         sbarraFissa = nil
+        cameraARiposo()
         misure = MisureContatto()
     }
 
@@ -712,6 +763,68 @@ final class PersonaggioRig {
         cameraNode.constraints = [SCNLookAtConstraint(target: bersaglio)]
         scene.rootNode.addChildNode(cameraNode)
         scene.rootNode.addChildNode(bersaglio)
+        bersaglioCamera = bersaglio
+        quotaCamera = h * 0.52 * unita
+        distanzaCamera = h * 2.2 * unita
+        estensioneYCamera = bodyH
+    }
+
+    /// Auto-camera: campiona il ciclo dell'esercizio e sposta la camera in
+    /// modo che il corpo intero (dai piedi alla mano piu' alta, sbarra inclusa)
+    /// resti nell'inquadratura qualunque sia la posa. Chiamata una volta per
+    /// esercizio in play() (camera stabile: niente jitter a ogni frame).
+    func inquadra(_ movement: MovementType) {
+        let keys = Keyframes.forMovement(movement)
+        guard !keys.isEmpty else { return }
+        let total = max(keys.reduce(0.0) { $0 + $1.duration }, 0.001)
+
+        var minY = 0.0
+        var maxY = 0.0
+        var maxZ = 0.0
+        for campione in 0..<8 {
+            let t = Double(campione) / 8.0 * total
+            let pose = AvatarRig.posaA(CGFloat(t), keys: keys, total: CGFloat(total))
+            let esito = guida(pose, movimento: movement)
+            let mano = figlio(esito.mondo, padre: "lowerarm_r", figlio: "hand_r")
+            let punta = figlio(esito.mondo, padre: "foot_r", figlio: "ball_r")
+            let punti = [
+                (mano.y - piantaY) * unita,
+                (punta.y - piantaY) * unita,
+                esito.bersaglioPelvi.y * unita - piantaY * unita
+            ]
+            for y in punti {
+                minY = min(minY, y)
+                maxY = max(maxY, y)
+            }
+            maxZ = max(maxZ, mano.z * unita)
+            maxZ = max(maxZ, punta.z * unita)
+        }
+
+        // la mano del personaggio raggiunge l'ancora dell'IK (la sbarra delle
+        // trazioni compresa): le sue quote estreme sono gia' nel campionamento
+        minY = min(minY, 0.0)
+        estensioneYCamera = maxY - minY
+        quotaCamera = min(max((minY + maxY) / 2, 25), bodyH * 0.62)
+        let mezzaFov = 23.0 * Double.pi / 180
+        var distanza = max(bodyH * 1.15, estensioneYCamera / (2 * tan(mezzaFov)) * 1.25)
+        // le pose a terra si stendono in avanti verso la camera (plank, panca):
+        // arretra la camera perche' il corpo disteso entri in larghezza
+        distanza += max(0, maxZ - 45) * 0.55
+        distanzaCamera = min(distanza, bodyH * 3.2)
+
+        let u = 1.0 / unita
+        cameraNode.position = SCNVector3(0, Float((quotaCamera + bodyH * 0.06) * u), Float(distanzaCamera * u))
+        bersaglioCamera?.position = SCNVector3(0, Float(quotaCamera * u), 0)
+    }
+
+    /// Camera della posa in piedi (usata da stop e dall'apertura della vista).
+    private func cameraARiposo() {
+        let h = altezzaChar
+        cameraNode.position = SCNVector3(0, Float(h * 0.58), Float(h * 2.2))
+        bersaglioCamera?.position = SCNVector3(0, Float(h * 0.52), 0)
+        quotaCamera = h * 0.52 * unita
+        distanzaCamera = h * 2.2 * unita
+        estensioneYCamera = bodyH
     }
 }
 
@@ -719,6 +832,7 @@ final class PersonaggioRig {
 
 struct PersonaggioSceneView: UIViewRepresentable {
     var measurements: Measurements
+    var facePhoto: UIImage?
     var demoMovement: MovementType?
     var demoMuscles: [MuscleGroup]
 
@@ -728,9 +842,9 @@ struct PersonaggioSceneView: UIViewRepresentable {
         view.antialiasingMode = .multisampling4X
         view.allowsCameraControl = true
         view.autoenablesDefaultLighting = false
-        if let rig = PersonaggioRig(measurements: measurements) {
+        if let rig = PersonaggioRig(measurements: measurements, facePhoto: facePhoto) {
             context.coordinator.rig = rig
-            context.coordinator.lastFirma = "\(measurements)"
+            context.coordinator.lastFirma = firma
             view.scene = rig.scene
             view.pointOfView = rig.cameraNode
             if let movement = demoMovement {
@@ -742,15 +856,19 @@ struct PersonaggioSceneView: UIViewRepresentable {
         return view
     }
 
+    private var firma: String {
+        "\(measurements)|foto:\(facePhoto != nil)"
+    }
+
     func updateUIView(_ uiView: SCNView, context: Context) {
         let c = context.coordinator
-        let firma = "\(measurements)"
-        if firma != c.lastFirma {
-            if let rig = PersonaggioRig(measurements: measurements) {
+        let f = firma
+        if f != c.lastFirma {
+            if let rig = PersonaggioRig(measurements: measurements, facePhoto: facePhoto) {
                 c.rig = rig
                 uiView.scene = rig.scene
                 uiView.pointOfView = rig.cameraNode
-                c.lastFirma = firma
+                c.lastFirma = f
                 if let movement = demoMovement {
                     rig.play(movement, muscles: demoMuscles)
                 }

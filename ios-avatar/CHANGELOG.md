@@ -1,5 +1,31 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.10 (build della CI)
+
+- **Volto-foto anche sul personaggio 3D**: la foto/Memoji dell'utente
+  (maschera ovale sfumata, la stessa del manichino) va sulla testa del
+  personaggio CC0 come piano che segue il collo a qualunque posa, con
+  luce costante per restare leggibile e invisibile da dietro.
+- **Proporzioni dell'utente sulle ossa**: braccia e gambe misurate
+  (armCm/legCm) ora stirano le ossa del personaggio rispetto
+  all'uomo di riferimento (175 cm / 62 / 92), con clamp 0.85-1.15 per
+  non deformare la skinning del glTF. Con le misure di default i
+  fattori sono esattamente 1: il driver e i suoi test non cambiano.
+- **Auto-camera per esercizio**: la camera campiona il ciclo
+  dell'esercizio (8 pose: mano, punta del piede, bacino) e si mette a
+  distanza e quota che inquadra il corpo intero, sbarra delle
+  trazioni inclusa; nel plank/panca arretra per la mano che si
+  stende verso la camera. Prima era fissa sulla posa in piedi: le
+  trazioni uscivano dall'inquadratura. Camera stabile durante
+  l'esercizio (niente jitter), torna alla posa in piedi allo stop.
+- Test: volto sulla testa (presenza, dimensione, non visibile da
+  dietro), proporzioni (default = 1 esatto, clamp 1.15, gambe 100 cm
+  = ~1.087, braccia lunghe arrivano più in alto), auto-camera
+  (distanza/quota per curl/trazioni/plank, copertura del campo
+  visivo, ritorno a riposo allo stop).
+- Onestà dichiarata: il bagliore muscolare resta sull'intero corpo
+  (la mesh skinned è unica: la mappa muscolo->vertici non esiste).
+
 ## 1.1.9 (build della CI)
 
 - **Fix del caricamento personaggio**: il glTF di Quaternius porta due

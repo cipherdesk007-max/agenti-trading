@@ -1,5 +1,6 @@
 import XCTest
 @preconcurrency import SceneKit
+import UIKit
 @testable import AvatarFit
 
 // I numeri attesi vengono dalla simulazione Python del driver personaggio
@@ -140,5 +141,109 @@ final class PersonaggioTests: XCTestCase {
         _ = rig.applica(1.4, movimento: .curl)
         rig.stop()
         XCTAssertEqual(rig.misure, MisureContatto(), "misure azzerate dopo lo stop")
+    }
+
+    // MARK: 1.1.10 - volto, proporzioni, auto-camera
+
+    /// immagine di prova a tinta unita per il volto
+    @MainActor
+    private func immagineProva() -> UIImage {
+        let formato = UIGraphicsImageRendererFormat()
+        formato.opaque = true
+        return UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8), format: formato).image { c in
+            UIColor.red.setFill()
+            c.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
+        }
+    }
+
+    @MainActor
+    func testVoltoFotoSullaTestaDelPersonaggio() throws {
+        // senza foto: nessun piano del volto
+        let base = try nuovo()
+        XCTAssertNil(base.scene.rootNode.childNode(withName: "voltoFoto", recursively: true),
+                     "senza foto non deve esserci il piano del volto")
+
+        guard PersonaggioRig.disponibile,
+              let rig = PersonaggioRig(measurements: Measurements(), facePhoto: immagineProva()) else {
+            XCTFail("rig con volto non creato. CrashLog: " + CrashLog.tail(6))
+            return
+        }
+        guard let nodoVolto = rig.scene.rootNode.childNode(withName: "voltoFoto", recursively: true) else {
+            XCTFail("il piano del volto deve essere figlio della testa")
+            return
+        }
+        let piano = nodoVolto.geometry as? SCNPlane
+        XCTAssertNotNil(piano, "la geometria del volto deve essere un piano")
+        if let piano {
+            let lato = Double(piano.width)
+            dentro(lato, 0.10, 0.08, "lato del volto (unita' glTF)")
+            XCTAssertFalse(nodoVolto.geometry?.firstMaterial?.isDoubleSided ?? true,
+                           "il volto non deve vedersi da dietro la testa")
+        }
+    }
+
+    @MainActor
+    func testProporzioniDellUtenteSulleOssa() throws {
+        // misure di default: fattori esattamente 1 (il driver non cambia)
+        let base = try nuovo()
+        XCTAssertEqual(base.fattoreBraccia, 1.0, accuracy: 1e-9, "braccia di default = glTF")
+        XCTAssertEqual(base.fattoreGambe, 1.0, accuracy: 1e-9, "gambe di default = glTF")
+
+        // braccia lunghe: clamp a 1.15 (oltre si deforma la skinning)
+        var lunghe = Measurements()
+        lunghe.armCm = 75
+        guard let rigLunghe = PersonaggioRig(measurements: lunghe) else {
+            XCTFail("rig braccia lunghe non creato. CrashLog: " + CrashLog.tail(6))
+            return
+        }
+        XCTAssertEqual(rigLunghe.fattoreBraccia, 1.15, accuracy: 0.01, "braccia 75 cm saturano il clamp")
+        // gambe lunghe: 100 cm -> ~1.087 (sotto il clamp)
+        var alte = Measurements()
+        alte.legCm = 100
+        guard let rigAlte = PersonaggioRig(measurements: alte) else {
+            XCTFail("rig gambe lunghe non creato. CrashLog: " + CrashLog.tail(6))
+            return
+        }
+        XCTAssertEqual(rigAlte.fattoreGambe, 1.08696, accuracy: 0.01, "gambe 100 cm scalano ~1.087")
+
+        // le proporzioni cambiano il guidato: braccia piu' lunghe arrivano piu' in alto
+        let manoBase = base.applica(0, movimento: .curl).manoY
+        let manoLunghe = rigLunghe.applica(0, movimento: .curl).manoY
+        XCTAssertGreaterThanOrEqual(manoLunghe, manoBase,
+                                    "braccia piu' lunghe non possono arrivare piu' basso (base \(manoBase), lunghe \(manoLunghe))")
+    }
+
+    @MainActor
+    func testAutoCameraInquadraLEsercizio() throws {
+        let rig = try nuovo()
+        // in piedi (curl): camera vicina come da progetto
+        rig.inquadra(.curl)
+        let distanzaCurl = rig.distanzaCamera
+        let quotaCurl = rig.quotaCamera
+        XCTAssertGreaterThan(distanzaCurl, 150, "la camera non deve finire dentro il personaggio")
+        XCTAssertLessThan(distanzaCurl, 260, "in piedi la camera non deve arretrare oltre")
+        dentro(quotaCurl, 65, 30, "quota del centro inquadrato in piedi")
+
+        // trazioni: la mano sale alla sbarra (~212 cm): la camera arretra e alza il centro
+        rig.inquadra(.pullUp)
+        XCTAssertGreaterThan(rig.distanzaCamera, distanzaCurl + 60,
+                             "nelle trazioni la camera deve arretrare rispetto al curl")
+        XCTAssertGreaterThan(rig.quotaCamera, quotaCurl, "nelle trazioni il centro inquadrato sale")
+
+        // l'inquadratura verticale copre l'estensione del corpo
+        let mezzaFov = 23.0 * Double.pi / 180
+        let copertura = rig.distanzaCamera * tan(mezzaFov)
+        XCTAssertGreaterThanOrEqual(copertura, rig.estensioneYCamera / 2,
+                                    "mezzo campo visivo (\(copertura) cm) deve coprire metà estensione (\(rig.estensioneYCamera / 2) cm)")
+
+        // plank: il corpo si distende verso la camera (mano avanti ~61 cm),
+        // la camera arretra un po' rispetto al curl
+        rig.inquadra(.plank)
+        XCTAssertGreaterThan(rig.distanzaCamera, distanzaCurl + 5,
+                             "nel plank la camera deve arretrare per la mano avanti")
+
+        // stop: camera di nuovo alla posa in piedi (piu' lontana, come da progetto)
+        rig.stop()
+        XCTAssertGreaterThan(rig.distanzaCamera, 300, "dopo lo stop la camera torna alla posa in piedi")
     }
 }

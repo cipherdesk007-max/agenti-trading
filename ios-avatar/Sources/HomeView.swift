@@ -24,6 +24,7 @@ struct HomeView: View {
                         } else if store.use3D, store.usePersonaggio, PersonaggioRig.disponibile {
                             PersonaggioSceneView(
                                 measurements: store.measurements,
+                                facePhoto: store.faceImage,
                                 demoMovement: demoExercise?.movement,
                                 demoMuscles: demoExercise.map { [$0.muscle] } ?? []
                             )
