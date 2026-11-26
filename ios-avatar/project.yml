@@ -31,12 +31,12 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.avatarfit.app
         PRODUCT_NAME: AvatarFit
-        MARKETING_VERSION: "1.1.11"
+        MARKETING_VERSION: "1.1.12"
         CURRENT_PROJECT_VERSION: "11"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UISupportedInterfaceOrientations: "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
-        INFOPLIST_KEY_NSCameraUsageDescription: "Serve per la scansione del viso (TrueDepth) dell'avatar 3D: resta solo su questo iPhone."
+        INFOPLIST_KEY_NSCameraUsageDescription: "Serve per scattare il selfie che diventa il volto dell'avatar 3D: la foto resta solo su questo iPhone."
         INFOPLIST_KEY_NSPhotoLibraryUsageDescription: "Serve per prendere l'ultimo selfie (o il Memoji che hai salvato) dalla galleria e applicarlo come volto dell'avatar: resta solo su questo iPhone, Nessun invio."
         TARGETED_DEVICE_FAMILY: "1,2"
         SUPPORTS_MACCATALYST: NO

@@ -38,7 +38,6 @@ struct ActiveWorkoutView: View {
                             measurements: store.measurements,
                             appearance: store.appearance,
                             fitness: store.fitness,
-                            faceMesh: store.faceMesh,
                             demoMovement: ex.movement,
                             demoMuscles: [ex.muscle]
                         )

@@ -16,9 +16,10 @@ dispositivo**: nessuna rete, nessun server, nessun account.
   dalle tue misure (altezza, peso, scarpe, testa, collo, spalle, petto, braccia,
   vita, fianchi, gambe) e rebuilda in tempo reale; BMI → spessore corporeo,
   allenamenti ultimi 30 giorni → definizione muscolare (evoluzione visiva).
-  Scansione viso **TrueDepth** opzionale (mesh reale aplicada alla testa 3D) e
-  foto di riferimento dal rullino salvata **solo nella sandbox dell'app**
-  (mai caricata; non mandare foto in chat).
+  Volto personalizzabile con la **foto di riferimento** dal rullino salvata
+  **solo nella sandbox dell'app** (mai caricata; non mandare foto in chat);
+  la scansione TrueDepth è stata tolta dall'app (non partiva in LiveContainer
+  e sembrava una seconda testa).
 - **Giornata · TIMELINE 24H** — striscia dei giorni, anello di **completamento
   giornaliero %**, timeline ore 0–23 con eventi, spunta rapida e promemoria.
 - **No Smoke** — contatore al secondo (giorni/ore/min/sec), **soldi risparmiati**
@@ -49,17 +50,16 @@ La via supportata: salva il tuo Memoji o uno selfie in Foto, poi in Home usa
 "Volto dell'avatar (Memoji o selfie)": scelta manuale con il selettore di
 sistema, oppure attiva "Automatica dalla galleria" e l'app prende da sola
 l'ultimo selfie (in mancanza, l'ultima immagine del rullino). Il volto viene
-ritagliato in cerchio e applicato alla testa dell'avatar 3D e 2D. La scansione
-TrueDepth resta available dove il container la permette; se esiste una mesh
-scansionata, ha la precedenza sulla foto. Tutto resta nella sandbox dell'app.
+ritagliato in cerchio e applicato alla testa dell'avatar 3D. Tutto resta
+nella sandbox dell'app.
 
 ## Privacy e dati
 
-- Tutto in locale: `Documents/AvatarFit/dati.json` (misure, aspetto, mesh viso,
-  esercizi + storico, sessioni, calendario, fumo, tracker) e
+- Tutto in locale: `Documents/AvatarFit/dati.json` (misure, aspetto,
+  esercizi + note + storico, sessioni, calendario, fumo, tracker) e
   `foto-riferimento.jpg`. Zero chiamate di rete, funziona offline.
-- Backup JSON esportabile/importabile da Sistema; la foto e la scansione viso
-  restano sempre solo on-device.
+- Backup JSON esportabile/importabile da Sistema; la foto resta sempre
+  solo on-device.
 
 ## Struttura
 
@@ -73,14 +73,13 @@ ios-avatar/
 │   ├── Models.swift              # modelli Codable + MuscleGroup/MovementType + 1RM
 │   ├── AppStore.swift            # store @Observable, JSON locale, backup, fitness
 │   ├── Theme.swift               # pure black + neon ciano/oro, card HUD, aptici
-│   ├── HomeView.swift            # avatar 3D (2D solo come vista alternativa) + banner aggiornamenti
+│   ├── HomeView.swift            # avatar sempre 3D + banner aggiornamenti
 │   ├── AvatarRig.swift           # rig loftato: IK mani ancora (sbarra/terra), caviglia per scarpe piatte, testa scolpita, demo 30 fps
 │   ├── AvatarSceneView.swift     # wrapper SceneKit (rotazione/zoom, demo animata)
 │   ├── AvatarPersonale.swift     # avatar personale (beta): import .usdz/.dae da SISTEMA, inquadramento automatico
-│   ├── FaceScanView.swift        # scansione viso TrueDepth (ARKit) → mesh locale
 │   ├── MeasurementsEditorView.swift  # "Le mie misure" + aspetto
 │   ├── PhotoCard.swift           # foto di riferimento solo-locale (PHPicker)
-│   ├── ExerciseLibraryView.swift # libreria esercizi espandibile (+ custom)
+│   ├── ExerciseLibraryView.swift # libreria esercizi: dizionario "come si esegue" + note personali + custom
 │   ├── ActiveWorkoutView.swift   # workout attivo: serie, recupero, 1RM
 │   ├── WorkoutView.swift         # forma fisica, grafico 1RM, storico
 │   ├── SmokeTrackerView.swift    # contatore no-smoke, risparmi, salute

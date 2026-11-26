@@ -85,7 +85,7 @@ struct SystemView: View {
                 } label: {
                     Label("Importa backup (JSON)", systemImage: "square.and.arrow.down")
                 }
-                Text("Il backup contiene misure, aspetto, scansione viso, esercizi e storico, sessioni, calendario, protocollo fumo e tracker. Importarlo sostituisce i dati attuali: usalo quando aggiorni l'IPA su LiveContainer.")
+                Text("Il backup contiene misure, aspetto, esercizi e storico, sessioni, calendario, protocollo fumo e tracker. Importarlo sostituisce i dati attuali: usalo quando aggiorni l'IPA su LiveContainer.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
@@ -98,7 +98,6 @@ struct SystemView: View {
                 LabeledContent("Eventi in calendario", value: "\(store.events.count)")
                 LabeledContent("Tracker attivi", value: "\(store.trackers.count)")
                 LabeledContent("Foto di riferimento", value: store.photoData == nil ? "no" : "sì · solo locale")
-                LabeledContent("Scansione viso", value: store.faceMesh == nil ? "no" : "sì · solo locale")
             } header: {
                 Text("Dati locali".uppercased()).foregroundStyle(Theme.accent)
             }

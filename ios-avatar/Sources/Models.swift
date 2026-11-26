@@ -91,9 +91,174 @@ struct Exercise: Codable, Identifiable, Sendable {
     var defaultWeight: Double = 0
     var custom: Bool = false
     var history: [ExerciseLog] = []
+    /// Note personali su come si esegue l'esercizio (opzionale, retrocompatibile).
+    var note: String?
 
     var best1RM: Double {
         history.reduce(0) { max($0, epley1RM($1.weight, $1.reps)) }
+    }
+}
+
+/// Come si esegue un esercizio: guida passo-passo mostrata in libreria.
+struct IstruzioniEsercizio: Equatable, Sendable {
+    var muscoli: String
+    var passi: [String]
+    var respirazione: String
+    var erroriComuni: [String]
+}
+
+extension MovementType {
+    /// Dizionario di esecuzione degli esercizi standard. Il movimento libero
+    /// non ha guida: in quel caso valgono le note personali dell'utente.
+    var istruzioniStandardi: IstruzioniEsercizio? {
+        switch self {
+        case .pullUp:
+            return IstruzioniEsercizio(
+                muscoli: "Gran dorsale, bicipiti, core",
+                passi: [
+                    "Aggrappati alla sbarra con i palmi in avanti, mani poco più larghe delle spalle.",
+                    "Parti appeso con le braccia distese e le scapole attivate (spalle lontane dalle orecchie).",
+                    "Tira fino a portare il mento sopra la sbarra senza oscillare.",
+                    "Scendi in controllo fino alle braccia distese."
+                ],
+                respirazione: "Espira mentre sali, inspira mentre scendi.",
+                erroriComuni: [
+                    "Oscillare con le gambe per aiutarsi (kipping): riduce il lavoro del dorsale.",
+                    "Salire solo a metà corsa.",
+                    "Lasciarsi cadere invece di controllare la discesa."
+                ]
+            )
+        case .pushUp:
+            return IstruzioniEsercizio(
+                muscoli: "Pettorali, tricipiti, spalle, core",
+                passi: [
+                    "Mani a terra poco più larghe delle spalle, corpo allineato dalla testa ai talloni.",
+                    "Contrai glutei e addome: il bacino non deve né cedere né alzarsi.",
+                    "Scendi finché il petto è a pochi centimetri da terra, gomiti a circa 45 gradi dal busto.",
+                    "Spingi fino alle braccia distese senza bloccare i gomiti di colpo."
+                ],
+                respirazione: "Inspira scendendo, espira spingendo su.",
+                erroriComuni: [
+                    "Bacino che cede (posa a ponte).",
+                    "Gomiti larghissimi a 90 gradi: affatica la spalla.",
+                    "Range parziale: il petto non arriva vicino a terra."
+                ]
+            )
+        case .bench:
+            return IstruzioniEsercizio(
+                muscoli: "Pettorali, deltoidi anteriori, tricipiti",
+                passi: [
+                    "Sdraiati con i piedi ben piantati a terra, scapole arretrate e petto in fuori.",
+                    "Impugna il bilanciere poco più largo delle spalle.",
+                    "Abbassa il bilanciere al petto in controllo, gomiti a 45-70 gradi dal busto.",
+                    "Spingi fino a stendere le braccia senza staccare il bacino dalla panca."
+                ],
+                respirazione: "Inspira scendendo, espira spingendo su.",
+                erroriComuni: [
+                    "Staccare il bacino dalla panca (arching eccessivo).",
+                    "Abbassare il bilanciere sul collo invece che sul petto.",
+                    "Rimbalzare il bilanciere sul petto."
+                ]
+            )
+        case .squat:
+            return IstruzioniEsercizio(
+                muscoli: "Quadricipiti, glutei, femorali, core",
+                passi: [
+                    "Piedi alla larghezza delle spalle, punte leggermente divergenti.",
+                    "Scendi spingendo il bacino indietro, ginocchia in linea con i piedi.",
+                    "Arriva alle cosce parallele al pavimento o più giù se la schiena resta neutra.",
+                    "Risalisci spingendo sui talloni e stringi i glutei in chiusura."
+                ],
+                respirazione: "Inspira scendendo, espira risalendo.",
+                erroriComuni: [
+                    "Ginocchia che collassano verso l'interno.",
+                    "Talloni che si staccano da terra.",
+                    "Schiena che si arrotonda in fondo alla discesa."
+                ]
+            )
+        case .lunge:
+            return IstruzioniEsercizio(
+                muscoli: "Glutei, quadricipiti, femorali, equilibrio",
+                passi: [
+                    "Fai un passo avanti ampio mantenendo il busto dritto.",
+                    "Scendi finché entrambe le ginocchia sono a 90 gradi, quella dietro quasi tocca terra.",
+                    "Il ginocchio avanti non supera la punta del piede.",
+                    "Risalisci spingendo sulla gamba avanti e riparti dalla posizione in piedi."
+                ],
+                respirazione: "Inspira scendendo, espira risalendo.",
+                erroriComuni: [
+                    "Passo troppo corto: il ginocchio passa la punta del piede.",
+                    "Busto che si inclina in avanti.",
+                    "Spingere sulla gamba dietro invece che su quella avanti."
+                ]
+            )
+        case .row:
+            return IstruzioniEsercizio(
+                muscoli: "Gran dorsale, romboidi, bicipiti",
+                passi: [
+                    "Appoggia un ginocchio e una mano sulla panca, schiena dritta e parallela al pavimento.",
+                    "Tira il manubrio verso il fianco, gomito vicino al busto.",
+                    "Stringi la scapola verso la colonna in cima al movimento.",
+                    "Allunga il braccio in controllo senza ruotare il busto."
+                ],
+                respirazione: "Espira tirando su, inspira scendendo.",
+                erroriComuni: [
+                    "Ruotare il busto per aiutarsi.",
+                    "Tirare col bicipite invece di guidare con la scapola.",
+                    "Schiena arrotondata durante la serie."
+                ]
+            )
+        case .curl:
+            return IstruzioniEsercizio(
+                muscoli: "Bicipiti, avambracci",
+                passi: [
+                    "In piedi, manubri lungo i fianchi con i palmi in avanti.",
+                    "Piega solo l'avambraccio: il gomito resta fisso vicino al fianco.",
+                    "Sali fino alla contrazione piena senza portare il gomito in avanti.",
+                    "Scendi lentamente fino a braccia quasi distese."
+                ],
+                respirazione: "Espira salendo, inspira scendendo.",
+                erroriComuni: [
+                    "Oscillare il busto per alzare pesi troppo pesanti.",
+                    "Gomiti che viaggiano in avanti.",
+                    "Mollare la discesa senza controllo."
+                ]
+            )
+        case .lateralRaise:
+            return IstruzioniEsercizio(
+                muscoli: "Deltoidi laterali",
+                passi: [
+                    "In piedi, manubri lungo i fianchi, leggera piega dei gomiti tenuta fissa.",
+                    "Alza le braccia ai lati fino all'altezza delle spalle.",
+                    "Immagina di versare due brocche d'acqua nel punto più alto.",
+                    "Scendi lentamente senza lasciar cadere le braccia."
+                ],
+                respirazione: "Espira salendo, inspira scendendo.",
+                erroriComuni: [
+                    "Alzare sopra la testa con i trapezi.",
+                    "Oscillare il busto.",
+                    "Peso eccessivo con range corto."
+                ]
+            )
+        case .plank:
+            return IstruzioniEsercizio(
+                muscoli: "Core, spalle, glutei",
+                passi: [
+                    "Gomiti sotto le spalle, corpo in linea retta dalla testa ai talloni.",
+                    "Contrai addome e glutei, guarda il pavimento davanti a te.",
+                    "Respira in modo continuo senza trattenere il fiato.",
+                    "Tieni la posizione senza far cedere il bacino."
+                ],
+                respirazione: "Continua e profonda, mai trattenuta.",
+                erroriComuni: [
+                    "Bacino troppo alto o troppo basso.",
+                    "Trattenere il respiro.",
+                    "Spalle arretrate rispetto ai gomiti."
+                ]
+            )
+        case .custom:
+            return nil
+        }
     }
 }
 

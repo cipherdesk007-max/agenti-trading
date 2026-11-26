@@ -1,5 +1,25 @@
 # CHANGELOG · AvatarFit
 
+## 1.1.12 (build della CI)
+
+- **Solo 3D**: tolta la vista 2D dell'avatar e il bottone 2D/3D in Home.
+  Il disegno 2D era piatto, non ruotava e non si capiva: l'avatar è sempre
+  la scena 3D (personaggio CC0, oppure manichino parametrico se il
+  personaggio non carica). I backup vecchi con il flag use3D si importano
+  senza errori (il campo viene ignorato).
+- **Niente più scansione viso TrueDepth**: funzione tolta dall'app (non
+  partiva in LiveContainer e credeva una seconda testa). Il volto resta
+  quello standard del personaggio, personalizzabile con la foto da
+  galleria/selfie come già prima. I backup con la vecchia scansione si
+  importano senza errori (il campo viene ignorato).
+- **Dizionario degli esercizi**: ogni esercizio della libreria ha ora il
+  pulsante "come si esegue" con muscoli coinvolti, esecuzione passo-passo,
+  respirazione ed errori da evitare per tutti i 9 movimenti standard
+  (trazioni, piegamenti, panca, squat, affondi, rematore, curl, alzate,
+  plank). Sui movimenti liberi e su ogni esercizio si possono scrivere
+  note personali, salvate nell'esercizio. Anche il nuovo esercizio creato
+  in libreria accetta le note.
+
 ## 1.1.11 (build della CI)
 
 - **Volto-foto sul viso, non sopra il collo**: nei frame del telefono

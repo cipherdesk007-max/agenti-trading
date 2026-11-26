@@ -26,6 +26,43 @@ final class AvatarFitTests: XCTestCase {
         }
     }
 
+    func testIstruzioniDizionarioCompleto() {
+        for movement in MovementType.allCases {
+            if movement == .custom {
+                XCTAssertNil(movement.istruzioniStandardi, "il movimento libero non ha guida standard")
+                continue
+            }
+            guard let ist = movement.istruzioniStandardi else {
+                XCTFail("istruzioni mancanti per \(movement.rawValue)")
+                continue
+            }
+            XCTAssertFalse(ist.muscoli.isEmpty, "muscoli vuoti per \(movement.rawValue)")
+            XCTAssertGreaterThanOrEqual(ist.passi.count, 3, "troppo pochi passi per \(movement.rawValue)")
+            XCTAssertFalse(ist.respirazione.isEmpty, "respirazione vuota per \(movement.rawValue)")
+            XCTAssertFalse(ist.erroriComuni.isEmpty, "errori comuni vuoti per \(movement.rawValue)")
+            for passo in ist.passi {
+                XCTAssertFalse(passo.trimmingCharacters(in: .whitespaces).isEmpty,
+                               "passo vuoto in \(movement.rawValue)")
+            }
+        }
+    }
+
+    func testNotaEsercizioRetrocompatibile() throws {
+        // esercizio salvato prima che esistesse "note": decodifica senza errori
+        let vecchio = """
+        {"id":"00000000-0000-0000-0000-000000000001","name":"Curl","muscle":"Braccia","equipment":"Manubri","movement":"Curl manubri","defaultSets":3,"defaultReps":12,"defaultWeight":0,"custom":false,"history":[]}
+        """
+        let ex = try JSONDecoder().decode(Exercise.self, from: Data(vecchio.utf8))
+        XCTAssertNil(ex.note, "senza campo note deve restare nil")
+
+        // roundtrip con la nota
+        var conNota = ex
+        conNota.note = "Scendi in 3 secondi"
+        let dati = try JSONEncoder().encode(conNota)
+        let rileggio = try JSONDecoder().decode(Exercise.self, from: dati)
+        XCTAssertEqual(rileggio.note, "Scendi in 3 secondi")
+    }
+
     func testTraguardiSaluteOrdinati() {
         let minuti = HealthMilestone.all.map(\.minutes)
         XCTAssertEqual(minuti, minuti.sorted())

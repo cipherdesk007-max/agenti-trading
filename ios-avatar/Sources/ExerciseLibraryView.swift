@@ -5,6 +5,7 @@ struct ExerciseLibraryView: View {
     @Environment(AppStore.self) private var store
     @State private var showAdd = false
     @State private var showSession = false
+    @State private var istruzioniEsercizio: Exercise?
 
     var body: some View {
         List {
@@ -54,6 +55,9 @@ struct ExerciseLibraryView: View {
         }
         .sheet(isPresented: $showAdd) { AddExerciseView() }
         .sheet(isPresented: $showSession) { ActiveWorkoutView(ids: store.sessionIds) }
+        .sheet(item: $istruzioniEsercizio) { ex in
+            IstruzioniEsercizioView(exercizio: ex)
+        }
     }
 
     private func exerciseRow(_ ex: Exercise) -> some View {
@@ -68,6 +72,15 @@ struct ExerciseLibraryView: View {
                     .foregroundStyle(Theme.gold)
             }
             Spacer()
+            Button {
+                haptic()
+                istruzioniEsercizio = ex
+            } label: {
+                Image(systemName: "info.circle")
+                    .font(.title3)
+                    .foregroundStyle(Theme.gold)
+            }
+            .accessibilityLabel("Come si esegue")
             Button {
                 store.demoExerciseId = ex.id
                 haptic()
@@ -89,6 +102,89 @@ struct ExerciseLibraryView: View {
     }
 }
 
+/// Guida di esecuzione: dizionario standard del movimento + note personali.
+struct IstruzioniEsercizioView: View {
+    @Environment(AppStore.self) private var store
+    @Environment(\.dismiss) private var dismiss
+    let exercizio: Exercise
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 16) {
+                    if let ist = exercizio.movement.istruzioniStandardi {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Muscoli coinvolti", systemImage: "figure.strengthtraining.functional")
+                                .font(.caption.bold()).foregroundStyle(Theme.accent)
+                            Text(ist.muscoli).font(.subheadline)
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Esecuzione", systemImage: "list.number")
+                                .font(.caption.bold()).foregroundStyle(Theme.accent)
+                            ForEach(Array(ist.passi.enumerated()), id: \.offset) { i, passo in
+                                Text("\(i + 1). \(passo)")
+                                    .font(.subheadline)
+                            }
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Respirazione", systemImage: "wind")
+                                .font(.caption.bold()).foregroundStyle(Theme.accent)
+                            Text(ist.respirazione).font(.subheadline)
+                        }
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Errori da evitare", systemImage: "exclamationmark.triangle")
+                                .font(.caption.bold()).foregroundStyle(Theme.gold)
+                            ForEach(ist.erroriComuni, id: \.self) { errore in
+                                Text("• \(errore)")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Label("Movimento libero", systemImage: "figure.jumprope")
+                                .font(.caption.bold()).foregroundStyle(Theme.accent)
+                            Text("Questo esercizio non ha una guida standard: scrivi qui sotto come lo esegui tu, così la scheda resta nella libreria.")
+                                .font(.subheadline)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label("Le mie note", systemImage: "square.and.pencil")
+                            .font(.caption.bold()).foregroundStyle(Theme.accent)
+                        TextField("Come lo esegui tu, appunti, riferimenti...", text: legameNota, axis: .vertical)
+                            .lineLimit(3...8)
+                            .textFieldStyle(.roundedBorder)
+                    }
+                }
+                .padding()
+            }
+            .background(Color.black)
+            .navigationTitle(exercizio.name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Fatto") { dismiss() }
+                }
+            }
+        }
+    }
+
+    /// Lega il campo alle note dell'esercizio dentro lo store (cercato per id,
+    /// perché la copia ricevuta nel sheet non si aggiorna da sola).
+    private var legameNota: Binding<String> {
+        Binding(
+            get: {
+                store.exercises.first { $0.id == exercizio.id }?.note ?? ""
+            },
+            set: { nuovo in
+                if let i = store.exercises.firstIndex(where: { $0.id == exercizio.id }) {
+                    store.exercises[i].note = nuovo.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : nuovo
+                }
+            }
+        )
+    }
+}
+
 struct AddExerciseView: View {
     @Environment(AppStore.self) private var store
     @Environment(\.dismiss) private var dismiss
@@ -99,6 +195,7 @@ struct AddExerciseView: View {
     @State private var sets = 3
     @State private var reps = 10
     @State private var weight = 0.0
+    @State private var note = ""
 
     var body: some View {
         NavigationStack {
@@ -117,6 +214,10 @@ struct AddExerciseView: View {
                     Stepper("Serie: \(sets)", value: $sets, in: 1...10)
                     Stepper("Ripetizioni: \(reps)", value: $reps, in: 1...100)
                     Stepper("Carico: \(Int(weight)) kg", value: $weight, in: 0...400, step: 2.5)
+                }
+                Section("Come si esegue (opzionale)") {
+                    TextField("Note su esecuzione, appunti, riferimenti...", text: $note, axis: .vertical)
+                        .lineLimit(2...5)
                 }
             }
             .navigationTitle("Nuovo esercizio")
@@ -137,7 +238,8 @@ struct AddExerciseView: View {
                             defaultSets: sets,
                             defaultReps: reps,
                             defaultWeight: weight,
-                            custom: true
+                            custom: true,
+                            note: note.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : note
                         ))
                         dismiss()
                     }

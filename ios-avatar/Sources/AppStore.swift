@@ -14,12 +14,10 @@ final class AppStore {
     var exercises: [Exercise] = [] { didSet { save() } }
     var demoExerciseId: UUID? { didSet { save() } }
     var sessionIds: [UUID] = [] { didSet { save() } }
-    var use3D = true { didSet { save() } }
     var usePersonalAvatar = false { didSet { save() } }
     var usePersonaggio = true { didSet { save() } }
     var avatarPersonaleEstensione: String? { didSet { save() } }
     var autoGalleryFace = false { didSet { save() } }
-    var faceMesh: FaceMeshData? { didSet { save() } }
 
     private(set) var photoData: Data?
 
@@ -74,12 +72,12 @@ final class AppStore {
             exercises = snap.exercises
             demoExerciseId = snap.demoExerciseId
             sessionIds = snap.sessionIds
-            use3D = snap.use3D ?? true
             usePersonalAvatar = snap.usePersonalAvatar ?? false
             usePersonaggio = snap.usePersonaggio ?? true
             avatarPersonaleEstensione = snap.avatarPersonaleEstensione
             autoGalleryFace = snap.autoGalleryFace ?? false
-            faceMesh = snap.faceMesh
+            // snap.use3D e snap.faceMesh vengono ignorati di proposito:
+            // la vista è sempre 3D e la scansione viso è stata tolta.
         } else {
             seed()
         }
@@ -132,12 +130,12 @@ final class AppStore {
             exercises: exercises,
             demoExerciseId: demoExerciseId,
             sessionIds: sessionIds,
-            use3D: use3D,
+            use3D: true,
             usePersonalAvatar: usePersonalAvatar,
             usePersonaggio: usePersonaggio,
             avatarPersonaleEstensione: avatarPersonaleEstensione,
             autoGalleryFace: autoGalleryFace,
-            faceMesh: faceMesh
+            faceMesh: nil
         )
         guard let data = try? JSONEncoder().encode(snap) else { return }
         try? data.write(to: dataURL, options: .atomic)
@@ -154,12 +152,12 @@ final class AppStore {
             exercises: exercises,
             demoExerciseId: demoExerciseId,
             sessionIds: sessionIds,
-            use3D: use3D,
+            use3D: true,
             usePersonalAvatar: usePersonalAvatar,
             usePersonaggio: usePersonaggio,
             avatarPersonaleEstensione: avatarPersonaleEstensione,
             autoGalleryFace: autoGalleryFace,
-            faceMesh: faceMesh
+            faceMesh: nil
         )
         guard let data = try? JSONEncoder().encode(snap) else { return nil }
         let url = FileManager.default.temporaryDirectory
@@ -180,11 +178,10 @@ final class AppStore {
         exercises = snap.exercises
         demoExerciseId = snap.demoExerciseId
         sessionIds = snap.sessionIds
-        use3D = snap.use3D ?? true
         usePersonalAvatar = snap.usePersonalAvatar ?? false
         avatarPersonaleEstensione = snap.avatarPersonaleEstensione
         autoGalleryFace = snap.autoGalleryFace ?? false
-        faceMesh = snap.faceMesh
+        // vista sempre 3D e scansione viso tolta: snap.use3D e snap.faceMesh ignorati
         if let url = urlAvatarPersonale, !FileManager.default.fileExists(atPath: url.path) {
             avatarPersonaleEstensione = nil
             usePersonalAvatar = false
@@ -200,11 +197,9 @@ final class AppStore {
         workouts = []
         sessionIds = []
         demoExerciseId = nil
-        use3D = true
         usePersonalAvatar = false
         avatarPersonaleEstensione = nil
         autoGalleryFace = false
-        faceMesh = nil
         clearPhoto()
         seed()
     }
@@ -263,14 +258,6 @@ final class AppStore {
         photoData = nil
         faceImage = nil
         try? FileManager.default.removeItem(at: photoURL)
-    }
-
-    func setFaceMesh(_ mesh: FaceMeshData) {
-        faceMesh = mesh
-    }
-
-    func clearFaceMesh() {
-        faceMesh = nil
     }
 
     func toggleEvent(_ id: UUID) {

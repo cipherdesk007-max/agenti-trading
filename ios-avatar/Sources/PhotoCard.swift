@@ -37,7 +37,7 @@ struct PhotoCard: View {
                     .scaledToFill()
                     .frame(height: 140)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                Text("Questo volto è ora applicato sulla testa dell'avatar (3D e 2D) in Home. Resta solo dentro la sandbox dell'app: nessuna galleria svuotata, nessun invio.")
+                Text("Questo volto è ora applicato sulla testa dell'avatar 3D in Home. Resta solo dentro la sandbox dell'app: nessuna galleria svuotata, nessun invio.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } else {

@@ -7,7 +7,6 @@ struct AvatarSceneView: UIViewRepresentable {
     var measurements: Measurements
     var appearance: Appearance
     var fitness: Double
-    var faceMesh: FaceMeshData?
     var facePhoto: UIImage?
     var demoMovement: MovementType?
     var demoMuscles: [MuscleGroup]
@@ -22,7 +21,7 @@ struct AvatarSceneView: UIViewRepresentable {
             measurements: measurements,
             appearance: appearance,
             fitness: fitness,
-            faceMesh: faceMesh,
+            faceMesh: nil,
             facePhoto: facePhoto
         )
         context.coordinator.rig = rig
@@ -38,13 +37,13 @@ struct AvatarSceneView: UIViewRepresentable {
 
     func updateUIView(_ uiView: SCNView, context: Context) {
         let c = context.coordinator
-        let signature = "\(measurements)|\(appearance)|\(fitness)|face:\(faceMesh != nil)|foto:\(facePhoto != nil)"
+        let signature = "\(measurements)|\(appearance)|\(fitness)|foto:\(facePhoto != nil)"
         if signature != c.lastSignature {
             let rig = AvatarRig(
                 measurements: measurements,
                 appearance: appearance,
                 fitness: fitness,
-                faceMesh: faceMesh,
+                faceMesh: nil,
                 facePhoto: facePhoto
             )
             c.rig = rig
