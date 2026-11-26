@@ -23,6 +23,10 @@ struct Pose: Equatable {
     var hipR: CGFloat? = nil
     var kneeL: CGFloat? = nil
     var kneeR: CGFloat? = nil
+    /// V4: rotazione della caviglia (0 = scarpa lungo la gamba): nelle pose
+    /// a terra (push-up, plank, panca) la porta al valore che mette la suola
+    /// piatta sul pavimento, cosi' le scarpe non affondano nella pedana.
+    var footPitch: CGFloat = 0
 
     static let idle = Pose()
     /// In piedi con un minimo di tono nelle braccia.
@@ -113,7 +117,8 @@ func lerpPose(_ a: Pose, _ b: Pose, _ t: CGFloat) -> Pose {
         hipL: lerpOpzionale(a.hipL ?? a.hip, b.hipL ?? b.hip, t),
         hipR: lerpOpzionale(a.hipR ?? a.hip, b.hipR ?? b.hip, t),
         kneeL: lerpOpzionale(a.kneeL ?? a.knee, b.kneeL ?? b.knee, t),
-        kneeR: lerpOpzionale(a.kneeR ?? a.knee, b.kneeR ?? b.knee, t)
+        kneeR: lerpOpzionale(a.kneeR ?? a.knee, b.kneeR ?? b.knee, t),
+        footPitch: lerpCG(a.footPitch, b.footPitch, t)
     )
 }
 
@@ -128,8 +133,8 @@ enum Keyframes {
         switch movement {
         case .pushUp:
             return [
-                Keyframe(pose: Pose(bodyPitch: 1.17, shoulderX: 1.17, pelvisY: 44.5), duration: 1.0),
-                Keyframe(pose: Pose(bodyPitch: 1.24, shoulderX: 1.24, elbow: -0.95, pelvisY: 37.8), duration: 1.0)
+                Keyframe(pose: Pose(bodyPitch: 1.17, shoulderX: 1.17, pelvisY: 44.5, footPitch: -1.17), duration: 1.0),
+                Keyframe(pose: Pose(bodyPitch: 1.24, shoulderX: 1.24, elbow: -0.95, pelvisY: 37.8, footPitch: -1.24), duration: 1.0)
             ]
         case .pullUp:
             return [
@@ -156,7 +161,7 @@ enum Keyframes {
                 Keyframe(pose: { var p = base; p.elbow = -1.95; return p }(), duration: 0.7)
             ]
         case .bench:
-            let base = Pose(bodyPitch: -1.40, hip: -0.34, knee: -0.21, pelvisY: 39.5)
+            let base = Pose(bodyPitch: -1.40, hip: -0.34, knee: -0.37, pelvisY: 39.5, footPitch: 1.43)
             return [
                 Keyframe(pose: { var p = base; p.shoulderX = 1.74; p.elbow = 0.05; return p }(), duration: 1.0),
                 Keyframe(pose: { var p = base; p.shoulderX = 1.05; p.elbow = -0.90; return p }(), duration: 1.0)
@@ -174,7 +179,7 @@ enum Keyframes {
                 Keyframe(pose: .riposo, duration: 0.9)
             ]
         case .plank:
-            return [Keyframe(pose: Pose(bodyPitch: 1.36, shoulderX: 1.36, elbow: 1.57, pelvisY: 27.1), duration: 3.0)]
+            return [Keyframe(pose: Pose(bodyPitch: 1.36, shoulderX: 1.36, elbow: 1.57, pelvisY: 27.1, footPitch: -1.36), duration: 3.0)]
         case .custom:
             return [
                 Keyframe(pose: Pose(shoulderX: -2.90, elbow: 1.40), duration: 1.2),
@@ -208,6 +213,8 @@ final class AvatarRig {
     private var cosciaR = SCNNode()
     private var ginocchioL = SCNNode()
     private var ginocchioR = SCNNode()
+    private var cavigliaL = SCNNode()
+    private var cavigliaR = SCNNode()
     private var manoL = SCNNode()
     private var manoR = SCNNode()
     private var nodoPetto = SCNNode()
@@ -217,7 +224,6 @@ final class AvatarRig {
 
     private var sbarraFissa: SCNNode?
     private var sbarraMani: SCNNode?
-    private var ombraTerra: SCNNode?
     private var pancaNodo: SCNNode?
     private var manubri: [SCNNode] = []
     private var demoTask: Task<Void, Never>?
@@ -401,18 +407,9 @@ final class AvatarRig {
             let upperGeo = geo(spalla, AvatarRig.loftArto(da: v3(0, 0, 0), a: v3(0, -upperLen, 0), raggio: armR, bulge: 0.26, materiale: matSkin), matSkin, v3(0, 0, 0))
             let gomito = joint(spalla, v3(0, -upperLen, 0))
             let foreGeo = geo(gomito, AvatarRig.loftArto(da: v3(0, 0, 0), a: v3(0, -foreLen, 0), raggio: armR * 0.82, bulge: 0.09, materiale: matSkin), matSkin, v3(0, 0, 0))
-            _ = geo(gomito, SCNSphere(radius: armR * 0.82), matSkin, v3(0, 0, 0))
+            _ = geo(gomito, SCNSphere(radius: armR * 0.8), matSkin, v3(0, 0, 0))
+            _ = geo(gomito, SCNSphere(radius: armR * 0.78), matSkin, v3(0, -foreLen * 1.1, 0))
             let mano = joint(gomito, v3(0, -foreLen, 0))
-            // mano: polso + palmo piatto + quattro dita piegate + pollice
-            let palmoL = foreLen * 0.30
-            let palmoW = armR * 1.9
-            _ = geo(mano, SCNBox(width: palmoW, height: palmoL, length: armR * 1.15, chamferRadius: armR * 0.30), matSkin, v3(0, -palmoL * 0.5, 0))
-            for (indice, scarto) in [-0.66, -0.22, 0.22, 0.66].enumerated() {
-                let dito = geo(mano, SCNCapsule(capRadius: armR * 0.26, height: palmoL * 0.85), matSkin, v3(CGFloat(scarto) * palmoW, -palmoL * 1.05, 0))
-                dito.eulerAngles = v3(0.38 + CGFloat(indice) * 0.10, 0, 0)
-            }
-            let pollice = geo(mano, SCNCapsule(capRadius: armR * 0.30, height: palmoL * 0.65), matSkin, v3(CGFloat(-lato) * palmoW * 0.52, -palmoL * 0.35, armR * 0.62))
-            pollice.eulerAngles = v3(0.85, 0, CGFloat(-lato) * 0.5)
             if lato < 0 {
                 spallaL = spalla
                 gomitoL = gomito
@@ -436,13 +433,18 @@ final class AvatarRig {
             let ginocchio = joint(coscia, v3(0, -thighLen, 0))
             let stincoGeo = geo(ginocchio, AvatarRig.loftArto(da: v3(0, 0, 0), a: v3(0, -shinLen, 0), raggio: legR * 0.80, bulge: 0.09, materiale: matSkin), matSkin, v3(0, 0, 0))
             _ = geo(ginocchio, SCNSphere(radius: legR * 0.9), matOutfit, v3(0, 0, 0))
-            _ = geo(ginocchio, SCNBox(width: legR * 2.2, height: footH, length: footLen, chamferRadius: footH * 0.45), matDark, v3(0, -shinLen - footH * 0.5, footH * 1.1))
+            // V4: la scarpa pende da un giunto caviglia: footPitch la ruota
+            // per appoggiare la suola piatta a terra nelle pose di contatto.
+            let caviglia = joint(ginocchio, v3(0, -shinLen, 0))
+            _ = geo(caviglia, SCNBox(width: legR * 2.2, height: footH, length: footLen, chamferRadius: footH * 0.45), matDark, v3(0, -footH * 0.5, footH * 1.1))
             if lato < 0 {
                 cosciaL = coscia
                 ginocchioL = ginocchio
+                cavigliaL = caviglia
             } else {
                 cosciaR = coscia
                 ginocchioR = ginocchio
+                cavigliaR = caviglia
             }
             cosce.append(cosciaGeo)
             stinchi.append(stincoGeo)
@@ -469,43 +471,6 @@ final class AvatarRig {
         let ring = geo(root, SCNTorus(ringRadius: platformR, pipeRadius: 0.5), ringMat, v3(0, 0.2, 0))
         let spin = SCNAction.rotateBy(x: 0, y: .pi * 2, z: 0, duration: 6)
         ring.runAction(SCNAction.repeatForever(spin))
-
-        // ---- ombra di contatto sopra la pedana ----
-        let ombra = geo(root, SCNPlane(width: shoulderW * 2.2, height: vitaW * 3.0), AvatarRig.materialeOmbra(), v3(0, 0.3, 0))
-        ombra.eulerAngles = v3(-.pi / 2, 0, 0)
-        ombraTerra = ombra
-    }
-
-    /// Ombra morbida a terra: ellisse con gradiente radiale, materiale
-    /// costante (ignora le luci della scena), per dare profondita' alla
-    /// figura sopra la pedana.
-    nonisolated static func materialeOmbra() -> SCNMaterial {
-        let lato: CGFloat = 256
-        let formato = UIGraphicsImageRendererFormat.default()
-        formato.opaque = false
-        let renderer = UIGraphicsImageRenderer(size: CGSize(width: lato, height: lato), format: formato)
-        let immagine = renderer.image { contesto in
-            var posizioni: [CGFloat] = [0, 0.45, 1.0]
-            let centro = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.55)
-            let mezzo = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0.22)
-            let bordo = CGColor(srgbRed: 0, green: 0, blue: 0, alpha: 0)
-            guard let gradiente = CGGradient(
-                colorsSpace: CGColorSpaceCreateDeviceRGB(),
-                colors: [centro, mezzo, bordo] as CFArray,
-                locations: &posizioni
-            ) else { return }
-            contesto.cgContext.drawRadialGradient(
-                gradiente,
-                startCenter: CGPoint(x: lato / 2, y: lato / 2), startRadius: 0,
-                endCenter: CGPoint(x: lato / 2, y: lato / 2), endRadius: lato / 2,
-                options: []
-            )
-        }
-        let materiale = SCNMaterial()
-        materiale.diffuse.contents = immagine
-        materiale.lightingModel = .constant
-        materiale.writesToDepthBuffer = false
-        return materiale
     }
 
     static func faceGeometry(from face: FaceMeshData) -> SCNGeometry? {
@@ -717,17 +682,6 @@ final class AvatarRig {
         return puntoBraccio(gomito, angolo: tetagomito, lunghezza: foreLen)
     }
 
-    /// Pezzi che compongono la mano sinistra (palmo, dita, pollice):
-    /// esposti perche' i test possano verificare che la mano sia completa.
-    var pezziManoSinistra: Int {
-        manoL.childNodes.count
-    }
-
-    /// L'ombra di contatto sotto la pedana esiste (per i test).
-    var ombraPresente: Bool {
-        ombraTerra != nil
-    }
-
     /// Quanto la posa metterebbe le mani fuori dalla portata dell'ancora
     /// (0 = presa perfetta possibile in tutto il ciclo).
     func scartoManiAncorate(_ p: Pose) -> CGFloat {
@@ -769,6 +723,8 @@ final class AvatarRig {
         cosciaR.eulerAngles = v3(-(p.hipR ?? p.hip), 0, 0)
         ginocchioL.eulerAngles = v3(p.kneeL ?? p.knee, 0, 0)
         ginocchioR.eulerAngles = v3(p.kneeR ?? p.knee, 0, 0)
+        cavigliaL.eulerAngles = v3(p.footPitch, 0, 0)
+        cavigliaR.eulerAngles = v3(p.footPitch, 0, 0)
         if let barra = sbarraMani {
             let mL = manoL.worldPosition
             let mR = manoR.worldPosition

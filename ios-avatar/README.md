@@ -74,7 +74,7 @@ ios-avatar/
 │   ├── AppStore.swift            # store @Observable, JSON locale, backup, fitness
 │   ├── Theme.swift               # pure black + neon ciano/oro, card HUD, aptici
 │   ├── HomeView.swift            # avatar 3D (2D solo come vista alternativa) + banner aggiornamenti
-│   ├── AvatarRig.swift           # rig loftato: IK mani ancora (sbarra/terra), testa scolpita, demo 30 fps
+│   ├── AvatarRig.swift           # rig loftato: IK mani ancora (sbarra/terra), caviglia per scarpe piatte, testa scolpita, demo 30 fps
 │   ├── AvatarSceneView.swift     # wrapper SceneKit (rotazione/zoom, demo animata)
 │   ├── FaceScanView.swift        # scansione viso TrueDepth (ARKit) → mesh locale
 │   ├── MeasurementsEditorView.swift  # "Le mie misure" + aspetto

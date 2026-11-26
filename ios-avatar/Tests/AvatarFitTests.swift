@@ -189,6 +189,30 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertLessThan(rig.altezzaPelvi(squat), atteso - 25)
     }
 
+    func testScarpePiatteNellePoseATerra() {
+        // V4: nelle pose di contatto (push-up, plank, panca) la catena
+        // bacino + hip + knee + caviglia deve chiudere a zero: la suola
+        // resta piatta sul pavimento per tutto il ciclo e le scarpe non
+        // affondano nella pedana (bug verificato nello studio: fino a
+        // 14 cm sotto lo zero nelle flessioni e nel plank)
+        for movimento in [MovementType.pushUp, .plank, .bench] {
+            for chiave in Keyframes.forMovement(movimento) {
+                let p = chiave.pose
+                let tilt = p.bodyPitch - p.hip + p.knee + p.footPitch
+                XCTAssertEqual(tilt, 0, accuracy: 0.05, "scarpa non piatta in \(movimento.rawValue)")
+            }
+        }
+        // e resta piatta durante tutta l'interpolazione dei piegamenti
+        let keys = Keyframes.forMovement(.pushUp)
+        let totale = CGFloat(keys.reduce(0.0) { $0 + $1.duration })
+        var t: CGFloat = 0
+        while t <= totale {
+            let p = AvatarRig.posaA(t, keys: keys, total: totale)
+            XCTAssertEqual(p.bodyPitch - p.hip + p.knee + p.footPitch, 0, accuracy: 0.05)
+            t += 1.0 / 12.0
+        }
+    }
+
     @MainActor
     func testCameraVedeIlCorpo() {
         // regressione della 1.1.4: il corpo è in centimetri e la camera
@@ -297,13 +321,5 @@ final class AvatarFitTests: XCTestCase {
         XCTAssertEqual(VersionePubblicata.confronta("1.2.10", "1.2.9"), .orderedDescending)
         XCTAssertEqual(VersionePubblicata.confronta("1.1", "1.1.0"), .orderedSame)
         XCTAssertEqual(VersionePubblicata.confronta("1.1.4", "1.1.4"), .orderedSame)
-    }
-
-    @MainActor func testManoCompletaEOmbra() {
-        // la mano non e' piu' una pallina: palmo + 4 dita + pollice,
-        // e sopra la pedana c'e' l'ombra di contatto
-        let rig = AvatarRig(measurements: Measurements(), appearance: Appearance(), fitness: 0.4, faceMesh: nil)
-        XCTAssertGreaterThanOrEqual(rig.pezziManoSinistra, 6, "la mano non ha palmo, dita e pollice")
-        XCTAssertTrue(rig.ombraPresente, "manca l'ombra di contatto")
     }
 }

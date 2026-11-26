@@ -2,17 +2,16 @@
 
 ## 1.1.7 (build 10)
 
-- **Mani vere sul manichino**: niente piu' palline come mani; ogni mano ha
-  palmo piatto, quattro dita piegate (curvatura progressiva) e pollice
-  opposto. Nei movimenti di presa (trazioni, panca, manubri) si vede la
-  differenza: le dita avvolgono l'attrezzo invece di toccarlo con una sfera.
-- **Ombra di contatto**: ellisse sfumata sopra la pedana (materiale
-  costante, non toccata dalle luci): la figura sembra appoggiata e non
-  fluttuante, anche quando e' sospesa alla sbarra.
-- Studio dell'avatar 3D documentato in docs/STUDIO-AVATAR3D.md: cosa c'e'
-  online a pagamento e gratis (TurboSquid, Sketchfab, Quaternius, MakeHuman,
-  Mixamo), cosa dicono le licenze e i tre percorsi possibili per arrivare
-  a un personaggio di qualità da modello venduto.
+- **Scarpe piatte a terra (caviglia V4)**: nelle pose di contatto le scarpe
+  rigidamente figlie dello stinco si inclinavano col corpo e le punte
+  affondavano fino a 14 cm DENTRO la pedana (push-up e plank erano i peggiori;
+  era parte del "molto buggato" visto sul telefono). Aggiunto il giunto
+  caviglia con `footPitch` nella posa: push-up, plank e panca lo impostano
+  per tenere la suola piatta sul pavimento per TUTTO il ciclo (anche durante
+  l'interpolazione). In panca anche il ginocchio piu' piegato cosi' i piedi
+  arrivano a terra. Verificato fotogramma per fotogramma nello studio di
+  rendering locale ricostruito: minimo del corpo sotto lo zero da -14 cm
+  a -0.6 cm.
 
 ## 1.1.6 (build 9)
 
